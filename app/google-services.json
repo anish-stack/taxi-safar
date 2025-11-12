@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "132220923099",
+    "project_id": "taxi-safar-ee504",
+    "storage_bucket": "taxi-safar-ee504.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:132220923099:android:2baf1296ac1fcab097f0fe",
+        "android_client_info": {
+          "package_name": "com.taxisafr.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA443cvruzVV5IM_Yb7vj3ygwVqhzy-MT8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

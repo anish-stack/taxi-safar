@@ -1,0 +1,148 @@
+{
+  "expo": {
+    "name": "Taxi-Safar Driver",
+    "slug": "taxi-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.taxisafr.driver"
+    },
+    "android": {
+      "package": "com.taxisafr.driver",
+      "googleServicesFile": "./google-services.json", 
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-con.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "RECEIVE_BOOT_COMPLETED",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "WAKE_LOCK",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "VIBRATE",
+        "USE_FULL_SCREEN_INTENT",
+        "SYSTEM_ALERT_WINDOW"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBvyzqhO8Tq3SvpKLjW7I5RonYAtfOVIn8"
+        }
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-background-task",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#000000",
+          "defaultChannel": "ride_updates",
+          "enableBackgroundRemoteNotifications": true,
+          "sounds": [
+            "./assets/sounds/sound.mp3",
+            "./assets/sounds/app_notification_sound.mp3",
+            "./assets/sounds/message.mp3",
+            "./assets/sounds/ride_cancel_sound.mp3",
+            "./assets/sounds/coin_sound.mp3"
+          ],
+          "channels": [
+            {
+              "id": "ride_request_channel",
+              "name": "Incoming Ride",
+              "description": "Alerts for new ride requests",
+              "importance": "MAX",
+              "sound": "sound.mp3"
+            },
+            {
+              "id": "ride_accepted_channel",
+              "name": "Ride Accepted",
+              "description": "Notifications when your ride is accepted or confirmed",
+              "importance": "HIGH",
+              "sound": "app_notification_sound.mp3"
+            },
+            {
+              "id": "ride_declined_channel",
+              "name": "Ride Declined",
+              "description": "Alerts when a ride request is declined or expired",
+              "importance": "HIGH",
+              "sound": "ride_cancel_sound.mp3"
+            },
+            {
+              "id": "ride_cancel_channel",
+              "name": "Ride Cancelled",
+              "description": "Alerts when a passenger cancels a ride",
+              "importance": "HIGH",
+              "sound": "ride_cancel_sound.mp3"
+            },
+            {
+              "id": "chat_channel",
+              "name": "Messages & Chat",
+              "description": "Notifications for messages and in-app chat",
+              "importance": "HIGH",
+              "sound": "message.mp3"
+            },
+            {
+              "id": "payment_channel",
+              "name": "Earnings & Payments",
+              "description": "Notifications about your completed rides and payments",
+              "importance": "HIGH",
+              "sound": "coin_sound.mp3"
+            },
+            {
+              "id": "ride_updates",
+              "name": "Ride Updates",
+              "description": "General ride status and updates",
+              "importance": "HIGH",
+              "sound": "app_notification_sound.mp3"
+            },
+            {
+              "id": "system_alerts",
+              "name": "System Alerts",
+              "description": "Important system alerts from Taxi-Safar",
+              "importance": "HIGH",
+              "sound": "app_notification_sound.mp3"
+            },
+            {
+              "id": "promotions_channel",
+              "name": "Promotions & Offers",
+              "description": "Promotional notifications and driver bonuses",
+              "importance": "DEFAULT",
+              "sound": "app_notification_sound.mp3"
+            }
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "googleServicesFile": "./android/app/google-services.json"
+          }
+        }
+      ],
+      "@react-native-firebase/app"
+    ]
+  }
+}
