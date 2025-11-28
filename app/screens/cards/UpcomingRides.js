@@ -9,11 +9,7 @@ export default function RideCard({ data }) {
       <View style={styles.topRow}>
         <View style={styles.profileSection}>
           <Image
-            source={
-              data?.profileImage
-                ? { uri: data.profileImage }
-                : require("../../assets/profile.png") // fallback image
-            }
+            source={data?.profileImage || "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Black_colour.jpg/960px-Black_colour.jpg"}
             style={styles.avatar}
           />
           <View>

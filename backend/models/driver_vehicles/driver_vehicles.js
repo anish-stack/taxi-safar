@@ -39,8 +39,6 @@ const vehicleSchema = new mongoose.Schema(
 );
 
 // ✅ Indexing for faster search by brand or name
-vehicleSchema.index({ brandName: 1 });
-vehicleSchema.index({ vehicleNames: 1 });
 
 const Vehicles = mongoose.model('Vehicles', vehicleSchema);
 module.exports = Vehicles;

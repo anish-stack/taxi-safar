@@ -69,7 +69,8 @@ export default function LoginScreen({ navigation }) {
     } catch (error) {
       console.log('Login Error:', error.response?.data || error.message);
       const errData = error.response?.data;
-      if (errData?.redirect && errData?.driver) {
+      console.log("Error Data",errData)
+      if (errData?.redirect || errData?.driver) {
         handleRedirect(errData.redirect, errData.message, errData.driver);
       } else {
         setMobileError(errData?.message || 'Network error. Please try again.');
@@ -153,7 +154,12 @@ export default function LoginScreen({ navigation }) {
   // Handle Redirects
   // ==============================
   const handleRedirect = (redirect, message, driver) => {
-    if (redirect === 'step-2') {
+    console.log(redirect)
+    if(redirect === 'step-1'){
+      navigation.navigate('Signup', { step: 1 });
+
+    }
+    else if (redirect === 'step-2') {
       navigation.navigate('Signup', { step: 2, driver });
     } else if (redirect === 'step-3') {
       navigation.navigate('addVehcile', { step: 3, driverId: driver?._id });

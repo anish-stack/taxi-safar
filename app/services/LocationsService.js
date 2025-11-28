@@ -144,7 +144,7 @@ class LocationService {
 
       if (result) {
         this.isTracking = true;
-        console.log('✅ Location tracking started successfully');
+        console.log('✅ Location tracking started successfully',result);
         console.log('📍 API URL:', this.apiUrl);
         return true;
       }
@@ -153,7 +153,7 @@ class LocationService {
     } catch (error) {
       console.error('❌ Failed to start location tracking:', error.message);
       this.isTracking = false;
-      throw error;
+      // throw error;
     }
   }
 

@@ -23,7 +23,6 @@ import { getData } from "../../../utils/storage";
 export default function AddBank({ navigation }) {
   const route = useRoute();
   const { driverId } = route.params || {};
-console.log("route.params",route.params)
   // State
   const [banks, setBanks] = useState([]);
   const [filteredBanks, setFilteredBanks] = useState([]);
@@ -179,14 +178,32 @@ const handleSubmit = async () => {
       }
     );
 
-    if (response.data.success) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Success", "Bank details added successfully!", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
-    } else {
-      throw new Error(response.data.message || "Failed to add bank details");
-    }
+  if (response.data.success) {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+  Alert.alert(
+    "Success",
+    "Bank details added successfully!",
+    [
+      {
+        text: "OK",
+        onPress: () =>
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: "wait_screen",
+                params: { driverId: driverId },
+              },
+            ],
+          }),
+      },
+    ]
+  );
+} else {
+  throw new Error(response.data.message || "Failed to add bank details");
+}
+
   } catch (error) {
     console.error("❌ Error submitting bank details:", error.response?.data);
 

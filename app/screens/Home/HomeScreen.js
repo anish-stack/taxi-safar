@@ -1,182 +1,255 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// screens/HomeScreen.js
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  SafeAreaView,
+} from 'react-native';
+import { useNavigationState } from '@react-navigation/native';
 
 import useDriverStore from '../../store/driver.store';
-import DriverMap from '../common/driver.map';
-import RideCard from '../cards/UpcomingRides';
-import Heading from '../common/Heading';
-import StatsCard from '../common/StatsCard';
-import { Colors } from '../../constant/ui';
-import { useNavigationState } from '@react-navigation/native';
-import Layout from '../common/layout';
+import loginStore from '../../store/auth.store';
+import { fetchWithRetry } from '../../utils/fetchWithRetry';
+import { API_URL_APP } from '../../constant/api';
 
-export default function HomeScreen({ navigation }) {
+import Layout from '../common/layout';
+import DriverMap from '../common/driver.map';
+import Categories from '../common/Categories';
+import Heading from '../common/Heading';
+import DriverPostCard from '../Reserve/DriverPostCard';
+import TaxiSafarTripCard from '../Reserve/TaxiSafarTripCard';
+
+export default function HomeScreen() {
   const { fetchDriverDetails } = useDriverStore();
-  const state = useNavigationState(state => state);
+  const { token } = loginStore();
+  const state = useNavigationState((state) => state);
+
+  // TaxiSafar Rides State
+  const [taxiSafarTrips, setTaxiSafarTrips] = useState([]);
+  const [taxiPage, setTaxiPage] = useState(1);
+  const [hasMoreTaxi, setHasMoreTaxi] = useState(true);
+
+  // Driver Posts State
+  const [driverPosts, setDriverPosts] = useState([]);
+  const [driverPage, setDriverPage] = useState(1);
+  const [hasMoreDriver, setHasMoreDriver] = useState(true);
+
+  // Shared loading states
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchRides = async (taxiPageNum = 1, driverPageNum = 1, isRefresh = false) => {
+    if (!token) return;
+
+    try {
+      if (!isRefresh) setLoading(true);
+      if (isRefresh) setRefreshing(true);
+
+      const [taxiRes, driverRes] = await Promise.all([
+        fetchWithRetry(() =>
+          fetch(`${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${taxiPageNum}&limit=10`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then(res => res.json())
+        ),
+        fetchWithRetry(() =>
+          fetch(`${API_URL_APP}/api/v1/fetch-nearby-rides?page=${driverPageNum}&limit=10`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then(res => res.json())
+        ),
+      ]);
+
+      const newTaxiTrips = taxiRes.success ? taxiRes.data || [] : [];
+      const newDriverPosts = driverRes.success ? driverRes.data || [] : [];
+
+      if (isRefresh || taxiPageNum === 1) {
+        setTaxiSafarTrips(newTaxiTrips);
+      } else {
+        setTaxiSafarTrips(prev => [...prev, ...newTaxiTrips.filter(
+          t => !prev.some(existing => existing._id === t._id)
+        )]);
+      }
+
+      if (isRefresh || driverPageNum === 1) {
+        setDriverPosts(newDriverPosts);
+      } else {
+        setDriverPosts(prev => [...prev, ...newDriverPosts.filter(
+          t => !prev.some(existing => existing._id === t._id)
+        )]);
+      }
+
+      setHasMoreTaxi(newTaxiTrips.length === 10);
+      setHasMoreDriver(newDriverPosts.length === 10);
+
+      if (!isRefresh) {
+        setTaxiPage(taxiPageNum + (newTaxiTrips.length === 10 ? 1 : 0));
+        setDriverPage(driverPageNum + (newDriverPosts.length === 10 ? 1 : 0));
+      }
+
+    } catch (error) {
+      console.log("Error fetching rides:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     fetchDriverDetails();
+    fetchRides(1, 1);
   }, []);
 
-  // Upcoming Rides Data
-  const upcomingRides = [
-    {
-      id: 1,
-      name: "Dharmendra T.",
-      profileImage: "",
-      rating: 4.8,
-      reviews: 127,
-      fare: 180,
-      distance: 6.2,
-      time: "12 min",
-      startDate: "12 November, 2025",
-      startTime: "07:45 PM",
-      endDate: "12 November, 2025",
-      endTime: "07:57 PM",
-      pickup: "M2K Rohini, Sector 3, New Delhi",
-      drop: "Peeragarhi Metro Station, New Delhi",
-      tripType: "One Way Trip",
-      tripDistance: 6.2,
-      stops: "No Stop",
-    },
-    {
-      id: 2,
-      name: "Rajesh K.",
-      profileImage: "",
-      rating: 4.9,
-      reviews: 212,
-      fare: 420,
-      distance: 15.8,
-      time: "35 min",
-      startDate: "12 November, 2025",
-      startTime: "10:15 AM",
-      endDate: "12 November, 2025",
-      endTime: "10:50 AM",
-      pickup: "Connaught Place, New Delhi",
-      drop: "Indira Gandhi International Airport, Terminal 3, New Delhi",
-      tripType: "One Way Trip",
-      tripDistance: 15.8,
-      stops: "No Stop",
-    },
-    {
-      id: 3,
-      name: "Priya S.",
-      profileImage: "",
-      rating: 4.7,
-      reviews: 189,
-      fare: 950,
-      distance: 38.4,
-      time: "1 hr 10 min",
-      startDate: "13 November, 2025",
-      startTime: "08:30 AM",
-      endDate: "13 November, 2025",
-      endTime: "09:40 AM",
-      pickup: "Noida Sector 18, Uttar Pradesh",
-      drop: "DLF Cyber City, Gurugram, Haryana",
-      tripType: "One Way Trip",
-      tripDistance: 38.4,
-      stops: "Multi Stop",
-    },
-  ];
+  const onRefresh = useCallback(() => {
+    setTaxiPage(1);
+    setDriverPage(1);
+    setHasMoreTaxi(true);
+    setHasMoreDriver(true);
+    fetchRides(1, 1, true);
+  }, [token]);
 
-  // Reserved Rides Data
-  const reservedRides = [
-    {
-      id: 4,
-      name: "Arun K.",
-      profileImage: "",
-      rating: 4.9,
-      reviews: 256,
-      fare: 4200,
-      distance: 280,
-      time: "5 hr 30 min",
-      startDate: "14 November, 2025",
-      startTime: "06:00 AM",
-      endDate: "14 November, 2025",
-      endTime: "11:30 AM",
-      pickup: "Kashmere Gate ISBT, Delhi",
-      drop: "MI Road, Jaipur, Rajasthan",
-      tripType: "Intercity Reserved Ride",
-      tripDistance: 280,
-      stops: "Scheduled Stops at Neemrana & Behror",
-    },
-    {
-      id: 5,
-      name: "Ravi S.",
-      profileImage: "",
-      rating: 4.9,
-      reviews: 312,
-      fare: 3200,
-      distance: 230,
-      time: "4 hr 15 min",
-      startDate: "16 November, 2025",
-      startTime: "06:30 AM",
-      endDate: "16 November, 2025",
-      endTime: "10:45 AM",
-      pickup: "Karol Bagh, New Delhi",
-      drop: "Taj Mahal, Agra, Uttar Pradesh",
-      tripType: "Intercity Reserved Ride",
-      tripDistance: 230,
-      stops: "Midway stop at Mathura for breakfast",
-    },
-  ];
+  const loadMoreTaxi = () => {
+    if (hasMoreTaxi && taxiSafarTrips.length > 0) {
+      fetchRides(taxiPage, driverPage);
+    }
+  };
+
+  const loadMoreDriver = () => {
+    if (hasMoreDriver && driverPosts.length > 0) {
+      fetchRides(taxiPage, driverPage);
+    }
+  };
+
+  const renderSectionHeader = (title, subtitle) => (
+    <View style={styles.sectionHeader}>
+      <Heading title={title} />
+      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+    </View>
+  );
+
+  const renderEmpty = (title) => (
+    <View style={styles.emptySection}>
+      <Text style={styles.emptyText}>No {title} available right now</Text>
+      <Text style={styles.emptySubtext}>Pull down to refresh</Text>
+    </View>
+  );
+
+  if (loading && taxiSafarTrips.length === 0 && driverPosts.length === 0) {
+    return (
+      <Layout state={state}>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color="#DC2626" />
+            <Text style={styles.loadingText}>Finding nearby trips...</Text>
+          </View>
+        </SafeAreaView>
+      </Layout>
+    );
+  }
 
   return (
     <Layout state={state}>
       <DriverMap />
-      
-      <View style={styles.cardWrapper}>
-        <StatsCard count="16" title="Taxi Safar Reserve Trip" />
-        <StatsCard count="02" title="Driver Post Trip" />
-        <StatsCard count="08" title="My Pending Trip" />
-      </View>
+      <Categories />
 
       <View style={styles.bgArea}>
-        {/* Upcoming Rides Section */}
-        <Heading title="Upcoming Rides" size={22} colour="#222" />
-        {upcomingRides.map((ride) => (
-          <TouchableOpacity
-            key={ride.id}
-            onPress={() => navigation.navigate('RideDetails', { rideData: ride })}
-          >
-            <RideCard data={ride} />
-          </TouchableOpacity>
-        ))}
+        <FlatList
+          data={[{ key: 'content' }]}
+          renderItem={() => (
+            <View>
+              {/* TaxiSafar Rides Section */}
+              {taxiSafarTrips.length > 0 && renderSectionHeader("Taxi Safar Reserved Rides")}
+              <FlatList
+                data={taxiSafarTrips}
+                renderItem={({ item }) => <TaxiSafarTripCard trip={item} />}
+                keyExtractor={(item) => item._id}
+                ListEmptyComponent={renderEmpty("TaxiSafar rides")}
+                onEndReached={loadMoreTaxi}
+                onEndReachedThreshold={0.5}
+                scrollEnabled={false}
+                showsVerticalScrollIndicator={false}
+              />
 
-        {/* Reserved Rides Section */}
-        <Heading title="Reserved Rides" size={22} colour="#222" />
-        {reservedRides.map((ride) => (
-          <TouchableOpacity
-            key={ride.id}
-            onPress={() => navigation.navigate('RideDetails', { rideData: ride })}
-          >
-            <RideCard data={ride} />
-          </TouchableOpacity>
-        ))}
+              {/* Driver Posts Section */}
+              {driverPosts.length > 0 && renderSectionHeader("Driver Posts")}
+              <FlatList
+                data={driverPosts}
+                renderItem={({ item }) => <DriverPostCard trip={item} />}
+                keyExtractor={(item) => item._id}
+                ListEmptyComponent={renderEmpty("driver posts")}
+                onEndReached={loadMoreDriver}
+                onEndReachedThreshold={0.5}
+                scrollEnabled={false}
+                showsVerticalScrollIndicator={false}
+                style={driverPosts.length > 0 ? styles.driverSectionMargin : null}
+              />
+            </View>
+          )}
+          keyExtractor={() => 'main'}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#DC2626"]}
+              tintColor="#DC2626"
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.mainContent}
+        />
       </View>
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-  },
-  cardWrapper: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    display: 'flex',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 16, fontSize: 16, color: '#666' },
+
   bgArea: {
-    backgroundColor: Colors.greyLighter,
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+
+    // marginTop: -20,
+    overflow: 'hidden',
   },
-  container: {
+
+  mainContent: {
+    paddingBottom: 100,
+  },
+
+  sectionHeader: {
+    // paddingHorizontal: 16,
+    // paddingTop: 24,
+    // paddingBottom: 8,
+  },
+
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+
+  driverSectionMargin: {
+    marginTop: 16,
+  },
+
+  emptySection: {
     alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 32,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
   },
 });

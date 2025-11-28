@@ -1,0 +1,52 @@
+.sidebar-submenu {
+  display: none;
+}
+
+.dropdown {
+  background-color: transparent !important;
+}
+
+.sidebar-submenu.show {
+  display: block !important;
+}
+
+.open-side {
+  transition: all 0.3s ease;
+  left: 0;
+  transform: translateX(0) !important;
+}
+
+.close-side {
+  transition: all 0.3s ease;
+
+}
+/* Add these in your CSS file */
+.extra-select-sm { width: 70px; padding: 4px 8px; font-size: 13px; }
+.extra-search-input { width: 220px; padding: 6px 12px; font-size: 13px; }
+.extra-action-btn { transition: all 0.2s; }
+.extra-action-btn:hover { transform: scale(1.1); }
+.extra-swal-popup { border-radius: 12px !important; }
+
+.sidebar-menu > li.active > a,
+.sidebar-menu li.dropdown.active > a,
+.sidebar-submenu li.active > a {
+  background-color: #f0f7ff;
+  color: #2563eb;
+  font-weight: 600;
+}
+.dropdown-toggle {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.menu-arrow {
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.dropdown-toggle[aria-expanded="true"] .menu-arrow,
+.sidebar-submenu.show~.dropdown-toggle .menu-arrow {
+  transform: rotate(180deg);
+}

@@ -30,9 +30,8 @@ const driverSchema = new mongoose.Schema({
         required: true
     },
     driver_gender: {
-        type: String,
-        enum: ['male', 'female', 'other'],
-        required: true
+        type: String
+      
     },
 
     referral_id: {
@@ -137,7 +136,7 @@ const driverSchema = new mongoose.Schema({
     fcm_token: String,
     device_id: String,
     fcm_updated_at: Date,
-
+    platform:String,
     // Tokens
     refresh_token: {
         type: String,
@@ -160,6 +159,11 @@ const driverSchema = new mongoose.Schema({
     },
     loginOtp: {
         type: String,
+    },
+    wallet:{
+         type: mongoose.Schema.Types.ObjectId,
+        ref: 'Wallet',
+        index: true
     },
     loginOtpExpiry: {
         type: Date
@@ -198,7 +202,7 @@ driverSchema.methods.generateAuthToken = function () {
     return jwt.sign(
         { _id: this._id, role: 'driver' },
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: '30d' }
     );
 };
 

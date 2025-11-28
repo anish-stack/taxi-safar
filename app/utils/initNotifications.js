@@ -2,8 +2,9 @@ import { requestUserPermission, createNotificationChannels, setupFCMListeners, g
 
 let initialized = false;
 
-export const initializeNotifications = async () => {
-  if (initialized) return; // prevent multiple inits
+export const initializeNotifications = async (token) => {
+  console.log('🚀 Starting notification initialization...');
+  if (initialized) return; 
   initialized = true;
 
   try {
@@ -13,7 +14,8 @@ export const initializeNotifications = async () => {
     await createNotificationChannels();
     setupFCMListeners();
 
-    const userToken = null; // or your auth token
+    const userToken = token || null; // or your auth token
+    console.log('🔑 User token:', userToken);
     if (userToken) {
       await getFCMToken(userToken);
     } else {

@@ -24,7 +24,7 @@ export const requestAppPermissions = async () => {
       return;
     }
 
-    // ===== Background Location Permission =====
+    // ===== Background Location Permission (Android only) =====
     if (Platform.OS === 'android') {
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
@@ -42,5 +42,39 @@ export const requestAppPermissions = async () => {
     console.log('✅ All permissions requested successfully');
   } catch (error) {
     console.error('Permission error:', error);
+  }
+};
+
+export const getCurrentLocation = async () => {
+  try {
+    // Check permission
+    const { status } = await Location.getForegroundPermissionsAsync();
+
+    // Request permission if not granted
+    if (status !== 'granted') {
+      const req = await Location.requestForegroundPermissionsAsync();
+      if (req.status !== 'granted') {
+        Alert.alert("Location Required", "Please enable location to continue.");
+        return null;
+      }
+    }
+
+    // Get location
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    const coords = {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      accuracy: location.coords.accuracy,
+    };
+
+    console.log("📍 Fetched Location:", coords);
+    return coords;
+
+  } catch (error) {
+    console.error("❌ Error getting location:", error);
+    return null;
   }
 };

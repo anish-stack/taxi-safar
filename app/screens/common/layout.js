@@ -7,7 +7,6 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute } from '@react-navigation/native';
 import Header from './header';
 import CustomBottomTabs from './CustomBottomNav';
 
@@ -19,7 +18,7 @@ const Layout = ({
   headerProps = {},
   contentContainerStyle = {},
   backgroundColor = '#ffffff',
-  state, // Pass navigation state for bottom tabs
+  state, 
 }) => {
 
   const content = (

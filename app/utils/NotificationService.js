@@ -73,7 +73,7 @@ export const getFCMToken = async (token) => {
 
       try {
         const res = await axios.post(
-          `${API_URL_APP}/api/v1/rider/update-fcm`,
+          `${API_URL_APP}/api/v1/update-fcm`,
           payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );

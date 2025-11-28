@@ -9,10 +9,14 @@ const documentsSchema = new mongoose.Schema({
     index: true
   },
 
-  // 🪪 Aadhar Card
+  // 🪪 Aadhar Card (Front & Back)
   aadhar_card: {
     document_number: { type: String, trim: true },
-    document: {
+    front: {
+      public_id: { type: String, trim: true },
+      url: { type: String, trim: true }
+    },
+    back: {
       public_id: { type: String, trim: true },
       url: { type: String, trim: true }
     },
@@ -44,11 +48,14 @@ const documentsSchema = new mongoose.Schema({
     uploaded_at: { type: Date, default: Date.now }
   },
 
-  // 🚗 Driving License
+  // 🚗 Driving License (Front & Back)
   driving_license: {
     license_number: { type: String, trim: true },
-    expiry_date: { type: Date, index: true },
-    document: {
+    front: {
+      public_id: { type: String, trim: true },
+      url: { type: String, trim: true }
+    },
+    back: {
       public_id: { type: String, trim: true },
       url: { type: String, trim: true }
     },
@@ -73,8 +80,7 @@ const documentsSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes
-documentsSchema.index({ 'driving_license.expiry_date': 1 });
+// Index for driver lookup
 
 const Documents = mongoose.model('Documents', documentsSchema);
 module.exports = Documents;

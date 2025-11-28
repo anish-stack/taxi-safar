@@ -12,7 +12,7 @@ export default function SplashScreen({ navigation }) {
       if (authenticated && token) {
         navigation.replace('Home'); 
       } else {
-        navigation.replace('AuthLogin'); 
+        navigation.replace('OnboardScreen'); 
       }
     }, 1000);
     return () => clearTimeout(timer);

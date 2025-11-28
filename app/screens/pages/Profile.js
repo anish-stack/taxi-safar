@@ -13,13 +13,14 @@ import loginStore from "../../store/auth.store";
 import useDriverStore from "../../store/driver.store";
 import Layout from "../common/layout";
 import BackWithLogo from "../common/back_with_logo";
+import { useNavigation } from "@react-navigation/native";
 
-export default function Profile({ navigation }) {
+export default function Profile() {
   const { logout, token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState(null);
-
+  const navigation = useNavigation()
   useEffect(() => {
     fetchDriverDetails();
   }, [token]);
@@ -69,7 +70,7 @@ export default function Profile({ navigation }) {
             <Text style={styles.modalTitle}>My Wallet</Text>
             <View style={styles.walletCard}>
               <Text style={styles.walletLabel}>Current Balance</Text>
-              <Text style={styles.walletAmount}>₹{driver.wallet_balance || "0"}</Text>
+              <Text style={styles.walletAmount}>₹{driver.wallet?.balance || "0"}</Text>
             </View>
             <DetailRow label="Total Rides" value={driver.total_rides?.toString()} />
             <DetailRow
@@ -232,7 +233,7 @@ export default function Profile({ navigation }) {
                 My Wallet Balance
               </Text>
               <Text style={{ color: "white", fontSize: 18, fontWeight: "700" }}>
-                ₹{driver?.wallet_balance || "0"}
+                ₹{driver?.wallet?.balance || "0"}
               </Text>
             </View>
           </View>
@@ -255,7 +256,7 @@ export default function Profile({ navigation }) {
               />
             }
             label="My Wallet"
-            onPress={() => openModal("wallet")}
+            onPress={() => navigation.navigate("wallet")}
           />
           <MenuItem
             icon={<FontAwesome5 name="gift" size={20} color="black" />}

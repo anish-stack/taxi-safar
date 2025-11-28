@@ -1,5 +1,5 @@
 // src/screens/WaitScreen.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  Modal,
+  Animated,
+  RefreshControl,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -23,19 +26,37 @@ export default function WaitScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const { driverId } = route.params || {};
-
-  // Zustand
   const { logout } = loginStore();
 
-  // State
   const [driver, setDriver] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
 
-  // Fetch driver details
+  const scaleAnim = useRef(new Animated.Value(0.3)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  const REFRESH_INTERVAL = 20_000; // 20 seconds
+
+  // Auto-refresh every 20 seconds
+  useEffect(() => {
+    if (!driverId) return;
+
+    const interval = setInterval(() => {
+      fetchDriver(true);
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [driverId]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchDriver();
+  }, [driverId]);
+
   const fetchDriver = async (isRefresh = false) => {
     if (!driverId) {
-      Alert.alert("Error", "Driver ID not found.");
+      Alert.alert("Error", "Driver ID missing.");
       return;
     }
 
@@ -43,40 +64,57 @@ export default function WaitScreen() {
       !isRefresh && setLoading(true);
       isRefresh && setRefreshing(true);
 
-      const { data } = await axios.get(
-        `${API_URL_APP}/api/v1/driver-details/${driverId}`
-      );
+      const { data } = await axios.get(`${API_URL_APP}/api/v1/driver-details/${driverId}`);
 
       if (data.success) {
         setDriver(data.data);
-      } else {
-        throw new Error(data.message || "Failed to fetch driver");
+
+        // Trigger success modal if account is now ACTIVE
+        if (data.data.account_status === "active" && !showVerifiedModal) {
+          triggerVerifiedModal();
+        }
       }
     } catch (error) {
-      console.error("Fetch driver error:", error);
-      Alert.alert(
-        "Error",
-        error.response?.data?.message || error.message || "Failed to load data"
-      );
+      console.error("Fetch error:", error);
+      if (!isRefresh) {
+        Alert.alert("Error", error.response?.data?.message || "Failed to load data");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchDriver();
-  }, [driverId]);
+  const triggerVerifiedModal = () => {
+    setShowVerifiedModal(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-  const refreshDriver = () => {
-    Haptics.selectionAsync();
-    fetchDriver(true);
+    // Simple bounce + fade animation
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 4,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Auto-redirect after 3 seconds
+    setTimeout(() => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "splash" }],
+      });
+    }, 3000);
   };
 
-  const handleLogout = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert("Logout", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
+  const handleLogout = () => {
+    Alert.alert("Logout", "Sure you want to log out?", [
+      { text: "Cancel" },
       {
         text: "Logout",
         style: "destructive",
@@ -88,384 +126,343 @@ export default function WaitScreen() {
     ]);
   };
 
-  const formatDate = (iso) => {
-    if (!iso) return "-";
-    return new Date(iso).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
+  const formatDate = (d) => (d ? new Date(d).toLocaleDateString("en-IN") : "-");
 
-  const formatDateTime = (iso) => {
-    if (!iso) return "-";
-    return new Date(iso).toLocaleString("en-IN");
-  };
-
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.center}>
-        <BackWithLogo title="Wait – Profile Review" />
+        <BackWithLogo title="Profile Review" />
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
-    );
-  }
-
-  if (!driver) {
-    return (
-      <View style={styles.center}>
-        <BackWithLogo title="Wait – Profile Review" />
-        <Text style={styles.error}>Failed to load driver data.</Text>
+        <Text style={styles.loadingText}>Checking your profile...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <BackWithLogo title="Wait – Profile Review" />
-
-      {/* Refresh Overlay */}
-      {refreshing && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      )}
-
+    <>
+      <BackWithLogo title="Profile Under Review" />
       <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchDriver(true)} />
+        }
       >
-        {/* Profile Photo */}
-        {driver.profile_photo?.url ? (
-          <Image
-            source={{ uri: driver.profile_photo.url }}
-            style={styles.avatar}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Ionicons name="person" size={50} color={Colors.textSecondary} />
+        {/* Auto-refresh badge */}
+        <View style={styles.refreshBadge}>
+          <Ionicons name="sync" size={14} color={Colors.primary} />
+          <Text style={styles.refreshText}>Auto-refresh in 20s</Text>
+        </View>
+
+        {/* Avatar + Status */}
+        <View style={styles.avatarContainer}>
+          {driver?.profile_photo?.url ? (
+            <Image source={{ uri: driver.profile_photo.url }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Ionicons name="person" size={50} color="#aaa" />
+            </View>
+          )}
+          <View style={styles.statusBadge(driver?.account_status)}>
+            <Text style={styles.statusText}>
+              {driver?.account_status?.toUpperCase()}
+            </Text>
           </View>
-        )}
+        </View>
+
+        <Text style={styles.name}>{driver?.driver_name || "Driver"}</Text>
+        <Text style={styles.phone}>{driver?.driver_contact_number}</Text>
 
         {/* Personal Info */}
-        <Section title="Personal Information">
-          <InfoRow label="Name" value={driver.driver_name} />
-          <InfoRow label="Mobile" value={driver.driver_contact_number} />
-          <InfoRow label="Email" value={driver.driver_email} />
-          <InfoRow label="Gender" value={driver.driver_gender} />
-          <InfoRow label="DOB" value={formatDate(driver.driver_dob)} />
-        </Section>
-
-        {/* Account Status */}
-        <Section title="Account Status">
-          <InfoRow
-            label="Status"
-            value={driver.account_status?.toUpperCase()}
-            valueStyle={{
-              color:
-                driver.account_status === "active"
-                  ? Colors.success
-                  : driver.account_status === "pending"
-                  ? Colors.warning
-                  : Colors.danger,
-            }}
+        <Card title="Personal Info">
+          <Row label="Email" value={driver?.driver_email} />
+          <Row label="Gender" value={driver?.driver_gender} />
+          <Row label="DOB" value={formatDate(driver?.driver_dob)} />
+          <Row
+            label="Aadhaar"
+            value={driver?.aadhar_verified ? "Verified" : "Pending"}
+            color={driver?.aadhar_verified ? Colors.success : Colors.warning}
           />
-          <InfoRow
-            label="Aadhaar Verified"
-            value={driver.aadhar_verified ? "Yes" : "No"}
-            valueStyle={{
-              color: driver.aadhar_verified ? Colors.success : Colors.danger,
-            }}
-          />
-        </Section>
+        </Card>
 
-        {/* Documents */}
-        {driver.document_id && (
-          <Section title="Uploaded Documents">
-            <InfoRow
-              label="All Verified"
-              value={driver.document_id.all_verified ? "Yes" : "No"}
-              valueStyle={{
-                color: driver.document_id.all_verified ? Colors.success : Colors.danger,
-              }}
-            />
+ 
 
-            {/* Aadhaar */}
-            {driver.document_id.aadhar_card && (
-              <InfoRow
-                label="Aadhaar"
-                value={`#${driver.document_id.aadhar_card.document_number}`}
-                secondary={`Uploaded: ${formatDate(driver.document_id.aadhar_card.uploaded_at)}`}
-                valueStyle={{
-                  color: driver.document_id.aadhar_card.verified ? Colors.success : Colors.warning,
-                }}
-                onPress={() =>
-                  navigation.navigate("DocumentViewer", {
-                    images: [driver.document_id.aadhar_card.document.url],
-                    title: "Aadhaar Card",
-                  })
-                }
-              />
-            )}
-
-            {/* PAN */}
-            {driver.document_id.pan_card && (
-              <InfoRow
-                label="PAN Card"
-                value="Uploaded"
-                secondary={`Uploaded: ${formatDate(driver.document_id.pan_card.uploaded_at)}`}
-                valueStyle={{
-                  color: driver.document_id.pan_card.verified ? Colors.success : Colors.warning,
-                }}
-                onPress={() =>
-                  navigation.navigate("DocumentViewer", {
-                    images: [driver.document_id.pan_card.document.url],
-                    title: "PAN Card",
-                  })
-                }
-              />
-            )}
-
-            {/* Driving License */}
-            {driver.document_id.driving_license && (
-              <InfoRow
-                label="Driving License"
-                value={`#${driver.document_id.driving_license.license_number}`}
-                secondary={`Expires: ${formatDate(driver.document_id.driving_license.expiry_date)}`}
-                valueStyle={{
-                  color: driver.document_id.driving_license.verified ? Colors.success : Colors.warning,
-                }}
-                onPress={() =>
-                  navigation.navigate("DocumentViewer", {
-                    images: [driver.document_id.driving_license.document.url],
-                    title: "Driving License",
-                  })
-                }
-              />
-            )}
-          </Section>
-        )}
-
-        {/* Bank Details */}
-        {driver.BankDetails && (
-          <Section title="Bank Details">
-            <InfoRow label="Bank" value={driver.BankDetails.bank_name} />
-            <InfoRow label="A/c Holder" value={driver.BankDetails.account_holder_name} />
-            <InfoRow label="A/c Number" value={driver.BankDetails.account_number} />
-            <InfoRow label="IFSC" value={driver.BankDetails.ifsc_code} />
-            <InfoRow label="Branch" value={driver.BankDetails.branch_name} />
-            <InfoRow
+        {/* Bank */}
+        {driver?.BankDetails && (
+          <Card title="Bank">
+            <Row label="Bank" value={driver.BankDetails.bank_name} />
+            <Row label="A/c Holder" value={driver.BankDetails.account_holder_name} />
+            <Row label="A/c No." value={driver.BankDetails.account_number} />
+            <Row
               label="Verified"
               value={driver.BankDetails.verified ? "Yes" : "No"}
-              valueStyle={{
-                color: driver.BankDetails.verified ? Colors.success : Colors.warning,
-              }}
+              color={driver.BankDetails.verified ? Colors.success : Colors.warning}
             />
-          </Section>
+          </Card>
         )}
 
         {/* Vehicle */}
-        {driver.current_vehicle_id && (
-          <Section title="Vehicle Details">
-            <InfoRow label="Number" value={driver.current_vehicle_id.vehicle_number} />
-            <InfoRow label="Type" value={driver.current_vehicle_id.vehicle_type?.toUpperCase()} />
-            <InfoRow label="Brand" value={driver.current_vehicle_id.vehicle_brand} />
-            <InfoRow
-              label="RC Verified"
-              value={driver.current_vehicle_id.registration_certificate?.verified ? "Yes" : "No"}
-              valueStyle={{
-                color: driver.current_vehicle_id.registration_certificate?.verified
+        {driver?.current_vehicle_id && (
+          <Card title="Vehicle">
+            <Row label="Number" value={driver.current_vehicle_id.vehicle_number} />
+            <Row label="Type" value={driver.current_vehicle_id.vehicle_type?.toUpperCase()} />
+            <Row label="Brand" value={driver.current_vehicle_id.vehicle_brand} />
+            <Row
+              label="RC"
+              value={
+                driver.current_vehicle_id.registration_certificate?.verified
+                  ? "Verified"
+                  : "Pending"
+              }
+              color={
+                driver.current_vehicle_id.registration_certificate?.verified
                   ? Colors.success
-                  : Colors.warning,
-              }}
+                  : Colors.warning
+              }
             />
-            <InfoRow
-              label="Insurance"
-              value={formatDate(driver.current_vehicle_id.insurance?.expiry_date)}
-            />
-            <InfoRow
-              label="Permit"
-              value={formatDate(driver.current_vehicle_id.permit?.expiry_date)}
-            />
-            <InfoRow
-              label="Active"
-              value={driver.current_vehicle_id.is_active ? "Yes" : "No"}
-              valueStyle={{
-                color: driver.current_vehicle_id.is_active ? Colors.success : Colors.danger,
-              }}
-            />
-          </Section>
+          </Card>
         )}
 
-
-
-        {/* Actions */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.btn, styles.refreshBtn]}
-            onPress={refreshDriver}
-            disabled={refreshing}
-          >
-            <Ionicons name="refresh" size={20} color={Colors.white} />
-            <Text style={styles.btnText}>Refresh</Text>
+        {/* Action Buttons */}
+        <View style={styles.actions}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchDriver(true)}>
+            <Ionicons name="refresh" size={22} color="#fff" />
+            <Text style={styles.btnText}>Refresh Now</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.btn, styles.logoutBtn]}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={20} color={Colors.white} />
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={22} color="#fff" />
             <Text style={styles.btnText}>Logout</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Footer */}
         <Text style={styles.footer}>
-          Your profile is under review. We'll notify you once approved.
+          We’re reviewing your profile. You’ll get a notification once approved.
         </Text>
       </ScrollView>
-    </View>
+
+      {/* SUCCESS MODAL – Uses GIF only */}
+      <Modal transparent visible={showVerifiedModal} onRequestClose={() => {}}>
+        <View style={styles.modalOverlay}>
+          <Animated.View
+            style={[
+              styles.modalCard,
+              {
+                transform: [{ scale: scaleAnim }],
+                opacity: opacityAnim,
+              },
+            ]}
+          >
+            <Image
+              source={require("../../../assets/verified.gif")} // Simple GIF
+              style={styles.successGif}
+              resizeMode="contain"
+            />
+            <Text style={styles.modalTitle}>Account Verified!</Text>
+            <Text style={styles.modalSubtitle}>
+              Welcome aboard! You’re all set.
+            </Text>
+            <Text style={styles.redirectText}>Redirecting in 3s...</Text>
+          </Animated.View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
-/* ====================== REUSABLE COMPONENTS ====================== */
-const Section = ({ title, children }) => (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    {children}
+/* ====================== COMPONENTS ====================== */
+const Card = ({ title, children }) => (
+  <View style={styles.card}>
+    <Text style={styles.cardTitle}>{title}</Text>
+    <View style={styles.cardContent}>{children}</View>
   </View>
 );
 
-const InfoRow = ({ label, value, secondary, valueStyle, onPress }) => (
-  <TouchableOpacity
-    style={styles.infoRow}
-    onPress={onPress}
-    disabled={!onPress}
-    activeOpacity={0.7}
-  >
-    <View style={{ flex: 0.5 }}>
-      <Text style={styles.infoLabel}>{label}:</Text>
-      {secondary && <Text style={styles.infoSecondary}>{secondary}</Text>}
-    </View>
-    <View style={{ flex: 0.5, alignItems: "flex-end" }}>
-      <Text style={[styles.infoValue, valueStyle]}>{value ?? "-"}</Text>
-      {onPress && (
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color={Colors.textSecondary}
-          style={{ marginTop: 2 }}
-        />
-      )}
-    </View>
-  </TouchableOpacity>
+const Row = ({ label, value, color }) => (
+  <View style={styles.row}>
+    <Text style={styles.rowLabel}>{label}</Text>
+    <Text style={[styles.rowValue, color && { color }]}>{value || "-"}</Text>
+  </View>
 );
 
-/* ============================== STYLES ============================== */
+const DocRow = ({ label, number, verified, url, uploadedAt, expiry }) => {
+  const navigation = useNavigation();
+  return (
+    <TouchableOpacity
+      style={styles.docRow}
+      onPress={() =>
+        navigation.navigate("DocumentViewer", {
+          images: [url],
+          title: label,
+        })
+      }
+    >
+      <View>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowSub}>#{number}</Text>
+        {uploadedAt && (
+          <Text style={styles.rowSub}>Uploaded: {formatDate(uploadedAt)}</Text>
+        )}
+        {expiry && <Text style={styles.rowSub}>Expires: {formatDate(expiry)}</Text>}
+      </View>
+      <View style={styles.docStatus(verified)}>
+        <Text style={styles.docStatusText}>
+          {verified ? "Verified" : "Pending"}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#999" />
+    </TouchableOpacity>
+  );
+};
+
+/* ====================== STYLES ====================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  scroll: { padding: 20, paddingBottom: 40 },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.background,
+    backgroundColor: "#f9f9f9",
   },
-  loadingText: { marginTop: 12, color: Colors.textSecondary, fontSize: 16 },
-  error: { color: Colors.danger, fontSize: 16 },
+  loadingText: { marginTop: 12, color: "#666", fontSize: 16 },
 
-  // Avatar
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  container: { padding: 20, backgroundColor: "#f9f9f9", paddingBottom: 50 },
+  refreshBadge: {
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "center",
-    marginBottom: 20,
+    backgroundColor: "#e6f7ff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 16,
+  },
+  refreshText: { fontSize: 12, color: Colors.primary, marginLeft: 6, fontWeight: "600" },
+
+  avatarContainer: { alignItems: "center", marginBottom: 16, position: "relative" },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: "#fff",
+    elevation: 5,
   },
   avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: Colors.surface,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#eee",
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "center",
-    marginBottom: 20,
   },
+  statusBadge: (status) => ({
+    position: "absolute",
+    bottom: 0,
+    right: -10,
+    backgroundColor:
+      status === "active"
+        ? Colors.success
+        : status === "pending"
+        ? Colors.warning
+        : Colors.danger,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#fff",
+  }),
+  statusText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
 
-  // Section
-  section: {
-    marginBottom: 25,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 15,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.textPrimary,
-    marginBottom: 12,
-  },
+  name: { fontSize: 24, fontWeight: "bold", textAlign: "center", color: "#222" },
+  phone: { fontSize: 16, color: "#666", textAlign: "center", marginBottom: 20 },
 
-  // Info row
-  infoRow: {
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  cardTitle: { fontSize: 18, fontWeight: "700", color: "#222", marginBottom: 12 },
+  cardContent: { gap: 12 },
+
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  rowLabel: { fontSize: 15, color: "#555" },
+  rowValue: { fontSize: 15, color: "#222", fontWeight: "600" },
+  rowSub: { fontSize: 12, color: "#999", marginTop: 2 },
+
+  docRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
   },
-  infoLabel: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-  },
-  infoSecondary: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  infoValue: {
-    fontSize: 15,
-    color: Colors.textPrimary,
-    textAlign: "right",
+  // docStatus: (verified) => ({
+  //   backgroundColor: verified ? "#d4edda" : "#fff3cd",
+  //   paddingHorizontal: 10,
+  //   paddingVertical: 4,
+  //   borderRadius: 20,
+  // }),
+  docStatusText: {
+    fontSize: 11,
+    color:  "#856404",
+    fontWeight: "600",
   },
 
-  // Actions
-  actionRow: {
+  actions: { flexDirection: "row", gap: 12, marginTop: 20 },
+  refreshBtn: {
+    flex: 1,
+    backgroundColor: Colors.primary,
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-  },
-  btn: {
-    flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    flex: 0.48,
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 12,
   },
-  refreshBtn: { backgroundColor: Colors.primary },
-  logoutBtn: { backgroundColor: Colors.danger },
-  btnText: { color: Colors.white, marginLeft: 8, fontWeight: "600" },
+  logoutBtn: {
+    flex: 1,
+    backgroundColor: Colors.danger,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 12,
+  },
+  btnText: { color: "#fff", marginLeft: 8, fontWeight: "600", fontSize: 15 },
 
-  // Footer
   footer: {
-    marginTop: 30,
     textAlign: "center",
-    color: Colors.textSecondary,
+    color: "#888",
     fontSize: 14,
+    marginTop: 30,
     fontStyle: "italic",
   },
 
-  // Loading overlay
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.8)",
+  // Modal (GIF only)
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 10,
   },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
+    width: "85%",
+    elevation: 20,
+  },
+  successGif: { width: 120, height: 120, marginBottom: 16 },
+  modalTitle: { fontSize: 24, fontWeight: "bold", color: Colors.success, marginBottom: 8 },
+  modalSubtitle: { fontSize: 16, color: "#555", textAlign: "center", marginBottom: 16 },
+  redirectText: { fontSize: 13, color: "#999" },
 });
+
+// Helper
+const formatDate = (d) => (d ? new Date(d).toLocaleDateString("en-IN") : "-");
