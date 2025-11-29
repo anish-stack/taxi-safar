@@ -51,7 +51,7 @@ const borderTaxPaySchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
-
+    
 
     reviewed_at: {
       type: Date,

@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { Colors } from "../../../constant/ui";
@@ -28,14 +27,34 @@ import { getFCMToken } from "../../../utils/NotificationService";
 import * as Application from "expo-application";
 import { useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { UniversalAlert } from "../../common/UniversalAlert";
 
-const QUICKEKYC_API_KEY = "a43f4a59-8f3a-45dc-bcbd-5d2a4c512e73"; // Replace with actual key
+const QUICKEKYC_API_KEY = "a43f4a59-8f3a-45dc-bcbd-5d2a4c512e73";
 const AADHAAR_DATA_KEY = "aadhaar_verified_data";
 const AADHAAR_EXPIRY_HOURS = 10;
 
 export default function RegisterScreen({ navigation }) {
   const route = useRoute();
   const { step: routeStep, driver } = route.params || {};
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    type: "success",
+    title: "",
+    message: "",
+    primaryButton: "OK",
+    onPrimaryPress: () => setAlertVisible(false),
+  });
+
+  const showAlert = (type, title, message, onClose = null) => {
+    setAlertConfig({
+      type,
+      title,
+      message,
+      primaryButton: "OK",
+      onPrimaryPress: onClose || (() => setAlertVisible(false)),
+    });
+    setAlertVisible(true);
+  };
 
   // === STEP & BASIC INFO ===
   const [currentStep, setCurrentStep] = useState(1);
@@ -166,14 +185,17 @@ export default function RegisterScreen({ navigation }) {
     if (isVerifying) return;
     setErrors({});
 
+    // Validate Aadhaar number
     if (!aadhaarNumber.match(/^\d{12}$/)) {
-      return setFieldError(
-        "aadhaarNumber",
+      return showAlert(
+        "error",
+        "Invalid Aadhaar",
         "Please enter a valid 12-digit Aadhaar number"
       );
     }
 
     setIsVerifying(true);
+
     try {
       const response = await axios.post(
         "https://api.quickekyc.com/api/v1/aadhaar-v2/generate-otp",
@@ -193,14 +215,28 @@ export default function RegisterScreen({ navigation }) {
         setShowOtpModal(true);
         setTimer(30);
         setOtp(["", "", "", "", "", ""]);
+
+        // Show alert and navigate to company details
+        showAlert(
+          "success",
+          "OTP Sent",
+          "OTP sent successfully! Please verify otp for next step.",
+          () => {
+            setAlertVisible(false);
+          }
+        );
       } else {
-        setFieldError("aadhaarNumber", response.data.message || "Failed to send OTP");
+        showAlert(
+          "error",
+          "OTP Failed",
+          response.data.message || "Failed to send OTP. Please try again."
+        );
       }
     } catch (error) {
       const msg =
         error.response?.data?.message ||
         "Failed to send OTP. Please try again.";
-      setFieldError("aadhaarNumber", msg);
+      showAlert("error", "OTP Error", msg);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsVerifying(false);
@@ -210,10 +246,14 @@ export default function RegisterScreen({ navigation }) {
   // === AADHAAR OTP VERIFICATION ===
   const handleVerifyAadhaarOtp = async () => {
     if (isVerifying) return;
+
     const otpValue = otp.join("");
-    if (otpValue.length !== 6) return setFieldError("otp", "Enter 6-digit OTP");
+    if (otpValue.length !== 6) {
+      return showAlert("error", "Invalid OTP", "Please enter a 6-digit OTP");
+    }
 
     setIsVerifying(true);
+
     try {
       const response = await axios.post(
         "https://api.quickekyc.com/api/v1/aadhaar-v2/submit-otp",
@@ -237,26 +277,35 @@ export default function RegisterScreen({ navigation }) {
         setGender(data.gender);
         setAddress(data.address);
 
-        // Save profile image if available
         if (data.profile_image) {
           setProfileImage(`data:image/jpeg;base64,${data.profile_image}`);
         }
 
-        // Save to AsyncStorage with base64 image
         await saveCachedAadhaarData(data, data.profile_image);
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setShowOtpModal(false);
         setIsAadhaarVerified(true);
         setErrors({});
-        Alert.alert("Success", "Aadhaar verified successfully!");
+
+        showAlert(
+          "success",
+          "Aadhaar Verified",
+          "Aadhaar verified successfully!"
+        );
       } else {
-        setFieldError("otp", response.data?.message || "Invalid OTP");
+        showAlert(
+          "error",
+          "OTP Verification Failed",
+          response.data?.message || "Invalid OTP"
+        );
       }
     } catch (error) {
-      setFieldError(
-        "otp",
-        error.response?.data?.message || "Verification failed"
+      showAlert(
+        "error",
+        "Verification Error",
+        error.response?.data?.message ||
+          "Failed to verify Aadhaar. Please try again."
       );
     } finally {
       setIsVerifying(false);
@@ -286,11 +335,24 @@ export default function RegisterScreen({ navigation }) {
         setAadhaarRequestId(response.data.request_id);
         setTimer(30);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showAlert(
+          "success",
+          "OTP Sent",
+          "Aadhaar OTP has been resent successfully!"
+        );
+      } else {
+        showAlert(
+          "error",
+          "Resend OTP Failed",
+          response.data?.message || "Failed to resend OTP"
+        );
       }
     } catch (error) {
-      setFieldError(
-        "resend",
-        error.response?.data?.message || "Failed to resend"
+      showAlert(
+        "error",
+        "Resend OTP Error",
+        error.response?.data?.message ||
+          "Failed to resend OTP. Please try again."
       );
     } finally {
       setIsResending(false);
@@ -298,128 +360,47 @@ export default function RegisterScreen({ navigation }) {
   };
 
   // === VERIFY DRIVING LICENSE ===
-const handleVerifyDL = async () => {
-  if (!licenseNumber.trim()) {
-    return setFieldError("licenseNumber", "Enter driving license number");
-  }
-  if (!dob) {
-    return setFieldError("licenseNumber", "Date of birth required");
-  }
-
-  // === 🔥 BYPASS MODE SWITCH ===
-  const BYPASS = false; // set false for real API
-
-  // === Default DL Data for Bypass ===
-  const Dldata = {
-    data: {
-      license_number: "XXXXXXXXXX29000",
-      state: "Maharashtra",
-      name: "ANISH",
-      permanent_address: "211, Matrix Park, Mumbai Pin-400001",
-      permanent_zip: "400001",
-      temporary_address: "211, Matrix Park, Mumbai Pin-400001",
-      temporary_zip: "211, Matrix Park, Mumbai Pin-400001",
-      citizenship: "",
-      ola_name: "RTO,Mumbai",
-      ola_code: "XXXX",
-      gender: "X",
-      father_or_husband_name: "ANTONMARIA DI NOLDO GHERARDINI",
-      dob: "1990-01-01",
-      doe: "2051-01-01",
-      transport_doe: "1900-01-01",
-      doi: "2005-01-01",
-      transport_doi: "1900-01-01",
-      profile_image: "",
-      has_image: true,
-      blood_group: "",
-      vehicle_classes: ["MCWG"],
-      less_info: false,
-      additional_check: [],
-      initial_doi: "2005-01-01"
-    },
-    status_code: 200,
-    message: null,
-    status: "success",
-    request_id: 100001
-  };
-
-  // ============================
-  //     🔥 BYPASS MODE LOGIC
-  // ============================
-  if (BYPASS) {
-    console.log("🚀 BYPASS MODE ENABLED — Using default DL data");
-
-    const dlInfo = Dldata.data;
-    setDlData(dlInfo);
-
-    // Name matching validation
-    const aadhaarName = name.toLowerCase().trim();
-    const dlName = dlInfo.name.toLowerCase().trim();
-
-    if (aadhaarName !== dlName) {
-      setFieldError(
-        "licenseNumber",
-        `Name mismatch: Aadhaar name "${name}" does not match DL name "${dlInfo.name}"`
+  const handleVerifyDL = async () => {
+    if (!licenseNumber.trim()) {
+      return showAlert(
+        "error",
+        "Invalid Input",
+        "Enter driving license number"
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
+    }
+    if (!dob) {
+      return showAlert("error", "Invalid Input", "Date of birth required");
     }
 
-    // Auto-fill address
-    if (dlInfo.permanent_address) {
-      setAddress((prev) => ({
-        ...prev,
-        dl_address: dlInfo.permanent_address,
-        dl_zip: dlInfo.permanent_zip,
-      }));
-    }
-
-    setIsDLVerified(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Success", "Driving License verified successfully! (BYPASS)");
-    clearFieldError("licenseNumber");
-    return;
-  }
-
-  // ============================
-  //  🔵 REAL API CALL (When BYPASS=false)
-  // ============================
-
-  setIsVerifying(true);
-
-  try {
-    const response = await axios.post(
-      "https://api.quickekyc.com/api/v1/driving-license/driving-license",
-      {
-        key: QUICKEKYC_API_KEY,
-        id_number: licenseNumber,
-        dob: dob.toISOString().split("T")[0],
+    const BYPASS = false; // toggle for bypass mode
+    const Dldata = {
+      data: {
+        license_number: "XXXXXXXXXX29000",
+        state: "Maharashtra",
+        name: "ANISH",
+        permanent_address: "211, Matrix Park, Mumbai Pin-400001",
+        permanent_zip: "400001",
+        profile_image: "",
       },
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 20000,
-      }
-    );
+      status: "success",
+    };
 
-    if (response.data.status === "success") {
-      const dlInfo = response.data.data;
+    if (BYPASS) {
+      const dlInfo = Dldata.data;
       setDlData(dlInfo);
 
-      // Name match validate
       const aadhaarName = name.toLowerCase().trim();
       const dlName = dlInfo.name.toLowerCase().trim();
 
       if (aadhaarName !== dlName) {
-        setFieldError(
-          "licenseNumber",
-          `Name mismatch: Aadhaar name "${name}" does not match DL name "${dlInfo.name}"`
-        );
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setIsVerifying(false);
-        return;
+        return showAlert(
+          "error",
+          "Name Mismatch",
+          `Aadhaar name "${name}" does not match DL name "${dlInfo.name}"`
+        );
       }
 
-      // Auto-fill address
       if (dlInfo.permanent_address) {
         setAddress((prev) => ({
           ...prev,
@@ -430,62 +411,101 @@ const handleVerifyDL = async () => {
 
       setIsDLVerified(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Success", "Driving License verified successfully!");
-      clearFieldError("licenseNumber");
-    } else {
-      setFieldError("licenseNumber", response.data?.message || "Verification failed");
+      return showAlert(
+        "success",
+        "DL Verified",
+        "Driving License verified successfully! (BYPASS)"
+      );
     }
-  } catch (error) {
-    const msg =
-      error.response?.data?.message ||
-      "Failed to verify driving license. Please try again.";
-    setFieldError("licenseNumber", msg);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  } finally {
-    setIsVerifying(false);
-  }
-};
 
+    setIsVerifying(true);
+
+    try {
+      const response = await axios.post(
+        "https://api.quickekyc.com/api/v1/driving-license/driving-license",
+        {
+          key: QUICKEKYC_API_KEY,
+          id_number: licenseNumber,
+          dob: dob.toISOString().split("T")[0],
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 20000,
+        }
+      );
+
+      if (response.data.status === "success") {
+        const dlInfo = response.data.data;
+        setDlData(dlInfo);
+
+        const aadhaarName = name.toLowerCase().trim();
+        const dlName = dlInfo.name.toLowerCase().trim();
+
+        if (aadhaarName !== dlName) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return showAlert(
+            "error",
+            "Name Mismatch",
+            `Aadhaar name "${name}" does not match DL name "${dlInfo.name}"`
+          );
+        }
+
+        if (dlInfo.permanent_address) {
+          setAddress((prev) => ({
+            ...prev,
+            dl_address: dlInfo.permanent_address,
+            dl_zip: dlInfo.permanent_zip,
+          }));
+        }
+
+        setIsDLVerified(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showAlert(
+          "success",
+          "DL Verified",
+          "Driving License verified successfully!"
+        );
+      } else {
+        showAlert(
+          "error",
+          "Verification Failed",
+          response.data?.message || "Failed to verify Driving License"
+        );
+      }
+    } catch (error) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showAlert(
+        "error",
+        "Verification Error",
+        error.response?.data?.message ||
+          "Failed to verify Driving License. Please try again."
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   // === SELFIE - CAMERA FOR PROFILE ===
   const changeProfilePicture = async () => {
-    Alert.alert(
-      "Change Profile Picture",
-      "Choose source",
-      [
-        {
-          text: "Camera",
-          onPress: async () => {
-            if (!permission?.granted) {
-              const { granted } = await requestPermission();
-              if (!granted) {
-                Alert.alert("Permission Required", "Camera access is needed.");
-                return;
-              }
+    Alert.alert("Change Profile Picture", "Choose source", [
+      {
+        text: "Camera",
+        onPress: async () => {
+          if (!permission?.granted) {
+            const { granted } = await requestPermission();
+            if (!granted) {
+              Alert.alert("Permission Required", "Camera access is needed.");
+              return;
             }
-            Haptics.selectionAsync();
-            setCameraMode("selfie");
-            setCameraOpen(true);
-          },
+          }
+          Haptics.selectionAsync();
+          setCameraMode("selfie");
+          setCameraOpen(true);
         },
-        {
-          text: "Gallery",
-          onPress: async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              quality: 0.8,
-              allowsEditing: true,
-              aspect: [1, 1],
-            });
-            if (!result.canceled) {
-              setProfileImage(result.assets[0].uri);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+      },
+
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
   // === DOCUMENT HANDLERS ===
   const openDocCamera = async (mode) => {
@@ -550,15 +570,16 @@ const handleVerifyDL = async () => {
 
   const pickDocument = (type) => {
     Alert.alert(
-      `Upload ${type === "aadhaar_front"
-        ? "Aadhaar Front"
-        : type === "aadhaar_back"
+      `Upload ${
+        type === "aadhaar_front"
+          ? "Aadhaar Front"
+          : type === "aadhaar_back"
           ? "Aadhaar Back"
           : type === "pan"
-            ? "PAN"
-            : type === "license_front"
-              ? "License Front"
-              : "License Back"
+          ? "PAN"
+          : type === "license_front"
+          ? "License Front"
+          : "License Back"
       }`,
       "Choose source",
       [
@@ -598,13 +619,20 @@ const handleVerifyDL = async () => {
     setErrors({});
 
     if (!isAadhaarVerified) {
-      return setFieldError("submit", "Please verify Aadhaar first");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert(
+        "error",
+        "Aadhaar Verification",
+        "Please verify Aadhaar first"
+      );
     }
     if (!aadhaarFrontDoc) {
-      return setFieldError("aadhaarFront", "Upload Aadhaar front side");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert("error", "Upload Required", "Upload Aadhaar front side");
     }
     if (!aadhaarBackDoc) {
-      return setFieldError("aadhaarBack", "Upload Aadhaar back side");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert("error", "Upload Required", "Upload Aadhaar back side");
     }
 
     setCurrentStep(2);
@@ -613,13 +641,25 @@ const handleVerifyDL = async () => {
   // === FINAL SUBMIT ===
   const handleStep2Submit = async () => {
     if (!isDLVerified) {
-      return setFieldError("submit", "Verify Driving License first");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert(
+        "error",
+        "DL Verification",
+        "Verify Driving License first"
+      );
     }
-    if (!panDoc) return setFieldError("pan", "Upload PAN");
-    if (!licenseFrontDoc)
-      return setFieldError("licenseFront", "Upload License Front");
-    if (!licenseBackDoc)
-      return setFieldError("licenseBack", "Upload License Back");
+    if (!panDoc) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert("error", "Upload Required", "Upload PAN");
+    }
+    if (!licenseFrontDoc) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert("error", "Upload Required", "Upload License Front");
+    }
+    if (!licenseBackDoc) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return showAlert("error", "Upload Required", "Upload License Back");
+    }
 
     setIsSubmitting(true);
     try {
@@ -699,20 +739,16 @@ const handleVerifyDL = async () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const driverId = response?.data?.data?.driver_id;
 
-      Alert.alert(
-        "Success",
+      showAlert(
+        "success",
+        "Registration Completed",
         response.data.message || "Registration completed successfully!",
-        [
-          {
-            text: "OK",
-            onPress: () => navigation.navigate("addVehcile", { driverId }),
-          },
-        ]
+        () => navigation.navigate("addVehcile", { driverId })
       );
     } catch (error) {
       const msg = error.response?.data?.message || "Registration failed";
-      setFieldError("submit", msg);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showAlert("error", "Submission Failed", msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -805,8 +841,8 @@ const handleVerifyDL = async () => {
               {isResending
                 ? "Sending..."
                 : timer > 0
-                  ? `Resend in 00:${timer.toString().padStart(2, "0")}`
-                  : "Resend OTP"}
+                ? `Resend in 00:${timer.toString().padStart(2, "0")}`
+                : "Resend OTP"}
             </Text>
           </TouchableOpacity>
           {renderError("resend")}
@@ -836,14 +872,15 @@ const handleVerifyDL = async () => {
             <Text style={styles.cameraInstruction}>
               {cameraMode === "selfie"
                 ? "Position your face in the frame"
-                : `Capture ${cameraMode === "aadhaar_front"
-                  ? "Aadhaar Front"
-                  : cameraMode === "aadhaar_back"
-                    ? "Aadhaar Back"
-                    : cameraMode === "license_front"
+                : `Capture ${
+                    cameraMode === "aadhaar_front"
+                      ? "Aadhaar Front"
+                      : cameraMode === "aadhaar_back"
+                      ? "Aadhaar Back"
+                      : cameraMode === "license_front"
                       ? "License Front"
                       : "License Back"
-                }`}
+                  }`}
             </Text>
             <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
               <View style={styles.captureInner} />
@@ -870,7 +907,9 @@ const handleVerifyDL = async () => {
           {currentStep === 1 ? (
             <>
               <Text style={styles.title}>Verify Aadhaar</Text>
-              <Text style={styles.subtitle}>Enter your Aadhaar number to begin</Text>
+              <Text style={styles.subtitle}>
+                Enter your Aadhaar number to begin
+              </Text>
 
               {profileImage && (
                 <TouchableOpacity
@@ -995,7 +1034,9 @@ const handleVerifyDL = async () => {
                               size={24}
                               color={Colors.textSecondary}
                             />
-                            <Text style={styles.uploadTextSmall}>Front Side</Text>
+                            <Text style={styles.uploadTextSmall}>
+                              Front Side
+                            </Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -1016,7 +1057,9 @@ const handleVerifyDL = async () => {
                               size={24}
                               color={Colors.textSecondary}
                             />
-                            <Text style={styles.uploadTextSmall}>Back Side</Text>
+                            <Text style={styles.uploadTextSmall}>
+                              Back Side
+                            </Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -1150,7 +1193,9 @@ const handleVerifyDL = async () => {
                               size={24}
                               color={Colors.textSecondary}
                             />
-                            <Text style={styles.uploadTextSmall}>Front Side</Text>
+                            <Text style={styles.uploadTextSmall}>
+                              Front Side
+                            </Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -1171,7 +1216,9 @@ const handleVerifyDL = async () => {
                               size={24}
                               color={Colors.textSecondary}
                             />
-                            <Text style={styles.uploadTextSmall}>Back Side</Text>
+                            <Text style={styles.uploadTextSmall}>
+                              Back Side
+                            </Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -1206,6 +1253,15 @@ const handleVerifyDL = async () => {
 
         {renderOtpModal()}
       </KeyboardAvoidingView>
+      <UniversalAlert
+        visible={alertVisible}
+        type={alertConfig.type}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        primaryButton={alertConfig.primaryButton}
+        onPrimaryPress={alertConfig.onPrimaryPress}
+        onClose={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }

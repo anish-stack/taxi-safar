@@ -70,7 +70,7 @@ export const getCurrentLocation = async () => {
       accuracy: location.coords.accuracy,
     };
 
-    console.log("📍 Fetched Location:", coords);
+    // console.log("📍 Fetched Location:", coords);
     return coords;
 
   } catch (error) {

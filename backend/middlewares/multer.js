@@ -1,74 +1,109 @@
-// upload.js
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
+// middleware/upload.js
 
-// Upload directory
-const UPLOAD_DIR = path.join(__dirname, '../uploads');
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
 
-// Ensure the uploads folder exists
+// Define upload directory
+const UPLOAD_DIR = path.join(__dirname, "../uploads");
+
+// Create uploads folder if it doesn't exist
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  console.log(`📁 Created upload directory at: ${UPLOAD_DIR}`);
+  console.log(`Created upload directory: ${UPLOAD_DIR}`);
 }
 
-// Multer storage configuration
+// Multer disk storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    try {
-      cb(null, UPLOAD_DIR);
-    } catch (error) {
-      console.error('❌ Error setting destination path:', error);
-      cb(error);
-    }
+    cb(null, UPLOAD_DIR);
   },
-
   filename: (req, file, cb) => {
-    try {
-      const uniqueSuffix = Date.now() + '-' + file.originalname.replace(/\s+/g, '_');
-      // console.log(`✅ Saving file as: ${uniqueSuffix}`);
-      cb(null, uniqueSuffix);
-    } catch (error) {
-      console.error('❌ Error generating filename:', error);
-      cb(error);
-    }
+    // Clean filename + add timestamp to avoid conflicts
+    const cleanName = file.originalname.replace(/\s+/g, "_");
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${cleanName}`;
+    cb(null, uniqueName);
   },
 });
 
-// Initialize Multer
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max file size
-  },
-  fileFilter: (req, file, cb) => {
-    const allowed = [
-      'image/jpeg',
-      'image/png',
-      'application/pdf',
-      'image/jpg',
-    ];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('❌ Invalid file type. Only JPG, PNG, and PDF are allowed.'));
-    }
-  },
-});
+// File type filter (only images + PDF)
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
 
-// Delete file helper
-const deleteFile = (filename) => {
-  try {
-    const filePath = path.join(UPLOAD_DIR, filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`🗑️ Deleted file: ${filename}`);
-    } else {
-      // console.warn(`⚠️ File not found for deletion: ${filename}`);
-    }
-  } catch (error) {
-    console.error('❌ Error deleting file:', error);
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(
+      new multer.MulterError(
+        "LIMIT_UNEXPECTED_FILE",
+        "Invalid file type. Only JPG, PNG, and PDF are allowed."
+      ),
+      false
+    );
   }
 };
 
-module.exports = { upload, deleteFile };
+// Main multer instance (used for general uploads)
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter,
+});
+
+// Special middleware for Company form — THIS FIXES "Unexpected field"
+const companyUpload = upload.fields([
+  { name: "logo", maxCount: 1 },
+  { name: "signature", maxCount: 1 },
+]);
+
+// Optional: General single image upload (e.g. profile photo)
+const singleImage = upload.single("image");
+
+// Helper: Delete file from disk
+const deleteFile = (filename) => {
+  if (!filename) return;
+
+  const filePath = path.join(UPLOAD_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`Deleted file: ${filename}`);
+  }
+};
+
+// Optional: Better error handler for Multer errors
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum size is 10MB.",
+      });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+      });
+    }
+  }
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || "File upload error",
+    });
+  }
+  next();
+};
+}
+
+// Export everything you need
+module.exports = {
+  upload,              // ← for general use (e.g. upload.array(), upload.single())
+  companyUpload,       // ← USE THIS for add-company & update-company routes
+  singleImage,         // ← optional: for profile photo, etc.
+  deleteFile,
+  handleMulterError,   // ← optional: use in error middleware if you want
+}

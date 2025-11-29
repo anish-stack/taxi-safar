@@ -276,6 +276,11 @@ export default function Profile() {
             icon={<Ionicons name="settings-outline" size={22} color="black" />}
             label="App Settings"
           />
+            <MenuItem
+              onPress={() => navigation.navigate("job-posted-u")}
+            icon={<Ionicons name="bag" size={22} color="black" />}
+            label="Jobs Posted You"
+          />
         </Section>
 
         {/* Registration Section */}
@@ -286,6 +291,13 @@ export default function Profile() {
             }
             label="Document Registration"
             onPress={() => openModal("document")}
+          />
+             <MenuItem
+            icon={
+              <Ionicons name="document-text-outline" size={22} color="black" />
+            }
+            label="Company Details"
+            onPress={() => navigation.navigate("company-details")}
           />
           <MenuItem
             icon={<Ionicons name="car-outline" size={22} color="black" />}

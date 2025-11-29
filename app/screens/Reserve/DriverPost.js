@@ -1,18 +1,33 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import mini from '../../assets/mini.png'
-import sedan from '../../assets/sedan.jpeg'
-import suv from '../../assets/suv.png'
+import mini from '../../assets/mini.png';
+import sedan from '../../assets/sedan.jpeg';
+import suv from '../../assets/suv.png';
 import { useNavigation } from "@react-navigation/native";
 
+// Status badge configuration
+const STATUS_CONFIG = {
+  pending: { label: "Pending", color: "#F59E0B", icon: "time-outline" },
+  "driver-assigned": { label: "Driver Assigned", color: "#3B82F6", icon: "car-outline" },
+  "driver-accepted": { label: "Accepted", color: "#10B981", icon: "checkmark-circle" },
+  "driver-rejected": { label: "Rejected", color: "#EF4444", icon: "close-circle" },
+  completed: { label: "Completed", color: "#10B981", icon: "checkmark-done" },
+  "cancelled-by-customer": { label: "Cancelled (Customer)", color: "#EF4444", icon: "person-outline" },
+  "cancelled-by-driver": { label: "Cancelled (Driver)", color: "#EF4444", icon: "car-outline" },
+  "cancelled-by-admin": { label: "Cancelled (Admin)", color: "#6B7280", icon: "shield-outline" },
+  "no-show": { label: "No Show", color: "#DC2626", icon: "walk-outline" },
+  failed: { label: "Failed", color: "#991B1B", icon: "alert-circle" },
+};
+
 export default function DriverPost({
-    _id,
+  _id,
   vehicleName = "Maruti WagonR",
   assignedStatus = "Not Assigned",
   assignedColor = "#d4a017",
   vehicleType = "mini",
   totalAmount = "₹8,000",
+  status = "pending", // your new status enum
   commission = "₹2,000",
   driverEarning = "₹6,000",
   pickup = "220 Yonge St, Toronto, ON M5B 2H1, Delhi",
@@ -20,31 +35,33 @@ export default function DriverPost({
   tripType = "One way Trip - 60 km",
   date = "08 Mar, 2025",
   time = "07:00 PM",
-
   onChatPress = () => {},
-}) 
-{
-    const navigation = useNavigation()
+}) {
+  const navigation = useNavigation();
 
-const vehicleImage =
-  vehicleType === "mini"
-    ? mini
-    : vehicleType === "sedan"
-    ? sedan
-    : vehicleType === "suv"
-    ? suv
-    : mini;
+  const vehicleImage =
+    vehicleType === "mini"
+      ? mini
+      : vehicleType === "sedan"
+      ? sedan
+      : vehicleType === "suv"
+      ? suv
+      : mini;
+
+  const statusInfo = STATUS_CONFIG[status] || {
+    label: status?.replace(/-/g, " ")?.toUpperCase() || "UNKNOWN",
+    color: "#6B7280",
+    icon: "help-outline",
+  };
 
   return (
     <View style={styles.card}>
       {/* TOP ROW */}
+   
       <View style={styles.topRow}>
         <View style={styles.row}>
           <View style={styles.vehicleIconBox}>
-            <Image
-              source={vehicleImage} // Replace with your car icon
-              style={styles.vehicleIcon}
-            />
+            <Image source={vehicleImage} style={styles.vehicleIcon} />
           </View>
           <View>
             <Text style={styles.vehicleName}>{vehicleName}</Text>
@@ -57,6 +74,16 @@ const vehicleImage =
         <View>
           <Text style={styles.date}>{date}</Text>
           <Text style={styles.time}>{time}</Text>
+        </View>
+      </View>
+
+      {/* NEW: Status Badge */}
+      <View style={styles.statusWrapper}>
+        <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + "22" }]}>
+          <Icon name={statusInfo.icon} size={15} color={statusInfo.color} />
+          <Text style={[styles.statusText, { color: statusInfo.color }]}>
+            {statusInfo.label}
+          </Text>
         </View>
       </View>
 
@@ -96,9 +123,14 @@ const vehicleImage =
       </View>
 
       {/* CHAT BUTTON */}
-      <TouchableOpacity style={styles.chatBtn} onPress={()=> navigation.navigate("DriverPostDetails",{rideId:_id})}>
+      <TouchableOpacity
+        style={styles.chatBtn}
+        onPress={() => navigation.navigate("DriverPostDetails", { rideId: _id })}
+      >
         <Icon name="chatbubble-ellipses" size={20} color="#fff" />
-        <Text style={styles.chatBtnText}>Chat with Drivers</Text>
+        <Text style={styles.chatBtnText}>
+          {assignedStatus === "driver-assigned" ? "View Details" : "Chat with Drivers"}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -115,7 +147,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     marginHorizontal: 6,
     marginVertical: 0,
-   
   },
 
   row: { flexDirection: "row", alignItems: "center" },
@@ -124,7 +155,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 18,
+    marginBottom: 12,
   },
 
   vehicleIconBox: {
@@ -151,7 +182,7 @@ const styles = StyleSheet.create({
 
   assignText: {
     marginTop: 4,
-    textTransform:"capitalize",
+    textTransform: "capitalize",
     fontSize: 14,
     fontWeight: "500",
   },
@@ -167,6 +198,26 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111",
     textAlign: "right",
+  },
+
+  // ONLY NEW STYLES: Status Badge
+  statusWrapper: {
+    marginBottom: 14,
+    alignItems: "flex-start",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  statusText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
 
   amountRow: {
@@ -216,7 +267,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
     color: "#fff",
     paddingVertical: 6,
-    textTransform:"capitalize",
+    textTransform: "capitalize",
     paddingHorizontal: 54,
     borderRadius: 14,
     fontSize: 13,

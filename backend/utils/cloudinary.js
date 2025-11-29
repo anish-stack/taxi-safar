@@ -11,61 +11,54 @@ cloudinary.config({
 
 const MAX_FILE_SIZE = 50000000; 
 
-const uploadSingleImage = async (fileInput,folder="image") => {
+const uploadSingleImage = async (fileInput, folder = "images") => {
   try {
+    // ---------- CASE 1: Buffer (PDF buffer from puppeteer, or image buffer) ----------
     if (Buffer.isBuffer(fileInput)) {
-      // Validate file size for Buffer input
       if (fileInput.length > MAX_FILE_SIZE) {
-        throw new Error(`File size too large. Got ${fileInput.length} bytes. Maximum allowed is ${MAX_FILE_SIZE} bytes.`);
+        throw new Error(`File too large: ${fileInput.length} bytes`);
       }
-      // Use upload_stream for Buffer input
+
       return await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
-          { folder:folder, resource_type: "auto" }, // auto detects image/video type
+          {
+            folder,
+            resource_type: "raw",           // "raw" for PDF, "image" also works but raw is safer
+            format: folder.includes("quotation") ? "pdf" : undefined,
+          },
           (error, result) => {
-            if (error) {
-              console.error("Error during image upload:", error.message);
-              return reject(new Error("Failed to upload Image"));
-            }
+            if (error) return reject(error);
             resolve({ image: result.secure_url, public_id: result.public_id });
           }
         );
+
         streamifier.createReadStream(fileInput).pipe(uploadStream);
       });
     }
 
-    // Otherwise, assume fileInput is a string path
+    // ---------- CASE 2: Local file path (string) ----------
     if (typeof fileInput === "string") {
-      // Check that the file exists
-      await fs.access(fileInput);
+      await fs.access(fileInput); // throws if file does not exist
 
-      // Validate file size for file input
       const stats = await fs.stat(fileInput);
       if (stats.size > MAX_FILE_SIZE) {
-        throw new Error(`File size too large. Got ${stats.size} bytes. Maximum allowed is ${MAX_FILE_SIZE} bytes.`);
+        throw new Error(`File too large: ${stats.size} bytes`);
       }
 
       const result = await cloudinary.uploader.upload(fileInput, {
-        folder: "images",
-        resource_type: "auto", // Allows both images and videos
+        folder,
+        resource_type: "auto",
       });
 
-      // Optionally delete the local file after upload
-      try {
-        await fs.unlink(fileInput);
-        console.log("Local file deleted:", fileInput);
-      } catch (unlinkError) {
-        console.error("Error deleting local file:", unlinkError.message);
-      }
-
+      // delete local file after successful upload (optional)
+      await fs.unlink(fileInput).catch(() => {});
       return { image: result.secure_url, public_id: result.public_id };
     }
 
-    // If it's neither a Buffer nor a string, throw an error
-    throw new Error("Invalid file input type. Expected a file path string or Buffer.");
-  } catch (error) {
-    console.error("Error during image upload:", error.message);
-    throw new Error("Failed to upload Image");
+    throw new Error("Invalid file input. Must be Buffer or file path string.");
+  } catch (err) {
+    console.error("Cloudinary upload error:", err.message);
+    throw new Error("Failed to upload file to Cloudinary");
   }
 };
 

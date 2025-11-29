@@ -3,7 +3,11 @@ const TaxiSafariRide = require("../../models/rides/taxi_safar_ride");
 const Driver = require("../../models/driver/driver.model");
 const sendNotification = require("../../utils/sendNotification");
 const mongoose = require("mongoose");
-const Wallet = require("../../models/driver/Wallet")
+const Wallet = require("../../models/driver/Wallet");
+const { calculateDistance } = require("../../utils/Queues");
+const RidePost =require("../../models/rides_post/Rides_Post")
+const { publisher } = require("../../config/redis");
+const Transaction = require("../../models/driver/Transaction");
 // Create New Ride
 exports.createNewRide = async (req, res) => {
   try {
@@ -640,7 +644,6 @@ exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
 
 exports.FetchNearByTaxiSafarRides = async (req, res) => {
   try {
-    console.log("taxi safar");
     const driverId = req.user?._id;
 
     // 1. Authentication Check
@@ -712,7 +715,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
     const nearbyRides = await TaxiSafariRide.find({
       trip_status: "searching",
       vehicle_type: vehicleType,
-      // Exclude rides possibly created by this driver (optional safety)
+      scheduled_time: { $gte: new Date() },
       created_by: { $ne: driverId },
       pickup_location: {
         $near: {
@@ -798,7 +801,7 @@ exports.acceptRide = async (req, res) => {
   }
 
   const session = await mongoose.startSession();
-  
+
   try {
     await session.startTransaction();
 
@@ -822,7 +825,8 @@ exports.acceptRide = async (req, res) => {
       throw {
         status: 409,
         success: false,
-        message: "This ride has already been accepted by another driver. Please check for other available rides.",
+        message:
+          "This ride has already been accepted by another driver. Please check for other available rides.",
       };
     }
 
@@ -845,25 +849,31 @@ exports.acceptRide = async (req, res) => {
 
     // Auto-create wallet if missing
     if (!driver.wallet) {
-      const newWallet = await Wallet.create([{
-        driver: driver._id,
-        balance: 0,
-        lockAmounts: [],
-      }], { session });
+      const newWallet = await Wallet.create(
+        [
+          {
+            driver: driver._id,
+            balance: 0,
+            lockAmounts: [],
+          },
+        ],
+        { session }
+      );
 
       driver.wallet = newWallet[0]._id;
       await driver.save({ session });
-      
+
       throw {
         status: 403,
         success: false,
-        message: "Your wallet is empty. Please add money to your wallet before accepting rides.",
+        message:
+          "Your wallet is empty. Please add money to your wallet before accepting rides.",
         action: "add_money",
       };
     }
 
     const wallet = await Wallet.findById(driver.wallet).session(session);
-    
+
     if (!wallet) {
       throw {
         status: 404,
@@ -886,13 +896,17 @@ exports.acceptRide = async (req, res) => {
     if (availableBalance < requiredLockAmount) {
       // Send notification (non-blocking)
       if (driver.fcm_token) {
-        await sendNotification.sendNotification(
-          driver.fcm_token,
-          "Insufficient Balance",
-          `Add ₹${requiredLockAmount - availableBalance} more to accept this ride`,
-          { type: "low_balance" },
-          "low_balance_alert"
-        ).catch(err => console.error("FCM Error:", err));
+        await sendNotification
+          .sendNotification(
+            driver.fcm_token,
+            "Insufficient Balance",
+            `Add ₹${
+              requiredLockAmount - availableBalance
+            } more to accept this ride`,
+            { type: "low_balance" },
+            "low_balance_alert"
+          )
+          .catch((err) => console.error("FCM Error:", err));
       }
 
       throw {
@@ -931,13 +945,15 @@ exports.acceptRide = async (req, res) => {
 
     // Success notification (after commit, non-blocking)
     if (driver.fcm_token) {
-     await sendNotification.sendNotification(
-        driver.fcm_token,
-        "Ride Accepted Successfully! 🎉",
-        `Trip of ₹${rideAmount} accepted. ₹${requiredLockAmount} locked from wallet.`,
-        { rideId, type: "ride_accepted" },
-        "ride_accepted"
-      ).catch(err => console.error("FCM Error:", err));
+      await sendNotification
+        .sendNotification(
+          driver.fcm_token,
+          "Ride Accepted Successfully! 🎉",
+          `Trip of ₹${rideAmount} accepted. ₹${requiredLockAmount} locked from wallet.`,
+          { rideId, type: "ride_accepted" },
+          "ride_accepted"
+        )
+        .catch((err) => console.error("FCM Error:", err));
     }
 
     return res.status(200).json({
@@ -951,7 +967,6 @@ exports.acceptRide = async (req, res) => {
         pickupLocation: ride.pickup_location,
       },
     });
-
   } catch (error) {
     // Abort transaction only if it's still in progress
     if (session.inTransaction()) {
@@ -966,7 +981,7 @@ exports.acceptRide = async (req, res) => {
     }
 
     // Handle specific MongoDB errors
-    if (error.name === 'MongoError' || error.name === 'MongoServerError') {
+    if (error.name === "MongoError" || error.name === "MongoServerError") {
       return res.status(500).json({
         success: false,
         message: "Database error occurred. Please try again in a moment.",
@@ -976,9 +991,484 @@ exports.acceptRide = async (req, res) => {
     // Generic error
     return res.status(500).json({
       success: false,
-      message: "Unable to accept ride at this moment. Please try again or contact support if the issue persists.",
+      message:
+        "Unable to accept ride at this moment. Please try again or contact support if the issue persists.",
     });
   } finally {
     await session.endSession();
+  }
+};
+
+exports.markReachedAtPickupLocation = async (req, res) => {
+  try {
+    const driverId = req.user?._id;
+    const { rideId } = req.params;
+
+    if (!driverId || !rideId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID and Ride ID required",
+      });
+    }
+
+    // Fetch ride pickup location only
+    const rideData = await TaxiSafariRide.findById(rideId)
+      .select("pickup_location driver_id trip_status customer_id")
+      .lean();
+
+    if (!rideData || String(rideData.driver_id) !== String(driverId)) {
+      return res.status(404).json({
+        success: false,
+        message: "Ride not found",
+      });
+    }
+
+    // Extract pickup coordinates
+    const [pickupLng, pickupLat] = rideData.pickup_location.coordinates;
+
+    // ---- STEP 1: Fetch driver live location from Redis ----
+    const redisKey = `driver:${driverId}`;
+    const redisLocation = await publisher.hGetAll(redisKey);
+
+    let DriverDb;
+    let driverLat, driverLng;
+
+    if (redisLocation && redisLocation.lat && redisLocation.lng) {
+      driverLat = parseFloat(redisLocation.lat);
+      driverLng = parseFloat(redisLocation.lng);
+    } else {
+      // ---- STEP 2: Fallback to MongoDB driver last known location ----
+      DriverDb = await Driver.findById(driverId)
+        .select("current_location fcm_token")
+        .lean();
+
+      if (!DriverDb || !DriverDb.current_location?.coordinates) {
+        return res.status(400).json({
+          success: false,
+          message: "Driver location unavailable",
+        });
+      }
+
+      const [lng, lat] = DriverDb.current_location.coordinates;
+      driverLat = lat;
+      driverLng = lng;
+    }
+
+    // ---- STEP 3: Calculate distance between Driver → Pickup ----
+    const distance = calculateDistance(
+      driverLat,
+      driverLng,
+      pickupLat,
+      pickupLng
+    );
+
+    if (distance > 200) {
+      return res.status(400).json({
+        success: false,
+        message: `Driver must be within 200m of pickup. Current distance: ${Math.round(
+          distance
+        )} meters`,
+      });
+    }
+
+    // ---- STEP 4: Atomic Update ----
+    const updatedRide = await TaxiSafariRide.findOneAndUpdate(
+      {
+        _id: rideId,
+        driver_id: driverId,
+        trip_status: { $ne: "driver_arrived" },
+      },
+      {
+        $set: {
+          trip_status: "driver_arrived",
+          driverReachedAt: new Date(),
+        },
+      },
+      {
+        new: true,
+        projection: "customer_id trip_status pickup_address",
+      }
+    ).lean();
+
+    if (!updatedRide) {
+      return res.status(200).json({
+        success: true,
+        message: "Already marked as reached",
+      });
+    }
+
+    // ---- STEP 5: Async Notification ----
+    (async () => {
+      try {
+        const token = DriverDb.fcm_token;
+        await sendNotification.sendNotification(
+          token,
+          "You are Arrived at pickup location",
+          "Ask Otp to Customer and Start Your Ride.",
+          {},
+          "ride_updates"
+        );
+      } catch (err) {
+        console.error("Notification Error:", err);
+      }
+    })();
+
+    return res.status(200).json({
+      success: true,
+      message: "Driver marked as arrived successfully",
+      data: updatedRide,
+    });
+  } catch (error) {
+    console.error("markReachedAtPickupLocation Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to mark reached",
+    });
+  }
+};
+
+exports.verifyRideOtp = async (req, res) => {
+  try {
+    const driverId = req.user?._id;
+    const { rideId } = req.params;
+    const { otp } = req.body;
+
+    if (!driverId || !rideId || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID, Ride ID, and OTP are required",
+      });
+    }
+
+    // 🔍 1. ATOMIC OTP verify — Only first request succeeds
+    const ride = await TaxiSafariRide.findOneAndUpdate(
+      {
+        _id: rideId,
+        driver_id: driverId,
+        trip_status: "driver_arrived", // OTP only valid at this stage
+        ride_otp: otp, // OTP must match
+        otp_verified: false, // Ensure OTP isn't already used
+      },
+      {
+        $set: {
+          otp_verified: true,
+          otp_verified_at: new Date(),
+          trip_status: "trip_started",
+          trip_started_at: new Date(),
+        },
+      },
+      { new: true }
+    ).lean();
+
+    // ❌ OTP incorrect OR already used
+    if (!ride) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP or OTP already verified",
+      });
+    }
+
+    // 🔔 2. Send notification to driver (non-blocking)
+    (async () => {
+      try {
+        const DriverDb = await Driver.findById(driverId).select("fcm_token");
+        if (DriverDb?.fcm_token) {
+          await sendNotification.sendNotification(
+            DriverDb.fcm_token,
+            "OTP Verified",
+            "OTP verified successfully. Ride has been started.",
+            { rideId },
+            "ride_updates"
+          );
+        }
+      } catch (err) {
+        console.error("Notification Error:", err);
+      }
+    })();
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified and ride started",
+      data: ride,
+    });
+  } catch (error) {
+    console.error("verifyRideOtp Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to verify OTP",
+    });
+  }
+};
+
+exports.completeRide = async (req, res) => {
+  const { rideId } = req.body;
+  const driverId = req.user?._id;
+
+  // Start MongoDB Session for Transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // 1. Validate Auth & Input
+    if (!driverId) {
+      await session.abortTransaction();
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required.",
+      });
+    }
+
+    if (!rideId) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "rideId is required.",
+      });
+    }
+
+    // 2. Fetch Ride with Session
+    const ride = await TaxiSafariRide.findById(rideId).session(session);
+    if (!ride) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        message: "Ride not found.",
+      });
+    }
+
+    if (ride.driver_id.toString() !== driverId.toString()) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized: This ride does not belong to you.",
+      });
+    }
+
+    if (ride.trip_status !== "trip_started") {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: `Ride is already ${ride.trip_status}. Cannot complete again.`,
+      });
+    }
+
+    // 3. Fetch Driver Location
+    const driver = await Driver.findById(driverId)
+      .select("current_location")
+      .session(session);
+
+    if (!driver?.current_location?.coordinates?.length) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Driver's current location is missing.",
+      });
+    }
+
+    const driverLat = driver.current_location.coordinates[1];
+    const driverLng = driver.current_location.coordinates[0];
+    const dropLat = ride.destination_location.coordinates[1];
+    const dropLng = ride.destination_location.coordinates[0];
+
+    // 4. Haversine Distance Calculation
+    const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const toRad = (deg) => (deg * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLon / 2) ** 2;
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    const distanceDiffKm = calculateDistanceKm(dropLat, dropLng, driverLat, driverLng);
+    let extraKm = 0;
+    let extraFare = 0;
+
+    if (distanceDiffKm > 1) {
+      extraKm = Math.round(distanceDiffKm * 100) / 100;
+      const ratePerKm = ride.extra_km_rate || 12;
+      extraFare = Math.round(extraKm * ratePerKm);
+    }
+
+    const originalAmount = ride.original_amount || 0;
+    const revisedAmount = originalAmount + extraFare;
+
+    // 5. Update Ride
+    ride.trip_completed_at = new Date();
+    ride.actual_drop_location = {
+      type: "Point",
+      coordinates: [driverLng, driverLat],
+    };
+    ride.extra_km_travelled = extraKm;
+    ride.extra_km_fare = extraFare;
+    ride.revised_amount = revisedAmount;
+    ride.trip_status = "trip_completed";
+
+    await ride.save({ session });
+
+    // 6. Release Wallet Lock & Create Transaction
+    const wallet = await Wallet.findOne({ driver: driverId }).session(session);
+    if (!wallet) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        message: "Driver wallet not found.",
+      });
+    }
+
+    const lockIndex = wallet.lockAmounts.findIndex(
+      (lock) => lock.forRide?.toString() === rideId && !lock.isReleased
+    );
+
+    if (lockIndex === -1) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "No active lock found for this ride.",
+      });
+    }
+
+    const lockedAmount = wallet.lockAmounts[lockIndex].amount_lock;
+
+    // Release lock
+    wallet.lockAmounts[lockIndex].isReleased = true;
+    wallet.lockAmounts[lockIndex].releasedAt = new Date();
+    wallet.balance +=lockedAmount
+    // Create transaction record
+    const transaction = new Transaction({
+      driver: driverId,
+      ride: rideId,
+      type: "credit",
+      amount: lockedAmount,
+      status: "completed",
+      paymentMethod: "lock_release",
+      description: `Security lock released for completed ride #${rideId}`,
+      completedAt: new Date(),
+    });
+
+    await transaction.save({ session });
+    wallet.transactions.push(transaction._id);
+    await wallet.save({ session });
+
+    // Commit Transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    // 7. Background FCM Notification (Fire-and-forget)
+    (async () => {
+      try {
+        const driverDoc = await Driver.findById(driverId).select("fcm_token name");
+        if (!driverDoc?.fcm_token) return;
+
+        const title = extraFare > 0
+          ? "Ride Completed – Extra Charges Applied"
+          : "Ride Completed Successfully";
+
+        const message = extraFare > 0
+          ? `Earned ₹${revisedAmount} (+₹${extraFare} extra for ${extraKm} km)`
+          : `Ride completed. Earned ₹${originalAmount}.`;
+
+        await sendNotification.sendNotification(
+          driverDoc.fcm_token,
+          title,
+          message,
+          { rideId, type: "ride_completed" },
+          "payment_channel"
+        );
+      } catch (err) {
+        console.error("FCM Error (Ride Complete):", err.message);
+      }
+    })();
+
+    // 8. Success Response
+    return res.status(200).json({
+      success: true,
+      message: "Ride completed successfully.",
+      data: {
+        rideId: ride._id,
+        originalAmount,
+        extraKm,
+        extraFare,
+        revisedAmount,
+        lockReleased: lockedAmount,
+        tripCompletedAt: ride.trip_completed_at,
+      },
+    });
+
+  } catch (error) {
+    // Rollback on any error
+    await session.abortTransaction();
+    session.endSession();
+
+    console.error("Complete Ride Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to complete ride. Transaction rolled back.",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+
+
+exports.rideStatus = async (req, res) => {
+  const { rideId } = req.params;
+
+  if (!rideId || rideId.length < 12 || rideId.length > 24) {
+    return res.status(400).json({ success: false, message: "Invalid rideId" });
+  }
+
+  console.log("rideId", rideId);
+
+  try {
+    // 1️⃣ Check TaxiSafariRide
+    let ride = await TaxiSafariRide.findById(rideId)
+      .select("trip_status -_id")
+      .lean();
+
+    if (ride) {
+      return res.status(200).json({
+        success: true,
+        status: ride.trip_status,
+        source: "taxi"
+      });
+    }
+
+    // 2️⃣ Check RidePost
+    ride = await RidePost.findById(rideId)
+      .select("rideStatus -_id")
+      .lean();
+
+    if (ride) {
+      return res.status(200).json({
+        success: true,
+        status: ride.rideStatus,
+        source: "post"
+      });
+    }
+
+    // 3️⃣ Not found
+    console.log("Ride not found in either collection:", rideId);
+    return res.status(404).json({
+      success: false,
+      message: "Ride not found",
+      status: "not_found"
+    });
+
+  } catch (error) {
+    console.error("rideStatus error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      status: "error"
+    });
   }
 };

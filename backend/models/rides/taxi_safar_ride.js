@@ -109,6 +109,10 @@ const TaxiSafariRideSchema = new mongoose.Schema(
       type: String,
       default: "0",
     },
+    extra_km_fare:{
+       type: String,
+      default: "0",
+    },
 
     // Trip Status
     trip_status: {
@@ -145,6 +149,9 @@ const TaxiSafariRideSchema = new mongoose.Schema(
     original_amount: {
       type: Number,
       required: true,
+    },
+    revised_amount:{
+ type: Number
     },
     paid_amount: {
       type: Number,

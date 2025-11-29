@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
-export default function Categories() {
+export default function Categories({isRefresh}) {
   const navigation = useNavigation();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,11 +31,12 @@ export default function Categories() {
       );
 
       if (response.success) {
-        const activeCats = response.data
+       const activeAndSorted = response.data
           .filter(cat => cat.is_active)
-          .sort((a, b) => a.position - b.position);
+          .sort((a, b) => a.position - b.position); // Ensures position 1 comes first
 
-        setCategories(activeCats);
+        setCategories(activeAndSorted);
+       
       }
     } catch (error) {
       console.log('Error fetching categories:', error);
@@ -46,7 +47,7 @@ export default function Categories() {
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+  }, [isRefresh]);
 
   const handlePress = (item) => {
     setActiveId(item._id);

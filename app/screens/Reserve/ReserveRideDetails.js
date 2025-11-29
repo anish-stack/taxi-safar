@@ -195,7 +195,6 @@ const initChat = async () => {
   const renderDriverPostCard = (trip) => {
     if (!trip) return null;
 
-    console.log("Trip Data:", trip); // Debugging line
     const isRoundTrip = trip.tripType === "round-trip";
     const isZeroCommission = Number(trip.commissionAmount) === 0;
 

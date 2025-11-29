@@ -33,9 +33,9 @@ const { width } = Dimensions.get("window");
 export default function TaxiSafarTripDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { rideId } = route.params || {};
+  const { rideId, accpetd } = route.params || {};
   const { token } = loginStore();
-  const { driver ,fetchDriverDetails } = useDriverStore();
+  const { driver, fetchDriverDetails } = useDriverStore();
   const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -53,11 +53,10 @@ export default function TaxiSafarTripDetailScreen() {
 
   const [walletBalance, setWalletBalance] = useState(0);
 
-  console.log("driver?.wallet", driver?.wallet?.balance);
 
   useEffect(() => {
     fetchRide();
-    fetchDriverDetails()
+    fetchDriverDetails();
     if (driver) {
       setWalletBalance(driver?.wallet?.balance || 0);
     }
@@ -146,7 +145,7 @@ export default function TaxiSafarTripDetailScreen() {
 
   const handleConfirmAccept = async () => {
     setAccepting(true);
-    fetchDriverDetails()
+    fetchDriverDetails();
     try {
       const res = await axios.post(
         `${API_URL_APP}/api/v1/accept-ride/${rideId}`,
