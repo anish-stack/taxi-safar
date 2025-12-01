@@ -883,34 +883,48 @@ exports.addVehicleDetails = async (req, res) => {
     const body = req.body || {};
 
     console.log("Vehicle add request body:", body);
-    console.log("Uploaded files:", files.map(f => ({ fieldname: f.fieldname, size: f.size })));
+    console.log(
+      "Uploaded files:",
+      files.map((f) => ({ fieldname: f.fieldname, size: f.size }))
+    );
 
     if (!driverId) {
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "Driver ID is required." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Driver ID is required." });
     }
 
     const driver = await Driver.findById(driverId);
     if (!driver) {
       cleanupFiles(files);
-      return res.status(404).json({ success: false, message: "Driver not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Driver not found." });
     }
 
     // Parse RC Data
     let rcData = null;
     if (body.rcData) {
       try {
-        rcData = typeof body.rcData === "string" ? JSON.parse(body.rcData) : body.rcData;
+        rcData =
+          typeof body.rcData === "string"
+            ? JSON.parse(body.rcData)
+            : body.rcData;
         console.log("RC Data parsed:", rcData.rc_number);
       } catch (err) {
         cleanupFiles(files);
-        return res.status(400).json({ success: false, message: "Invalid RC data format." });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid RC data format." });
       }
     }
 
     if (!rcData) {
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "RC verification data is required." });
+      return res
+        .status(400)
+        .json({ success: false, message: "RC verification data is required." });
     }
 
     const {
@@ -924,7 +938,12 @@ exports.addVehicleDetails = async (req, res) => {
     // Required fields
     if (!vehicleType || !vehicleNumber) {
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "vehicleType and vehicleNumber are required." });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "vehicleType and vehicleNumber are required.",
+        });
     }
 
     // Check duplicate vehicle
@@ -934,20 +953,33 @@ exports.addVehicleDetails = async (req, res) => {
     });
     if (existingVehicle) {
       cleanupFiles(files);
-      return res.status(409).json({ success: false, message: "Vehicle already exists." });
+      return res
+        .status(409)
+        .json({ success: false, message: "Vehicle already exists." });
     }
 
     // Find ALL 6 files
-    const rcBookFile = files.find(f => f.fieldname === "rcBook");
-    const insuranceFile = files.find(f => f.fieldname === "insurance");
-    const permitFile = files.find(f => f.fieldname === "permit");
-    const vehicleFront = files.find(f => f.fieldname === "vehicleFront");
-    const vehicleBack = files.find(f => f.fieldname === "vehicleBack");
-    const vehicleInterior = files.find(f => f.fieldname === "vehicleInterior");
+    const rcBookFile = files.find((f) => f.fieldname === "rcBook");
+    const insuranceFile = files.find((f) => f.fieldname === "insurance");
+    const permitFile = files.find((f) => f.fieldname === "permit");
+    const vehicleFront = files.find((f) => f.fieldname === "vehicleFront");
+    const vehicleBack = files.find((f) => f.fieldname === "vehicleBack");
+    const vehicleInterior = files.find(
+      (f) => f.fieldname === "vehicleInterior"
+    );
 
     // Validate ALL 6 files are present
-    const requiredFiles = { rcBookFile, insuranceFile, permitFile, vehicleFront, vehicleBack, vehicleInterior };
-    const missing = Object.keys(requiredFiles).filter(key => !requiredFiles[key]);
+    const requiredFiles = {
+      rcBookFile,
+      insuranceFile,
+      permitFile,
+      vehicleFront,
+      vehicleBack,
+      vehicleInterior,
+    };
+    const missing = Object.keys(requiredFiles).filter(
+      (key) => !requiredFiles[key]
+    );
 
     if (missing.length > 0) {
       cleanupFiles(files);
@@ -958,12 +990,30 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     // Upload ALL 6 files to Cloudinary
-    uploadedFiles.rcBook = await uploadSingleImage(rcBookFile.path, "vehicle_documents/rc");
-    uploadedFiles.insurance = await uploadSingleImage(insuranceFile.path, "vehicle_documents/insurance");
-    uploadedFiles.permit = await uploadSingleImage(permitFile.path, "vehicle_documents/permit");
-    uploadedFiles.vehicleFront = await uploadSingleImage(vehicleFront.path, "vehicle_photos/front");
-    uploadedFiles.vehicleBack = await uploadSingleImage(vehicleBack.path, "vehicle_photos/back");
-    uploadedFiles.vehicleInterior = await uploadSingleImage(vehicleInterior.path, "vehicle_photos/interior");
+    uploadedFiles.rcBook = await uploadSingleImage(
+      rcBookFile.path,
+      "vehicle_documents/rc"
+    );
+    uploadedFiles.insurance = await uploadSingleImage(
+      insuranceFile.path,
+      "vehicle_documents/insurance"
+    );
+    uploadedFiles.permit = await uploadSingleImage(
+      permitFile.path,
+      "vehicle_documents/permit"
+    );
+    uploadedFiles.vehicleFront = await uploadSingleImage(
+      vehicleFront.path,
+      "vehicle_photos/front"
+    );
+    uploadedFiles.vehicleBack = await uploadSingleImage(
+      vehicleBack.path,
+      "vehicle_photos/back"
+    );
+    uploadedFiles.vehicleInterior = await uploadSingleImage(
+      vehicleInterior.path,
+      "vehicle_photos/interior"
+    );
 
     // Cleanup local files
     cleanupFiles(files);
@@ -974,7 +1024,9 @@ exports.addVehicleDetails = async (req, res) => {
       engineNumber: rcData.vehicle_engine_number,
       fuelType: rcData.fuel_type,
       color: rcData.color,
-      seatingCapacity: rcData.seat_capacity ? parseInt(rcData.seat_capacity) : null,
+      seatingCapacity: rcData.seat_capacity
+        ? parseInt(rcData.seat_capacity)
+        : null,
       manufacturingDate: rcData.manufacturing_date_formatted,
       registeredAt: rcData.registered_at,
     };
@@ -1051,9 +1103,18 @@ exports.addVehicleDetails = async (req, res) => {
 
       // Photos
       vehicle_photos: {
-        front: { url: uploadedFiles.vehicleFront.image, public_id: uploadedFiles.vehicleFront.public_id },
-        back: { url: uploadedFiles.vehicleBack.image, public_id: uploadedFiles.vehicleBack.public_id },
-        interior: { url: uploadedFiles.vehicleInterior.image, public_id: uploadedFiles.vehicleInterior.public_id },
+        front: {
+          url: uploadedFiles.vehicleFront.image,
+          public_id: uploadedFiles.vehicleFront.public_id,
+        },
+        back: {
+          url: uploadedFiles.vehicleBack.image,
+          public_id: uploadedFiles.vehicleBack.public_id,
+        },
+        interior: {
+          url: uploadedFiles.vehicleInterior.image,
+          public_id: uploadedFiles.vehicleInterior.public_id,
+        },
       },
 
       rc_verification_data: rcData,
@@ -1078,14 +1139,15 @@ exports.addVehicleDetails = async (req, res) => {
         approval_status: vehicle.approval_status,
       },
     });
-
   } catch (error) {
     console.error("Error adding vehicle:", error);
 
     // Cleanup Cloudinary
     for (const file of Object.values(uploadedFiles)) {
       if (file?.public_id) {
-        try { await deleteImage(file.public_id); } catch {}
+        try {
+          await deleteImage(file.public_id);
+        } catch {}
       }
     }
 
@@ -1102,7 +1164,7 @@ exports.addVehicleDetails = async (req, res) => {
 
 // Helper to delete local files
 function cleanupFiles(files) {
-  files.forEach(file => {
+  files.forEach((file) => {
     try {
       deleteFile(file.filename);
     } catch (err) {}
@@ -1401,6 +1463,11 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       console.log("Is Cache Valid:", isCacheValid);
     } else {
       console.log("No Cached Data Found");
+      return await sendAadhaarOtp(aadhaarNumber, res, {
+        redirect: "register",
+        message:
+          "We've sent an OTP to your Aadhaar-linked mobile number. Please verify to continue.",
+      });
     }
 
     // ========================================================================
@@ -1998,7 +2065,9 @@ exports.verifyRcDetails = async (req, res) => {
         });
       }
     } else {
-      console.log("⚡ Bypass mode enabled → Skipping bike & Aadhaar validations");
+      console.log(
+        "⚡ Bypass mode enabled → Skipping bike & Aadhaar validations"
+      );
     }
 
     console.log("✅ RC verification successful");
@@ -2007,7 +2076,10 @@ exports.verifyRcDetails = async (req, res) => {
       success: true,
       message: "RC verified successfully.",
       rcData: rcInfo,
-      aadhaarData: isByPass ? null : (await AadharDetails.findOne({ device_id: deviceId }).lean())?.aadhar_verification_data,
+      aadhaarData: isByPass
+        ? null
+        : (await AadharDetails.findOne({ device_id: deviceId }).lean())
+            ?.aadhar_verification_data,
       bypassUsed: !!isByPass,
     });
   } catch (error) {
