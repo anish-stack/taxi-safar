@@ -1844,22 +1844,24 @@ exports.verifyDrivingLicense = async (req, res) => {
       aadhaarName,
       deviceId,
       aadhaarNumber,
-      
     } = req.body;
-    const settings = await AppSettings.findOne()
-    console.log(settings)
-    const isByPass =settings?.ByPassApi
-    // 🔍 Input validation
+
+    const settings = await AppSettings.findOne();
+    const isByPass = Boolean(settings?.ByPassApi);
+
+    console.log("⚙️ BYPASS MODE:", isByPass);
+
+    // ------------------ VALIDATION ------------------
     if (!licenseNumber || !dob || !aadhaarName || !deviceId || !aadhaarNumber) {
       console.log("❌ Missing required fields");
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields (DL number, DOB, Aadhaar name, deviceId or Aadhaar number).",
+          "Missing required fields (DL number, DOB, Aadhaar name, deviceId, Aadhaar number).",
       });
     }
 
-    // ------------------ STEP 0: Aadhaar Cache Check ------------------
+    // ------------------ AADHAAR CACHE CHECK ------------------
     console.log("🔍 Checking Aadhaar cache for device:", deviceId);
 
     const cached = await AadharDetails.findOne({ device_id: deviceId });
@@ -1872,7 +1874,7 @@ exports.verifyDrivingLicense = async (req, res) => {
     console.log("📌 Aadhaar Cache Valid:", isCacheValid);
 
     if (!isCacheValid) {
-      console.log("❌ Aadhaar not verified for this device.");
+      console.log("❌ Aadhaar not verified for this device");
       return res.status(400).json({
         success: false,
         message: "Aadhaar not verified. Please verify Aadhaar first.",
@@ -1880,117 +1882,106 @@ exports.verifyDrivingLicense = async (req, res) => {
     }
 
     const aadhaarData = cached.aadhar_verification_data;
-    console.log("✔️ Aadhaar Verified. Name:", aadhaarData?.full_nama);
+    console.log("✔️ Aadhaar Verified. Name:", aadhaarData?.full_name);
 
     // ------------------ BYPASS MODE ------------------
-    const BYPASS_DATA = {
-      license_number: "XXXXXXXXXX29000",
-      state: "Maharashtra",
-      name: "ANISH",
-      permanent_address: "211, Matrix Park, Mumbai Pin-400001",
-      permanent_zip: "400001",
-      profile_image: "",
-    };
-
-    let dlInfo;
-
     if (isByPass) {
-      console.log("🟢 BYPASS MODE ENABLED — Skipping API call.");
-      dlInfo = BYPASS_DATA;
-    } else {
-      // ------------------ STEP 1: QuickEKYC DL API ------------------
-      console.log("🔵 Calling QuickEKYC DL API...");
+      console.log("🟢 BYPASS MODE ENABLED — Skipping DL API Call");
 
-      const apiPayload = {
-        key: process.env.QUICKEKYC_API_KEY,
-        id_number: licenseNumber,
-        dob: new Date(dob).toISOString().split("T")[0],
+      const BYPASS_DATA = {
+        license_number: "DLXXXXXXXXXX0000",
+        state: "Uttar Pradesh",
+        name: "TEST USER",
+        permanent_address: "Fake Address, Lucknow",
+        permanent_zip: "226001",
+        profile_image: "",
       };
 
-      console.log("📤 API Payload:", apiPayload);
+      cached.dl_data = BYPASS_DATA;
+      cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      cached.isDlisExpired = false;
+      await cached.save();
 
-      const apiResponse = await axios.post(
-        "https://api.quickekyc.com/api/v1/driving-license/driving-license",
-        apiPayload,
-        {
-          headers: { "Content-Type": "application/json" },
-          timeout: 20000,
-        }
-      );
-
-      console.log("📥 API Response Status:", apiResponse.data.status);
-      console.log("📥 API Response Data:", apiResponse.data.data);
-
-      if (apiResponse.data.status !== "success") {
-        console.log("❌ DL API Failed:", apiResponse.data?.message);
-        return res.status(400).json({
-          success: false,
-          message:
-            apiResponse.data?.message ||
-            "Failed to verify Driving License. Please try again.",
-        });
-      }
-
-      dlInfo = apiResponse.data.data;
+      return res.status(200).json({
+        success: true,
+        message: "Driving License verified successfully! (BYPASS MODE)",
+        dlData: BYPASS_DATA,
+        address: {
+          address: BYPASS_DATA.permanent_address,
+          pincode: BYPASS_DATA.permanent_zip,
+        },
+        fromCache: false,
+        bypassUsed: true,
+      });
     }
 
-    // ------------------ STEP 2: Name Match Validation ------------------
-    if (!isByPass) {
-      const aadhaarNameLower = aadhaarData?.full_nama?.toLowerCase()?.trim();
-      const dlNameLower = dlInfo?.name?.toLowerCase()?.trim();
+    // ------------------ REAL API CALL (ONLY IF NOT BYPASS) ------------------
+    console.log("🔵 Calling QuickEKYC DL API...");
 
-      console.log("🔍 Name Comparison");
-      console.log("Aadhaar Name:", aadhaarNameLower);
-      console.log("DL Name:", dlNameLower);
-
-      if (aadhaarNameLower !== dlNameLower) {
-        console.log("❌ Name mismatch detected.");
-        return res.status(400).json({
-          success: false,
-          nameMismatch: true,
-          message: `Aadhaar name "${aadhaarName}" does not match DL name "${dlInfo.name}"`,
-        });
-      }
-
-      console.log("✔️ Name matched successfully.");
-    } else {
-      console.log("🟢 Skipping name match — BYPASS mode.");
-    }
-
-    // ------------------ STEP 3: Prepare DL Address ------------------
-    const dlAddress = {
-      address: dlInfo.permanent_address || null,
-      pincode: dlInfo.permanent_zip || null,
+    const apiPayload = {
+      key: process.env.QUICKEKYC_API_KEY,
+      id_number: licenseNumber,
+      dob: new Date(dob).toISOString().split("T")[0],
     };
 
-    console.log("🏠 DL Address Extracted:", dlAddress);
+    console.log("📤 API Payload:", apiPayload);
 
-    // ------------------ STEP 4: Save to Cache ------------------
-    console.log("📝 Saving DL data to cache...");
+    const apiResponse = await axios.post(
+      "https://api.quickekyc.com/api/v1/driving-license/driving-license",
+      apiPayload,
+      { headers: { "Content-Type": "application/json" }, timeout: 20000 }
+    );
 
+    console.log("📥 API Response:", apiResponse.data);
+
+    if (apiResponse.data.status !== "success") {
+      console.log("❌ DL API Failed:", apiResponse.data.message);
+      return res.status(400).json({
+        success: false,
+        message:
+          apiResponse.data.message ||
+          "Failed to verify Driving License. Please try again.",
+      });
+    }
+
+    const dlInfo = apiResponse.data.data;
+
+    // ------------------ NAME MATCH ------------------
+    const aadhaarNameLower = aadhaarData?.full_name?.toLowerCase()?.trim();
+    const dlNameLower = dlInfo?.name?.toLowerCase()?.trim();
+
+    console.log("🔍 Checking Name Match:", aadhaarNameLower, dlNameLower);
+
+    if (aadhaarNameLower !== dlNameLower) {
+      console.log("❌ Name mismatch");
+      return res.status(400).json({
+        success: false,
+        nameMismatch: true,
+        message: `Aadhaar name "${aadhaarName}" does not match DL name "${dlInfo.name}"`,
+      });
+    }
+
+    // ------------------ SAVE CACHE ------------------
     cached.dl_data = dlInfo;
     cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
     cached.isDlisExpired = false;
-
     await cached.save();
 
-    console.log("✔️ Cache updated successfully.");
-
-    // ------------------ STEP 5: Success ------------------
-    console.log("🎉 DL Verification Completed Successfully.");
-    console.log("=================== DL VERIFY END ===================\n");
+    console.log("🎉 DL Verification Completed Successfully");
 
     return res.status(200).json({
       success: true,
       message: "Driving License verified successfully!",
       dlData: dlInfo,
-      address: dlAddress,
+      address: {
+        address: dlInfo.permanent_address,
+        pincode: dlInfo.permanent_zip,
+      },
       fromCache: false,
-      bypassUsed: isByPass,
+      bypassUsed: false,
     });
   } catch (error) {
     console.error("🔥 DL Verification Error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Something went wrong while verifying Driving License.",
