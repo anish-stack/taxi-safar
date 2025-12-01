@@ -1463,11 +1463,6 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       console.log("Is Cache Valid:", isCacheValid);
     } else {
       console.log("No Cached Data Found");
-      return await sendAadhaarOtp(aadhaarNumber, res, {
-        redirect: "register",
-        message:
-          "We've sent an OTP to your Aadhaar-linked mobile number. Please verify to continue.",
-      });
     }
 
     // ========================================================================
@@ -1486,7 +1481,7 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       }
 
       // No cache → send OTP for new registration
-      console.log("No cache → send OTP for new registration");
+      console.log("No driver + No cache → Sending OTP");
       return await sendAadhaarOtp(aadhaarNumber, res, {
         redirect: "register",
         message:
@@ -1510,7 +1505,7 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       }
 
       // No cache → send OTP now
-      console.log("No cache → send OTP now");
+      console.log("Driver exists but Aadhaar not verified → Sending OTP");
       return await sendAadhaarOtp(aadhaarNumber, res, {
         redirect: "verify-aadhaar",
         message:
@@ -1608,18 +1603,14 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
       },
       {
         headers: { "Content-Type": "application/json" },
-        timeout: 20000, // 20 seconds timeout
+        timeout: 20000,
       }
     );
 
     console.log("QuickeKYC API Response:", response.data);
 
-    // Check if OTP was sent successfully
     if (response.data.status === "success" && response.data.data?.otp_sent) {
-      console.log(
-        "OTP sent successfully. Request ID:",
-        response.data.request_id
-      );
+      console.log("OTP sent successfully:", response.data.request_id);
 
       return res.status(200).json({
         success: true,
@@ -1628,9 +1619,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
       });
     }
 
-    // OTP sending failed at API level
-    console.error("OTP sending failed. API Response:", response.data);
-
+    console.error("OTP sending failed:", response.data);
     return res.status(400).json({
       success: false,
       message:
@@ -1640,8 +1629,6 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
   } catch (error) {
     console.error("Error while sending Aadhaar OTP:", {
       message: error.message,
-      stack: error.stack,
-      code: error.code,
       apiResponse: error.response?.data,
     });
 
@@ -1652,6 +1639,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
     });
   }
 }
+
 exports.verifyAadhaarOtp = async (req, res) => {
   try {
     const {
