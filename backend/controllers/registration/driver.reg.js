@@ -1420,11 +1420,11 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
 
       // No cache → send OTP for new registration
       console.log("No cache → send OTP for new registration");
-      // return await sendAadhaarOtp(aadhaarNumber, res, {
-      //   redirect: "register",
-      //   message:
-      //     "We've sent an OTP to your Aadhaar-linked mobile number. Please verify to continue.",
-      // });
+      return await sendAadhaarOtp(aadhaarNumber, res, {
+        redirect: "register",
+        message:
+          "We've sent an OTP to your Aadhaar-linked mobile number. Please verify to continue.",
+      });
     }
 
     // ========================================================================
@@ -1444,11 +1444,11 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
 
       // No cache → send OTP now
       console.log("No cache → send OTP now");
-      // return await sendAadhaarOtp(aadhaarNumber, res, {
-      //   redirect: "verify-aadhaar",
-      //   message:
-      //     "Please verify your Aadhaar to activate your account. OTP sent!",
-      // });
+      return await sendAadhaarOtp(aadhaarNumber, res, {
+        redirect: "verify-aadhaar",
+        message:
+          "Please verify your Aadhaar to activate your account. OTP sent!",
+      });
     }
 
     // ========================================================================
