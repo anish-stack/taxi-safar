@@ -678,7 +678,7 @@ exports.searchNearbyRides = async (req, res) => {
         },
       },
       rideStatus: "pending",
-      // driverPostId: { $ne: driverId },
+      driverPostId: { $ne: driverId },
       vehcleType: currentVehicleType,
     })
       .populate(

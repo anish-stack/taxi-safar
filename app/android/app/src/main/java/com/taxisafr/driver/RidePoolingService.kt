@@ -37,7 +37,7 @@ class RidePoolingService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var driverId: String? = null
     private var token: String? = null
-    private var baseUrl: String = "https://api.taxisafar.com"
+    private var baseUrl: String = "https://test.taxi.olyox.in"
     private val client = OkHttpClient()
     private var mediaPlayer: MediaPlayer? = null
     private val notifiedRideIds = mutableSetOf<String>()
@@ -52,7 +52,7 @@ class RidePoolingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         driverId = intent?.getStringExtra("driverId")
         token = intent?.getStringExtra("token")
-        baseUrl = intent?.getStringExtra("baseUrl") ?: "https://api.taxisafar.com"
+        baseUrl = intent?.getStringExtra("baseUrl") ?: "https://test.taxi.olyox.in"
 
         if (driverId.isNullOrBlank() || token.isNullOrBlank()) {
             Log.e(TAG, "Driver ID or Token missing → Stopping service")
@@ -151,7 +151,7 @@ private suspend fun processRides(rides: List<JSONObject>) {
     if (rides.isEmpty()) {
         withContext(Dispatchers.Main) {
             stopAlertSound()
-            clearAllRideNotifications()
+       
         }
         notifiedRideIds.clear()
         return
@@ -231,11 +231,6 @@ private suspend fun processRides(rides: List<JSONObject>) {
         }
     }
 
-    private fun clearAllRideNotifications() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancelAll()
-        startForegroundService() // Keep foreground alive
-    }
 
     private fun openApp() {
         try {
