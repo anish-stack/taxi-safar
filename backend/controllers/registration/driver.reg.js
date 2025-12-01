@@ -1847,9 +1847,9 @@ exports.verifyDrivingLicense = async (req, res) => {
     } = req.body;
 
     const settings = await AppSettings.findOne();
-    const isByPass = Boolean(settings?.ByPassApi);
+    const ByPass = Boolean(settings?.ByPassApi);
 
-    console.log("⚙️ BYPASS MODE:", isByPass);
+    console.log("⚙️ BYPASS MODE:", ByPass);
 
     // ------------------ VALIDATION ------------------
     if (!licenseNumber || !dob || !aadhaarName || !deviceId || !aadhaarNumber) {
@@ -1885,7 +1885,7 @@ exports.verifyDrivingLicense = async (req, res) => {
     console.log("✔️ Aadhaar Verified. Name:", aadhaarData?.full_name);
 
     // ------------------ BYPASS MODE ------------------
-    if (isByPass) {
+    if (ByPass) {
       console.log("🟢 BYPASS MODE ENABLED — Skipping DL API Call");
 
       const BYPASS_DATA = {

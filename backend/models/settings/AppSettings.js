@@ -123,6 +123,10 @@ const AppSettingSchema = new Schema({
   refund_policy_url: {
     type: String,
   },
+  ByPassApi:{
+      enabled: { type: Boolean, default: false },
+
+  },
 
   app_rating_link_android: String,
   app_rating_link_ios: String,
