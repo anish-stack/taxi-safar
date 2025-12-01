@@ -8,6 +8,8 @@ const BankDetails = require("../../models/driver/bankDetails.model");
 const sendDltMessage = require("../../utils/DltMessage");
 const AadharDetails = require("../../models/driver/AadharDetails");
 const axios = require("axios");
+const settings = require("../../models/settings/AppSettings");
+const AppSettings = require("../../models/settings/AppSettings");
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -1842,9 +1844,11 @@ exports.verifyDrivingLicense = async (req, res) => {
       aadhaarName,
       deviceId,
       aadhaarNumber,
-      isByPass,
+      
     } = req.body;
-
+    const settings = await AppSettings.findOne()
+    console.log(settings)
+    const isByPass =settings?.ByPassApi
     // 🔍 Input validation
     if (!licenseNumber || !dob || !aadhaarName || !deviceId || !aadhaarNumber) {
       console.log("❌ Missing required fields");
