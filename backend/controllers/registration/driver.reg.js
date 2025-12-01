@@ -1430,9 +1430,13 @@ exports.getBankNames = async (req, res) => {
 exports.sendOtpOnAadharNumber = async (req, res) => {
   try {
     const { aadhaarNumber, device_id, mobileNumber, isByPass } = req.body;
-    console.log("Request received:", req.body);
+    console.log("===============================================");
+    console.log("🔹 Incoming Aadhaar OTP Request");
+    console.log("Request Body:", req.body);
+    console.log("===============================================");
 
     if (!aadhaarNumber) {
+      console.log("❌ Aadhaar number missing");
       return res.status(400).json({
         success: false,
         message: "Please enter your Aadhaar number to continue.",
@@ -1440,18 +1444,25 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
     }
 
     // ============================== FETCH DRIVER ==============================
+    console.log("🔍 Checking if driver exists for Aadhaar:", aadhaarNumber);
+
     const driver = await Driver.findOne({ aadhar_number: aadhaarNumber })
       .populate("BankDetails", "account_number")
       .populate("document_id")
       .populate("current_vehicle_id")
       .lean();
 
+    console.log("Driver Found:", driver ? "YES" : "NO");
+
     // ============================== FETCH CACHE ==============================
+    console.log("🔍 Checking cache for device:", device_id);
     const cachedData = await AadharDetails.findOne({ device_id }).lean();
 
     let isCacheValid = false;
 
     if (cachedData) {
+      console.log("🗂️ Cached Data Found:", cachedData);
+
       const data = cachedData.aadhar_verification_data;
 
       isCacheValid =
@@ -1459,17 +1470,20 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
         data?.status === "success_aadhaar" &&
         Date.now() < new Date(cachedData.expiredDataHour).getTime();
 
-      console.log("Cache Data Found");
-      console.log("Is Cache Valid:", isCacheValid);
+      console.log("📌 Is Cache Valid:", isCacheValid);
     } else {
-      console.log("No Cached Data Found");
+      console.log("🗃️ No Cached Data Found");
     }
 
     // ========================================================================
     // SCENARIO 1: New User (Driver doesn't exist)
     // ========================================================================
     if (!driver) {
+      console.log("🆕 Scenario: New user registration");
+
       if (isCacheValid) {
+        console.log("✔ Using Cached Aadhaar Data → Redirect Step-1");
+
         return res.status(200).json({
           success: true,
           redirect: "step-1",
@@ -1480,8 +1494,7 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
         });
       }
 
-      // No cache → send OTP for new registration
-      console.log("No driver + No cache → Sending OTP");
+      console.log("❌ No Cache → Sending OTP for new registration");
       return await sendAadhaarOtp(aadhaarNumber, res, {
         redirect: "register",
         message:
@@ -1490,10 +1503,16 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
     }
 
     // ========================================================================
-    // SCENARIO 2: Driver Exists but Aadhaar Not Verified
+    // SCENARIO 2: Driver Exists But Aadhaar Not Verified
     // ========================================================================
+    console.log("👤 Existing Driver Found → Aadhaar Verified:", driver.aadhar_verified);
+
     if (!driver.aadhar_verified) {
+      console.log("⚠ Aadhaar Not Verified Yet");
+
       if (isCacheValid) {
+        console.log("✔ Cache Valid → Redirect verify-aadhaar");
+
         return res.status(200).json({
           success: true,
           redirect: "verify-aadhaar",
@@ -1504,8 +1523,7 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
         });
       }
 
-      // No cache → send OTP now
-      console.log("Driver exists but Aadhaar not verified → Sending OTP");
+      console.log("❌ No Cache → Sending OTP (Driver Exists)");
       return await sendAadhaarOtp(aadhaarNumber, res, {
         redirect: "verify-aadhaar",
         message:
@@ -1514,16 +1532,20 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
     }
 
     // ========================================================================
-    // SCENARIO 3: Aadhaar Already Verified → Continue Registration Steps
+    // SCENARIO 3: Aadhaar Verified — Check Next Steps
     // ========================================================================
+    console.log("✔ Scenario: Aadhaar already verified");
+
     const documents = driver.document_id || null;
 
-    // Step 2: Documents
     const hasRequiredDocuments =
       documents?.pan_card?.document?.url &&
       documents?.driving_license?.front?.url;
 
+    console.log("📝 Has Required Docs:", hasRequiredDocuments);
+
     if (!hasRequiredDocuments) {
+      console.log("❌ Missing PAN or DL → Step-2 Redirect");
       return res.status(400).json({
         success: false,
         driver,
@@ -1532,8 +1554,9 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       });
     }
 
-    // Step 3: Vehicle
+    console.log("🚗 Vehicle Check");
     if (!driver.current_vehicle_id) {
+      console.log("❌ No Vehicle Added → Step-3 Redirect");
       return res.status(400).json({
         success: false,
         driver,
@@ -1542,8 +1565,9 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       });
     }
 
-    // Step 4: Bank Details
+    console.log("🏦 Bank Details Check");
     if (!driver.BankDetails || !driver.BankDetails.account_number) {
+      console.log("❌ No Bank Details → Step-4 Redirect");
       return res.status(400).json({
         success: false,
         driver,
@@ -1552,12 +1576,13 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       });
     }
 
-    // Step 5: Account Approval
+    console.log("🔎 Account Status:", driver.account_status);
     if (
       driver.account_status !== "active" &&
       driver.account_status !== "suspended" &&
       driver.account_status !== "blocked"
     ) {
+      console.log("⏳ Account Under Review → Step-5");
       return res.status(403).json({
         success: false,
         driver,
@@ -1567,9 +1592,8 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       });
     }
 
-    // ========================================================================
-    // SCENARIO 4: Everything Completed — Aadhaar Verified
-    // ========================================================================
+    console.log("🎉 Everything Complete → Bypass OTP");
+
     return res.status(200).json({
       success: true,
       driver,
@@ -1577,7 +1601,7 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       message: "Welcome back! Your Aadhaar is already verified.",
     });
   } catch (error) {
-    console.error("Error in Aadhaar OTP process:", error);
+    console.error("🔥 Error in Aadhaar OTP process:", error);
 
     return res.status(500).json({
       success: false,
@@ -1590,10 +1614,13 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
 // Helper Function: Send Aadhaar OTP
 // ========================================
 async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
-  console.log("Initiating Aadhaar OTP request...");
+  console.log("===============================================");
+  console.log("📨 Starting Aadhaar OTP Process");
+  console.log("Aadhaar:", aadhaarNumber);
+  console.log("===============================================");
 
   try {
-    console.log("Sending OTP request to QuickeKYC for Aadhaar:", aadhaarNumber);
+    console.log("➡ Sending OTP request to QuickeKYC");
 
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/aadhaar-v2/generate-otp",
@@ -1607,10 +1634,11 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
       }
     );
 
-    console.log("QuickeKYC API Response:", response.data);
+    console.log("📩 QuickeKYC Response:", response.data);
 
     if (response.data.status === "success" && response.data.data?.otp_sent) {
-      console.log("OTP sent successfully:", response.data.request_id);
+      console.log("✔ OTP Sent Successfully");
+      console.log("Request ID:", response.data.request_id);
 
       return res.status(200).json({
         success: true,
@@ -1619,7 +1647,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
       });
     }
 
-    console.error("OTP sending failed:", response.data);
+    console.log("❌ OTP Sending Failed:", response.data);
     return res.status(400).json({
       success: false,
       message:
@@ -1627,7 +1655,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
       response: response.data,
     });
   } catch (error) {
-    console.error("Error while sending Aadhaar OTP:", {
+    console.error("🔥 OTP API Error:", {
       message: error.message,
       apiResponse: error.response?.data,
     });
@@ -1639,6 +1667,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
     });
   }
 }
+
 
 exports.verifyAadhaarOtp = async (req, res) => {
   try {
