@@ -156,7 +156,7 @@ const DriverView = () => {
                 <div className="card h-100 radius-12">
                     <div className="card-body p-24 text-center">
                         <img
-                            src={d.profile_image || 'https://via.placeholder.com/120'}
+                            src={d.profile_photo?.url || 'https://via.placeholder.com/120'}
                             alt={d.driver_name}
                             className="rounded-circle mb-3 border border-3 border-neutral-200"
                             style={{ width: '120px', height: '120px', objectFit: 'cover' }}

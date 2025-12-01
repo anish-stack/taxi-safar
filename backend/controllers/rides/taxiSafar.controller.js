@@ -5,9 +5,118 @@ const sendNotification = require("../../utils/sendNotification");
 const mongoose = require("mongoose");
 const Wallet = require("../../models/driver/Wallet");
 const { calculateDistance } = require("../../utils/Queues");
-const RidePost =require("../../models/rides_post/Rides_Post")
+const RidePost = require("../../models/rides_post/Rides_Post");
 const { publisher } = require("../../config/redis");
 const Transaction = require("../../models/driver/Transaction");
+
+// ===== REDIS CACHE UTILITY FUNCTIONS =====
+const CACHE_TTL = 3600; // 1 hour cache
+
+/**
+ * Generate Redis cache key for ride
+ */
+const getRideCacheKey = (rideId) => `ride:${rideId}`;
+
+/**
+ * Get ride from Redis cache
+ */
+const getRideFromCache = async (rideId) => {
+  try {
+    const cachedRide = await publisher.get(getRideCacheKey(rideId));
+    if (cachedRide) {
+      console.log(`✅ Cache HIT for ride: ${rideId}`);
+      return JSON.parse(cachedRide);
+    }
+    console.log(`❌ Cache MISS for ride: ${rideId}`);
+    return null;
+  } catch (err) {
+    console.error("Redis GET error:", err.message);
+    return null;
+  }
+};
+
+/**
+ * Set ride in Redis cache
+ */
+const setRideInCache = async (rideId, rideData) => {
+  try {
+    const cacheKey = getRideCacheKey(rideId);
+    await publisher.setEx(cacheKey, CACHE_TTL, JSON.stringify(rideData));
+    console.log(`💾 Cached ride: ${rideId}`);
+  } catch (err) {
+    console.error("Redis SET error:", err.message);
+  }
+};
+
+/**
+ * Delete ride from Redis cache
+ */
+const deleteRideFromCache = async (rideId) => {
+  try {
+    const cacheKey = getRideCacheKey(rideId);
+    await publisher.del(cacheKey);
+    console.log(`🗑️  Deleted cache for ride: ${rideId}`);
+  } catch (err) {
+    console.error("Redis DEL error:", err.message);
+  }
+};
+
+/**
+ * Get all rides from cache (list)
+ */
+const getRideListFromCache = async (queryHash) => {
+  try {
+    const cacheKey = `rides:list:${queryHash}`;
+    const cached = await publisher.get(cacheKey);
+    if (cached) {
+      console.log(`✅ Cache HIT for ride list: ${cacheKey}`);
+      return JSON.parse(cached);
+    }
+    return null;
+  } catch (err) {
+    console.error("Redis GET list error:", err.message);
+    return null;
+  }
+};
+
+/**
+ * Set ride list in cache
+ */
+const setRideListInCache = async (queryHash, data) => {
+  try {
+    const cacheKey = `rides:list:${queryHash}`;
+    await publisher.setEx(cacheKey, CACHE_TTL, JSON.stringify(data));
+    console.log(`💾 Cached ride list: ${cacheKey}`);
+  } catch (err) {
+    console.error("Redis SET list error:", err.message);
+  }
+};
+
+/**
+ * Delete ride list cache pattern
+ */
+const invalidateRideListCache = async () => {
+  try {
+    // Scan and delete all ride:list:* keys
+    let cursor = 0;
+    do {
+      const result = await publisher.scan(cursor, {
+        MATCH: "rides:list:*",
+        COUNT: 100,
+      });
+      cursor = result.cursor;
+      if (result.keys.length > 0) {
+        await publisher.del(result.keys);
+        console.log(`🗑️  Deleted ${result.keys.length} cached ride lists`);
+      }
+    } while (cursor !== 0);
+  } catch (err) {
+    console.error("Redis invalidate list error:", err.message);
+  }
+};
+
+// ===== CONTROLLERS WITH REDIS =====
+
 // Create New Ride
 exports.createNewRide = async (req, res) => {
   try {
@@ -52,7 +161,6 @@ exports.createNewRide = async (req, res) => {
       });
     }
 
-    // Extract coordinates for Google API
     const pickupLat = pickup_location?.coordinates?.[1] || 0;
     const pickupLng = pickup_location?.coordinates?.[0] || 0;
     const dropLat = destination_location?.coordinates?.[1] || 0;
@@ -62,7 +170,6 @@ exports.createNewRide = async (req, res) => {
     let durationText = null;
     let routePolyline = null;
 
-    // Get route data from Google Maps API
     try {
       const googleData = await getGoogleRouteData(
         pickupLat,
@@ -73,18 +180,13 @@ exports.createNewRide = async (req, res) => {
       distanceKm = googleData.distanceKm;
       durationText = googleData.durationText;
       routePolyline = googleData.polyline;
-
-      console.log("Google Distance:", distanceKm, "km");
-      console.log("ETA:", durationText);
     } catch (err) {
-      console.warn("Google routing failed (non-blocking):", err.message);
+      console.warn("Google routing failed:", err.message);
     }
 
-    // Generate trip_id
     const lastRide = await TaxiSafariRide.findOne().sort({ trip_id: -1 });
     const trip_id = lastRide ? lastRide.trip_id + 1 : 1001;
 
-    // Create new ride
     const newRide = new TaxiSafariRide({
       trip_id,
       user_id,
@@ -117,10 +219,14 @@ exports.createNewRide = async (req, res) => {
       createdBy: req.user?._id,
     });
 
-    // Generate OTP
     newRide.generateOTP();
-
     await newRide.save();
+
+    // 💾 Cache the newly created ride
+    await setRideInCache(newRide._id.toString(), newRide.toObject());
+
+    // 🗑️ Invalidate ride list cache
+    await invalidateRideListCache();
 
     return res.status(201).json({
       success: true,
@@ -143,7 +249,6 @@ exports.updateRide = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    // Prevent updating certain fields
     delete updates.trip_id;
     delete updates.invoice_id;
     delete updates.payment_id;
@@ -158,7 +263,6 @@ exports.updateRide = async (req, res) => {
       });
     }
 
-    // Check if ride can be updated based on status
     if (
       [
         "trip_completed",
@@ -173,7 +277,6 @@ exports.updateRide = async (req, res) => {
       });
     }
 
-    // If updating location coordinates, recalculate route
     if (updates.pickup_location || updates.destination_location) {
       const pickupLat =
         updates.pickup_location?.coordinates?.[1] ||
@@ -211,6 +314,10 @@ exports.updateRide = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    // 🗑️ Delete from cache to force fresh data on next fetch
+    await deleteRideFromCache(id);
+    await invalidateRideListCache();
+
     return res.status(200).json({
       success: true,
       message: "Ride updated successfully",
@@ -226,7 +333,7 @@ exports.updateRide = async (req, res) => {
   }
 };
 
-// Get All Rides with Filters
+// Get All Rides with Filters + Cache
 exports.getRides = async (req, res) => {
   try {
     const {
@@ -240,6 +347,27 @@ exports.getRides = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    // Generate cache key from query parameters
+    const queryHash = Buffer.from(
+      JSON.stringify({
+        user_id,
+        driver_id,
+        trip_status,
+        category,
+        payment_status,
+        from_date,
+        to_date,
+        page,
+        limit,
+      })
+    ).toString("base64");
+
+    // ✅ Try to get from cache first
+    const cachedResult = await getRideListFromCache(queryHash);
+    if (cachedResult) {
+      return res.status(200).json(cachedResult);
+    }
 
     const query = {};
 
@@ -265,7 +393,7 @@ exports.getRides = async (req, res) => {
 
     const total = await TaxiSafariRide.countDocuments(query);
 
-    return res.status(200).json({
+    const response = {
       success: true,
       data: rides,
       pagination: {
@@ -274,7 +402,12 @@ exports.getRides = async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit)),
       },
-    });
+    };
+
+    // 💾 Cache the result
+    await setRideListInCache(queryHash, response);
+
+    return res.status(200).json(response);
   } catch (err) {
     console.error("Get rides error:", err);
     return res.status(500).json({
@@ -285,11 +418,22 @@ exports.getRides = async (req, res) => {
   }
 };
 
-// Get Ride By ID
+// Get Ride By ID + Cache
 exports.getRideTaxiById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // ✅ Try cache first
+    const cachedRide = await getRideFromCache(id);
+    if (cachedRide) {
+      return res.status(200).json({
+        success: true,
+        data: cachedRide,
+        source: "cache",
+      });
+    }
+
+    // If not in cache, fetch from DB
     const ride = await TaxiSafariRide.findById(id)
       .populate("driver_id", "name contact rating vehicle_number")
       .populate("createdBy", "name email")
@@ -302,9 +446,13 @@ exports.getRideTaxiById = async (req, res) => {
       });
     }
 
+    // 💾 Cache for future requests
+    await setRideInCache(id, ride.toObject());
+
     return res.status(200).json({
       success: true,
       data: ride,
+      source: "database",
     });
   } catch (err) {
     console.error("Get ride by ID error:", err);
@@ -316,7 +464,7 @@ exports.getRideTaxiById = async (req, res) => {
   }
 };
 
-// Delete Ride (Soft delete - mark as cancelled by system)
+// Delete Ride
 exports.deleteRide = async (req, res) => {
   try {
     const { id } = req.params;
@@ -330,7 +478,6 @@ exports.deleteRide = async (req, res) => {
       });
     }
 
-    // Only allow deletion of rides that haven't started
     if (["trip_started", "trip_completed"].includes(ride.trip_status)) {
       return res.status(400).json({
         success: false,
@@ -345,6 +492,10 @@ exports.deleteRide = async (req, res) => {
     ride.updatedBy = req.user?._id;
 
     await ride.save();
+
+    // 🗑️ Remove from cache
+    await deleteRideFromCache(id);
+    await invalidateRideListCache();
 
     return res.status(200).json({
       success: true,
@@ -384,7 +535,6 @@ exports.cancelRide = async (req, res) => {
       });
     }
 
-    // Check if ride can be cancelled
     if (
       [
         "trip_completed",
@@ -399,7 +549,6 @@ exports.cancelRide = async (req, res) => {
       });
     }
 
-    // Calculate cancellation charge
     const cancellationCharge = ride.calculateCancellationCharge();
 
     ride.trip_status = `cancelled_by_${cancelled_by}`;
@@ -409,7 +558,6 @@ exports.cancelRide = async (req, res) => {
     ride.cancellation_charge = cancellationCharge;
     ride.updatedBy = req.user?._id;
 
-    // Update refund status if payment was made
     if (
       ride.payment_status === "captured" &&
       cancellationCharge < ride.paid_amount
@@ -419,6 +567,10 @@ exports.cancelRide = async (req, res) => {
     }
 
     await ride.save();
+
+    // 🗑️ Invalidate cache
+    await deleteRideFromCache(id);
+    await invalidateRideListCache();
 
     return res.status(200).json({
       success: true,
@@ -477,13 +629,15 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    // Update trip status to started if OTP is verified
     if (ride.trip_status === "driver_arrived") {
       ride.trip_status = "trip_started";
       ride.trip_started_at = new Date();
     }
 
     await ride.save();
+
+    // 🗑️ Invalidate cache
+    await deleteRideFromCache(id);
 
     return res.status(200).json({
       success: true,
@@ -500,7 +654,7 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-// Update Location of Ride (Driver's current location)
+// Update Location of Ride
 exports.updateLocationOfRide = async (req, res) => {
   try {
     const { id } = req.params;
@@ -522,7 +676,6 @@ exports.updateLocationOfRide = async (req, res) => {
       });
     }
 
-    // Only update location for active rides
     if (
       !["driver_assigned", "driver_arrived", "trip_started"].includes(
         ride.trip_status
@@ -542,6 +695,9 @@ exports.updateLocationOfRide = async (req, res) => {
 
     await ride.save();
 
+    // 🗑️ Delete cache as location changed
+    await deleteRideFromCache(id);
+
     return res.status(200).json({
       success: true,
       message: "Location updated successfully",
@@ -560,7 +716,7 @@ exports.updateLocationOfRide = async (req, res) => {
   }
 };
 
-// Admin Change Status Without Any Restriction
+// Admin Change Status
 exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -599,7 +755,6 @@ exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
     const oldStatus = ride.trip_status;
     ride.trip_status = trip_status;
 
-    // Set timestamps based on status
     if (trip_status === "trip_started" && !ride.trip_started_at) {
       ride.trip_started_at = new Date();
     }
@@ -623,6 +778,10 @@ exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
 
     await ride.save();
 
+    // 🗑️ Invalidate cache
+    await deleteRideFromCache(id);
+    await invalidateRideListCache();
+
     return res.status(200).json({
       success: true,
       message: "Status updated successfully by admin",
@@ -642,11 +801,11 @@ exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
   }
 };
 
+// Fetch Nearby Taxi Safari Rides
 exports.FetchNearByTaxiSafarRides = async (req, res) => {
   try {
     const driverId = req.user?._id;
 
-    // 1. Authentication Check
     if (!driverId) {
       return res.status(401).json({
         success: false,
@@ -654,7 +813,6 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       });
     }
 
-    // 2. Fetch Driver with necessary fields
     const driver = await Driver.findById(driverId)
       .select(
         "driver_name current_location lastLocationUpdate current_vehicle_id currentRadius"
@@ -671,7 +829,6 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       });
     }
 
-    // 3. Validate Driver Location
     if (
       !driver.current_location ||
       !driver.current_location.coordinates ||
@@ -693,7 +850,6 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       });
     }
 
-    // 4. Determine Search Radius & Vehicle Type
     const searchRadiusKm = driver.currentRadius || 5;
     const maxDistanceMeters = searchRadiusKm * 1000;
     const vehicleType = driver.current_vehicle_id?.vehicle_type || null;
@@ -711,7 +867,16 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       `Location: [${longitude}, ${latitude}] | Radius: ${searchRadiusKm}km | Vehicle: ${vehicleType}`
     );
 
-    // 5. Geospatial + Filters Query (Single Efficient Query)
+    // Cache key for nearby rides
+    const nearbyRidesCacheKey = `nearby:rides:${driverId}:${vehicleType}:${searchRadiusKm}`;
+
+    // ✅ Check cache first
+    const cachedNearbyRides = await publisher.get(nearbyRidesCacheKey);
+    if (cachedNearbyRides) {
+      console.log(`✅ Cache HIT for nearby rides`);
+      return res.status(200).json(JSON.parse(cachedNearbyRides));
+    }
+
     const nearbyRides = await TaxiSafariRide.find({
       trip_status: "searching",
       vehicle_type: vehicleType,
@@ -738,9 +903,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
 
     console.log(`Found ${rideCount} nearby ride(s) matching criteria.`);
 
-    // 6. No rides found → Helpful debugging response
     if (rideCount === 0) {
-      // Optional: Get counts for better debugging (only in dev or when needed)
       const [totalPending, matchingVehicleType] = await Promise.all([
         TaxiSafariRide.countDocuments({ trip_status: "searching" }),
         TaxiSafariRide.countDocuments({
@@ -749,7 +912,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
         }),
       ]);
 
-      return res.status(200).json({
+      const response = {
         success: true,
         message: "No nearby rides available at the moment.",
         debug: {
@@ -766,18 +929,27 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
           "Check if you're online and location is updated",
         ],
         data: [],
-      });
+      };
+
+      // 💾 Cache even empty results (shorter TTL)
+      await publisher.setEx(nearbyRidesCacheKey, 300, JSON.stringify(response));
+
+      return res.status(200).json(response);
     }
 
-    // 7. Success Response
-    return res.status(200).json({
+    const response = {
       success: true,
       message: "Nearby rides fetched successfully.",
       count: rideCount,
       search_radius_km: searchRadiusKm,
       driver_location: [longitude, latitude],
       data: nearbyRides,
-    });
+    };
+
+    // 💾 Cache results
+    await publisher.setEx(nearbyRidesCacheKey, 600, JSON.stringify(response));
+
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Error in FetchNearByTaxiSafarRides:", error);
 
@@ -789,6 +961,8 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
   }
 };
 
+
+// Accept Ride with Redis Cache Invalidation
 exports.acceptRide = async (req, res) => {
   const driverId = req.user.id;
   const { rideId } = req.params;
@@ -943,6 +1117,12 @@ exports.acceptRide = async (req, res) => {
     // Commit transaction
     await session.commitTransaction();
 
+    // ✅ DELETE RIDE CACHE on status change
+    await deleteRideCache(rideId);
+
+    // ✅ CACHE updated ride data
+    await cacheRide(rideId, ride);
+
     // Success notification (after commit, non-blocking)
     if (driver.fcm_token) {
       await sendNotification
@@ -999,6 +1179,7 @@ exports.acceptRide = async (req, res) => {
   }
 };
 
+// Mark Reached At Pickup Location with Redis
 exports.markReachedAtPickupLocation = async (req, res) => {
   try {
     const driverId = req.user?._id;
@@ -1011,10 +1192,15 @@ exports.markReachedAtPickupLocation = async (req, res) => {
       });
     }
 
-    // Fetch ride pickup location only
-    const rideData = await TaxiSafariRide.findById(rideId)
-      .select("pickup_location driver_id trip_status customer_id")
-      .lean();
+    // ✅ TRY REDIS CACHE FIRST
+    let rideData = await getRideFromCache(rideId);
+
+    // If not in cache, fetch from DB
+    if (!rideData) {
+      rideData = await TaxiSafariRide.findById(rideId)
+        .select("pickup_location driver_id trip_status customer_id")
+        .lean();
+    }
 
     if (!rideData || String(rideData.driver_id) !== String(driverId)) {
       return res.status(404).json({
@@ -1028,7 +1214,7 @@ exports.markReachedAtPickupLocation = async (req, res) => {
 
     // ---- STEP 1: Fetch driver live location from Redis ----
     const redisKey = `driver:${driverId}`;
-    const redisLocation = await publisher.hGetAll(redisKey);
+    const redisLocation = await redisClient.hGetAll(redisKey);
 
     let DriverDb;
     let driverLat, driverLng;
@@ -1097,17 +1283,23 @@ exports.markReachedAtPickupLocation = async (req, res) => {
       });
     }
 
+    // ✅ DELETE AND RECACHE with new status
+    await deleteRideCache(rideId);
+    await cacheRide(rideId, updatedRide);
+
     // ---- STEP 5: Async Notification ----
     (async () => {
       try {
-        const token = DriverDb.fcm_token;
-        await sendNotification.sendNotification(
-          token,
-          "You are Arrived at pickup location",
-          "Ask Otp to Customer and Start Your Ride.",
-          {},
-          "ride_updates"
-        );
+        const token = DriverDb?.fcm_token;
+        if (token) {
+          await sendNotification.sendNotification(
+            token,
+            "You are Arrived at pickup location",
+            "Ask OTP to Customer and Start Your Ride.",
+            {},
+            "ride_updates"
+          );
+        }
       } catch (err) {
         console.error("Notification Error:", err);
       }
@@ -1127,6 +1319,7 @@ exports.markReachedAtPickupLocation = async (req, res) => {
   }
 };
 
+// Verify Ride OTP with Redis
 exports.verifyRideOtp = async (req, res) => {
   try {
     const driverId = req.user?._id;
@@ -1168,6 +1361,10 @@ exports.verifyRideOtp = async (req, res) => {
       });
     }
 
+    // ✅ DELETE AND RECACHE with new status
+    await deleteRideCache(rideId);
+    await cacheRide(rideId, ride);
+
     // 🔔 2. Send notification to driver (non-blocking)
     (async () => {
       try {
@@ -1200,6 +1397,7 @@ exports.verifyRideOtp = async (req, res) => {
   }
 };
 
+// Complete Ride with Redis Cache Invalidation
 exports.completeRide = async (req, res) => {
   const { rideId } = req.body;
   const driverId = req.user?._id;
@@ -1287,7 +1485,12 @@ exports.completeRide = async (req, res) => {
       return R * c;
     };
 
-    const distanceDiffKm = calculateDistanceKm(dropLat, dropLng, driverLat, driverLng);
+    const distanceDiffKm = calculateDistanceKm(
+      dropLat,
+      dropLng,
+      driverLat,
+      driverLng
+    );
     let extraKm = 0;
     let extraFare = 0;
 
@@ -1340,7 +1543,8 @@ exports.completeRide = async (req, res) => {
     // Release lock
     wallet.lockAmounts[lockIndex].isReleased = true;
     wallet.lockAmounts[lockIndex].releasedAt = new Date();
-    wallet.balance +=lockedAmount
+    wallet.balance += lockedAmount;
+
     // Create transaction record
     const transaction = new Transaction({
       driver: driverId,
@@ -1361,19 +1565,28 @@ exports.completeRide = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // ✅ DELETE RIDE CACHE on completion
+    await deleteRideCache(rideId);
+    // Optionally, cache the completed ride data
+    await cacheRide(rideId, ride);
+
     // 7. Background FCM Notification (Fire-and-forget)
     (async () => {
       try {
-        const driverDoc = await Driver.findById(driverId).select("fcm_token name");
+        const driverDoc = await Driver.findById(driverId).select(
+          "fcm_token name"
+        );
         if (!driverDoc?.fcm_token) return;
 
-        const title = extraFare > 0
-          ? "Ride Completed – Extra Charges Applied"
-          : "Ride Completed Successfully";
+        const title =
+          extraFare > 0
+            ? "Ride Completed – Extra Charges Applied"
+            : "Ride Completed Successfully";
 
-        const message = extraFare > 0
-          ? `Earned ₹${revisedAmount} (+₹${extraFare} extra for ${extraKm} km)`
-          : `Ride completed. Earned ₹${originalAmount}.`;
+        const message =
+          extraFare > 0
+            ? `Earned ₹${revisedAmount} (+₹${extraFare} extra for ${extraKm} km)`
+            : `Ride completed. Earned ₹${originalAmount}.`;
 
         await sendNotification.sendNotification(
           driverDoc.fcm_token,
@@ -1401,7 +1614,6 @@ exports.completeRide = async (req, res) => {
         tripCompletedAt: ride.trip_completed_at,
       },
     });
-
   } catch (error) {
     // Rollback on any error
     await session.abortTransaction();
@@ -1412,11 +1624,11 @@ exports.completeRide = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to complete ride. Transaction rolled back.",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
-
 
 
 exports.rideStatus = async (req, res) => {

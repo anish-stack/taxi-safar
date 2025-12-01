@@ -30,7 +30,7 @@ export default function RechargeScreen() {
   const { token } = loginStore();
   const route = useRoute();
   const { amount } = route.params || 0;
-  const { driver } = useDriverStore();
+  const { driver, fetchDriverDetails } = useDriverStore();
 
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [customAmount, setCustomAmount] = useState("");
@@ -57,14 +57,13 @@ export default function RechargeScreen() {
     setAlertVisible(true);
   };
 
-useEffect(() => {
-  if (amount && Number(amount) > 0) {
-    setCustomAmount(Number(amount));
-  } else {
-    setCustomAmount(0);
-  }
-}, [amount]);
-
+  useEffect(() => {
+    if (amount && Number(amount) > 0) {
+      setCustomAmount(Number(amount));
+    } else {
+      setCustomAmount(0);
+    }
+  }, [amount]);
 
   const createOrder = async (orderAmount) => {
     try {
@@ -101,7 +100,7 @@ useEffect(() => {
       if (!res.data.success) {
         throw new Error(res.data.message || "Payment verification failed");
       }
-
+      fetchDriverDetails();
       return res.data;
     } catch (err) {
       console.log("Verify Payment Error:", err.response?.data || err.message);
@@ -164,7 +163,7 @@ useEffect(() => {
           );
         } catch (verifyError) {
           console.log("Verify Error:", verifyError);
-
+          fetchDriverDetails();
           showAlert(
             "error",
             "Verification Failed",
@@ -253,7 +252,7 @@ useEffect(() => {
             style={styles.input}
             placeholder="100 minimum"
             keyboardType="numeric"
-           value={String(customAmount)}  
+            value={String(customAmount)}
             onChangeText={(text) => {
               const num = text.replace(/[^0-9]/g, "");
               setCustomAmount(num);

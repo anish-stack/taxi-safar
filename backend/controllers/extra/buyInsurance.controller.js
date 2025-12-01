@@ -1,5 +1,6 @@
 const BuyInsurance = require("../../models/extra/Insurance");
 const Driver = require("../../models/driver/driver.model");
+const sendNotification = require("../../utils/sendNotification");
 
 const validateInsuranceInput = (data) => {
   const errors = {};
@@ -39,6 +40,14 @@ exports.createInsurance = async (req, res) => {
   try {
     const driverId = req.user?._id;
 
+    if (!driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized. Driver not logged in",
+      });
+    }
+
+    // Validate input
     const validationErrors = validateInsuranceInput(req.body);
     if (Object.keys(validationErrors).length > 0) {
       return res.status(400).json({
@@ -48,9 +57,15 @@ exports.createInsurance = async (req, res) => {
       });
     }
 
+    // Create insurance request
     const newRequest = await BuyInsurance.create({
       driverId,
-      ...req.body,
+      full_name: req.body.full_name,
+      contact_number: req.body.contact_number,
+      vehicle_number: req.body.vehicle_number,
+      budget: req.body.budget,
+      insurance_type: req.body.insurance_type || "unknown",
+      extra_notes: req.body.extra_notes || "",
     });
 
     return res.status(201).json({
@@ -100,19 +115,34 @@ exports.getMyInsurance = async (req, res) => {
 // -------------------------------
 // ADMIN — GET ALL WITH FILTERS
 // -------------------------------
+
 exports.getAllInsurance = async (req, res) => {
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const status = req.query.status || null;
-    const driver = req.query.driver || null;
+    const { status, driver } = req.query;
 
     let filters = {};
 
-    if (status) filters.status = status;
-    if (driver) filters.driverId = driver;
+    // Status filter
+    if (status && status !== "all") {
+      filters.status = status;
+    }
+
+    // Search query (name, phone, vehicle)
+    if (driver) {
+      const searchRegex = new RegExp(driver.trim(), "i");
+
+      filters.$or = [
+        { full_name: searchRegex },
+        { contact_number: searchRegex },
+        { vehicle_number: searchRegex },
+        { "driverId.driver_name": searchRegex },
+        { "driverId.driver_contact_number": searchRegex },
+      ];
+    }
 
     const data = await BuyInsurance.find(filters)
       .populate("driverId", "driver_name driver_contact_number")
@@ -130,6 +160,8 @@ exports.getAllInsurance = async (req, res) => {
         page,
         limit,
         pages: Math.ceil(total / limit),
+        hasNext: page < Math.ceil(total / limit),
+        hasPrev: page > 1,
       },
     });
   } catch (error) {
@@ -169,24 +201,54 @@ exports.updateInsuranceStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!["pending", "processing", "completed", "rejected"].includes(status)) {
+    // --- Validate Status ---
+    const allowedStatus = ["pending", "processing", "completed", "rejected"];
+    if (!allowedStatus.includes(status)) {
       return res.status(400).json({
         success: false,
         message: "Invalid status",
       });
     }
 
+    // --- Update and Populate Driver ---
     const updated = await BuyInsurance.findByIdAndUpdate(
       id,
       { status },
       { new: true }
-    );
+    ).populate("driverId", "driver_name driver_contact_number fcm_token");
 
     if (!updated) {
       return res.status(404).json({
         success: false,
         message: "Record not found",
       });
+    }
+
+    // --- Push Notification to Driver ---
+    const driver = updated.driverId;
+    console.log("driver", driver);
+    if (driver && driver.fcm_token) {
+      let title = `${driver?.driver_name} Your Insurance Status has been Updated`;
+      let body = `Your insurance status is now: ${status}`;
+      let data = {
+        type: "INSURANCE_UPDATE",
+        insuranceId: updated._id.toString(),
+        status,
+      };
+      let channel = "system_alerts";
+
+      try {
+        const n = await sendNotification.sendNotification(
+          driver.fcm_token,
+          title,
+          body,
+          data,
+          channel
+        );
+        console.log(n);
+      } catch (notifyError) {
+        console.error("FCM Notification Error:", notifyError);
+      }
     }
 
     return res.status(200).json({
@@ -220,7 +282,6 @@ exports.deleteInsurance = async (req, res) => {
         message: "Insurance request not found",
       });
     }
-
 
     await record.deleteOne();
 

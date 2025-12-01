@@ -33,11 +33,12 @@ import loginStore from "../../store/auth.store";
 import Layout from "../common/layout";
 import { UniversalAlert } from "../common/UniversalAlert";
 import { formatDate, formatTimeByDate } from "../../utils/utils";
+import useDriverStore from "../../store/driver.store";
 
 const WalletScreen = () => {
   const navigation = useNavigation();
   const { token } = loginStore();
-
+  const { fetchDriverDetails } = useDriverStore();
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
@@ -72,7 +73,7 @@ const WalletScreen = () => {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
-
+      fetchDriverDetails();
       if (walletRes.data.success) {
         setWallet(walletRes.data.data);
       }
@@ -95,7 +96,7 @@ const WalletScreen = () => {
 
   useEffect(() => {
     fetchWallet();
-  }, []);
+  }, [token,navigation]);
 
   const onRefresh = () => {
     setRefreshing(true);

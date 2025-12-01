@@ -33,7 +33,6 @@ const useDriverStore = create((set, get) => ({
     try {
       set({ loading: true, error: null });
       const token = loginStore.getState().token;
-
       if (!token) {
         console.warn('⚠️ No token found for fetchDriverDetails');
         set({ loading: false, error: 'No token found' });
@@ -56,7 +55,6 @@ const useDriverStore = create((set, get) => ({
         error: null,
       });
 
-      console.log('✅ Driver details fetched successfully');
       
       // Auto-start location updates if online
       if (res.data?.is_online) {
@@ -267,7 +265,6 @@ const useDriverStore = create((set, get) => ({
 
     // Don't start if already running
     if (state.locationUpdateEnabled && locationUpdateInterval) {
-      console.log('📍 Location updates already running');
       return;
     }
 

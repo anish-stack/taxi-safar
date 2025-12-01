@@ -1,15 +1,16 @@
-import './App.css';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Home } from './pages/Home/Home';
-import Drivers from './pages/Drivers/Drivers';
-import Overview from './pages/Dashboard/Overview';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import DriverView from './pages/Drivers/View';
-import PostRides from './pages/rides/Post/PostRides';
-import PostRidesView from './pages/rides/Post/PostRidesView';
-import Settings from './pages/Dashboard/Settings';
-
+import "./App.css";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Home } from "./pages/Home/Home";
+import Drivers from "./pages/Drivers/Drivers";
+import Overview from "./pages/Dashboard/Overview";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import DriverView from "./pages/Drivers/View";
+import PostRides from "./pages/rides/Post/PostRides";
+import PostRidesView from "./pages/rides/Post/PostRidesView";
+import Settings from "./pages/Dashboard/Settings";
+import Allcategories from "./pages/categories/Allcategories";
+import Insurance from "./pages/categories/Insurance";
 
 function App() {
   return (
@@ -20,10 +21,12 @@ function App() {
 
           <Route path="/drivers/all" element={<Drivers />} />
           <Route path="/driver/view/:id" element={<DriverView />} />
-          
-          <Route path="/bookings/post-rides" element={<PostRides/>} />
-          <Route path="/post-rides/view/:id" element={<PostRidesView/>} />
 
+          <Route path="/bookings/post-rides" element={<PostRides />} />
+          <Route path="/post-rides/view/:id" element={<PostRidesView />} />
+
+          <Route path="/appcategories/all" element={<Allcategories />} />
+          <Route path="/buy-insurances" element={<Insurance/> } />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<h1>404 Not Found</h1>} />
         </Route>

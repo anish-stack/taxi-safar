@@ -258,10 +258,10 @@ export default function Profile() {
             label="My Wallet"
             onPress={() => navigation.navigate("wallet")}
           />
-          <MenuItem
+          {/* <MenuItem
             icon={<FontAwesome5 name="gift" size={20} color="black" />}
             label="Offer List"
-          />
+          /> */}
           <MenuItem
             icon={<Ionicons name="car-outline" size={22} color="black" />}
             label="Vehicles Selection"

@@ -325,7 +325,7 @@ const Drivers = () => {
                           <td>
                             <div className="d-flex align-items-center">
                               <img
-                                src={driver.profile_image || "assets/images/user-list/user-list1.png"}
+                                src={driver.profile_photo?.url || "assets/images/user-list/user-list1.png"}
                                 alt={driver.driver_name}
                                 className="flex-shrink-0 me-12 radius-8"
                                 style={{width: '40px', height: '40px', objectFit: 'cover'}}

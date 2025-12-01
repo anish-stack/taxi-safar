@@ -106,17 +106,24 @@ exports.addAmountOnWallet = async (req, res) => {
   }
 };
 
-// Verify payment
+
 exports.verifyPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     const driverId = req.user.id;
 
-    // Verify signature
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required payment details",
+      });
+    }
+
+    // Step 1: Verify Razorpay Signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_SECRET)
-      .update(body.toString())
+      .update(body)
       .digest("hex");
 
     if (expectedSignature !== razorpay_signature) {
@@ -126,55 +133,87 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    // Find transaction
+    // Step 2: Find the transaction
     const transaction = await Transaction.findOne({
       razorpayOrderId: razorpay_order_id,
       driver: driverId,
-    });
+      status: { $ne: "completed" }, // Prevent double completion
+    }).populate("driver");
 
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: "Transaction not found",
+        message: "Transaction not found or already completed",
       });
     }
 
-    // Update transaction
+    // Step 3: Ensure driver exists and populate properly
+    if (!transaction.driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Associated driver not found",
+      });
+    }
+
+    // Step 4: Find or Create Wallet
+    let wallet = await Wallet.findOne({ driver: driverId });
+
+    if (!wallet) {
+      wallet = new Wallet({
+        driver: driverId,
+        balance: 0,
+        totalEarnings: 0,
+        transactions: [],
+      });
+    }
+
+    // Step 5: Update Wallet Balance & History
+    wallet.balance += transaction.amount;
+    wallet.totalEarnings += transaction.amount;
+
+    // Avoid duplicate transaction entries
+    if (!wallet.transactions.includes(transaction._id)) {
+      wallet.transactions.push(transaction._id);
+    }
+
+    await wallet.save();
+
+    // Step 6: Update Transaction Status
     transaction.status = "completed";
     transaction.razorpayPaymentId = razorpay_payment_id;
     transaction.razorpaySignature = razorpay_signature;
     transaction.completedAt = new Date();
     await transaction.save();
 
-    // Update wallet
-    let wallet = await Wallet.findOne({ driver: driverId });
-    if (!wallet) {
-      wallet = new Wallet({ driver: driverId });
+    // Step 7: Update Driver's wallet reference if missing or incorrect
+    if (!transaction.driver.wallet || transaction.driver.wallet.toString() !== wallet._id.toString()) {
+      await Driver.findByIdAndUpdate(
+        driverId,
+        { wallet: wallet._id },
+        { new: true }
+      );
     }
 
-    wallet.balance += transaction.amount;
-    wallet.totalEarnings += transaction.amount;
-    wallet.transactions.push(transaction._id);
-    await wallet.save();
-
-    res.status(200).json({
+    // Success Response
+    return res.status(200).json({
       success: true,
-      message: "Payment verified successfully",
+      message: "Payment verified and wallet updated successfully",
       data: {
-        balance: wallet.balance,
-        amount: transaction.amount,
+        newBalance: wallet.balance,
+        creditedAmount: transaction.amount,
+        transactionId: transaction._id,
+        walletId: wallet._id,
       },
     });
   } catch (error) {
-    console.error("Verify payment error:", error);
-    res.status(500).json({
+    console.error("Verify Payment Error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Payment verification failed",
-      error: error.message,
+      message: "Internal server error during payment verification",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 };
-
 // Razorpay webhook
 exports.razorpayWebhook = async (req, res) => {
   try {
@@ -355,9 +394,9 @@ exports.getWalletDetails = async (req, res) => {
       .populate("lockAmounts.forRide");
 
     if (!wallet) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
-        message: "Wallet not found",
+        message: "Do your First wallet recharge",
       });
     }
 

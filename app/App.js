@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Platform, StatusBar as RNStatusBar, AppState } from "react-native";
+import {
+  View,
+  Platform,
+  StatusBar as RNStatusBar,
+  AppState,
+  NativeModules,
+} from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
@@ -8,6 +14,7 @@ import * as SecureStore from "expo-secure-store";
 import { requestAppPermissions } from "./services/PermissionService";
 import { initializeNotifications } from "./utils/initNotifications";
 import locationService from "./services/LocationsService";
+import { useDriverServices } from "./hooks/useDriverServices";
 
 // Store
 import loginStore from "./store/auth.store";
@@ -72,27 +79,49 @@ import AllInsurance from "./screens/Insurance/AllInsurance";
 // Screens - Others
 import BuySellTaxi from "./screens/BuySellTaxi/BuySellTaxi";
 import MyTrips from "./screens/MyTrips/MyTrips";
+import useDriverStore from "./store/driver.store";
 
 const Stack = createNativeStackNavigator();
 
 // Configuration constants
 const CONFIG = {
   NOTIFICATION_INTERVAL: 60000, // 1 minute
-  LOCATION_UPDATE_INTERVAL: 10000, // 10 seconds
+  LOCATION_UPDATE_INTERVAL: 60000, // 10 seconds
   PERMISSION_CHECK_INTERVAL: 300000, // 5 minutes
 };
 
 export default function App() {
   const { token } = loginStore();
-  
+  const { driver, fetchDriverDetails } = useDriverStore();
   // Refs for cleanup
   const notificationIntervalRef = useRef(null);
   const permissionCheckIntervalRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
   const isLocationTrackingActiveRef = useRef(false);
-  
+
   // State
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isDriverOnline, setIsDriverOnline] = useState(false);
+
+  // Get driver info
+  const driverId = driver?._id || driver;
+
+  // Initialize driver services (Ride Pooling & Floating Widget)
+  const {
+    isPoolingActive,
+    isWidgetActive,
+    hasOverlayPermission,
+    startPoolingService,
+    stopPoolingService,
+    startFloatingWidget,
+    stopFloatingWidget,
+    requestOverlayPermission,
+  } = useDriverServices({
+    driverId,
+    token,
+    isDriverOnline,
+    enableFloatingWidget: true,
+  });
 
   /**
    * Initialize notifications and request permissions
@@ -100,8 +129,8 @@ export default function App() {
   const initializeApp = async (authToken) => {
     try {
       console.log("📱 Initializing app...");
-      
-      // Request permissions first
+      fetchDriverDetails();
+
       const permissionsGranted = await requestAppPermissions();
       console.log("✅ Permissions granted:", permissionsGranted);
 
@@ -134,10 +163,10 @@ export default function App() {
       }
 
       console.log("📍 Starting location tracking...");
-      
+
       const apiUrl = `${API_URL_APP}/api/v1/update-driver-location`;
       await locationService.startTracking(apiUrl, authToken);
-      
+
       isLocationTrackingActiveRef.current = true;
       console.log("✅ Location tracking started successfully");
     } catch (error) {
@@ -196,12 +225,16 @@ export default function App() {
       try {
         if (appStateRef.current === "active") {
           const granted = await requestAppPermissions();
-          
+
           if (!granted) {
-            console.warn("⚠️ Permissions were revoked, stopping location tracking");
+            console.warn(
+              "⚠️ Permissions were revoked, stopping location tracking"
+            );
             await stopLocationTracking();
           } else if (!isLocationTrackingActiveRef.current && token) {
-            console.log("🔄 Permissions restored, restarting location tracking");
+            console.log(
+              "🔄 Permissions restored, restarting location tracking"
+            );
             await startLocationTracking(token);
           }
         }
@@ -215,27 +248,33 @@ export default function App() {
    * Handle app state changes (foreground/background)
    */
   const handleAppStateChange = async (nextAppState) => {
-    console.log(`📱 App state changed: ${appStateRef.current} -> ${nextAppState}`);
+    console.log(
+      `📱 App state changed: ${appStateRef.current} -> ${nextAppState}`
+    );
 
     // App coming to foreground
-    if (appStateRef.current.match(/inactive|background/) && nextAppState === "active") {
+    if (
+      appStateRef.current.match(/inactive|background/) &&
+      nextAppState === "active"
+    ) {
       console.log("📱 App came to foreground");
-      
-      const authToken = await SecureStore.getItemAsync("auth_token") || token;
-      
+
+      const authToken = (await SecureStore.getItemAsync("auth_token")) || token;
+
       if (authToken) {
         // Reinitialize everything
         await initializeApp(authToken);
         await startLocationTracking(authToken);
       }
     }
-    
+
     // App going to background
-    if (appStateRef.current === "active" && nextAppState.match(/inactive|background/)) {
+    if (
+      appStateRef.current === "active" &&
+      nextAppState.match(/inactive|background/)
+    ) {
       console.log("📱 App went to background");
-      // Keep location tracking active in background if supported
-      // iOS: Requires background location permission
-      // Android: Should continue working
+      // Services continue running in background
     }
 
     appStateRef.current = nextAppState;
@@ -263,17 +302,20 @@ export default function App() {
 
         // Initialize app (permissions & notifications)
         const initialized = await initializeApp(authToken);
-        
+
         if (initialized) {
           // Start location tracking
           await startLocationTracking(authToken);
-          
+
           // Setup periodic refreshes
           setupNotificationRefresh(authToken);
           setupPermissionCheck();
-          
+
           // Setup app state listener
-          appStateSubscription = AppState.addEventListener("change", handleAppStateChange);
+          appStateSubscription = AppState.addEventListener(
+            "change",
+            handleAppStateChange
+          );
         }
 
         setIsInitialized(true);
@@ -289,7 +331,7 @@ export default function App() {
     // Cleanup function
     return () => {
       console.log("🧹 Cleaning up app...");
-      
+
       // Clear intervals
       if (notificationIntervalRef.current) {
         clearInterval(notificationIntervalRef.current);
@@ -315,20 +357,20 @@ export default function App() {
     const handleTokenChange = async () => {
       if (token && isInitialized) {
         console.log("🔑 Token changed, reinitializing services...");
-        
+
         // Restart location tracking with new token
         await stopLocationTracking();
         await startLocationTracking(token);
-        
+
         // Reinitialize notifications
         await initializeNotifications(token);
-        
+
         // Reset intervals
         setupNotificationRefresh(token);
       } else if (!token && isLocationTrackingActiveRef.current) {
         console.log("🔑 Token removed, stopping services...");
         await stopLocationTracking();
-        
+
         if (notificationIntervalRef.current) {
           clearInterval(notificationIntervalRef.current);
         }
@@ -337,6 +379,16 @@ export default function App() {
 
     handleTokenChange();
   }, [token, isInitialized]);
+
+  // Log service status
+  useEffect(() => {
+    console.log("📊 Service Status:", {
+      isDriverOnline,
+      isPoolingActive,
+      isWidgetActive,
+      hasOverlayPermission,
+    });
+  }, [isDriverOnline, isPoolingActive, isWidgetActive, hasOverlayPermission]);
 
   return (
     <NavigationContainer>
@@ -355,8 +407,8 @@ export default function App() {
           }}
         >
           {/* Auth Screens */}
-          <Stack.Screen 
-            name="splash" 
+          <Stack.Screen
+            name="splash"
             component={SplashScreen}
             options={{ animation: "fade" }}
           />
@@ -368,10 +420,21 @@ export default function App() {
           <Stack.Screen name="wait_screen" component={WaitScreen} />
 
           {/* Main Screens */}
-          <Stack.Screen 
-            name="Home" 
+          <Stack.Screen
+            name="Home"
             component={HomeScreen}
             options={{ gestureEnabled: false }}
+            initialParams={{
+              setIsDriverOnline,
+              isPoolingActive,
+              isWidgetActive,
+              startPoolingService,
+              stopPoolingService,
+              hasOverlayPermission,
+              startFloatingWidget,
+              stopFloatingWidget,
+              requestOverlayPermission,
+            }}
           />
           <Stack.Screen name="Account" component={Profile} />
           <Stack.Screen name="RideDetails" component={RideDetails} />
@@ -381,13 +444,25 @@ export default function App() {
           {/* Driver Post & Reserve */}
           <Stack.Screen name="Add" component={Driver_Post} />
           <Stack.Screen name="Reserve" component={Reserve} />
-          <Stack.Screen name="DriverPostDetails" component={ReserveRideDetails} />
-          <Stack.Screen name="ReserveRideDetailsAssigned" component={ReserveRideDetailsAssigned} />
+          <Stack.Screen
+            name="DriverPostDetails"
+            component={ReserveRideDetails}
+          />
+          <Stack.Screen
+            name="ReserveRideDetailsAssigned"
+            component={ReserveRideDetailsAssigned}
+          />
 
           {/* Taxi Safari */}
           <Stack.Screen name="TaxiSafarView" component={TaxiSafarView} />
-          <Stack.Screen name="TaxiSafarTripDetailScreen" component={TaxiSafarTripDetailScreen} />
-          <Stack.Screen name="ProgressTaxiSafarRide" component={ProgressTaxiSafarRide} />
+          <Stack.Screen
+            name="TaxiSafarTripDetailScreen"
+            component={TaxiSafarTripDetailScreen}
+          />
+          <Stack.Screen
+            name="ProgressTaxiSafarRide"
+            component={ProgressTaxiSafarRide}
+          />
 
           {/* Chat */}
           <Stack.Screen name="chat" component={Chat} />
@@ -402,7 +477,10 @@ export default function App() {
 
           {/* Driver Jobs */}
           <Stack.Screen name="DriverJobs" component={DriverJobIntro} />
-          <Stack.Screen name="driver-job-create" component={DriverJobCreateAndEdit} />
+          <Stack.Screen
+            name="driver-job-create"
+            component={DriverJobCreateAndEdit}
+          />
           <Stack.Screen name="driver-job-list" component={MyJobsPosted} />
           <Stack.Screen name="job-posted-u" component={MyJobsPosted} />
 

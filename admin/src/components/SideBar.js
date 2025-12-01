@@ -9,12 +9,13 @@ const SideBar = ({ open, close }) => {
     setOpenMenu(prev => (prev === key ? null : key));
   };
 
-  // Auto-open parent + highlight active links
+  // Auto-open parent menu based on current path
   useEffect(() => {
     const path = location.pathname;
 
     const menuMap = {
       bookings: ['/bookings', '/booking'],
+      appcategories: ['/appcategories', '/appcategory', '/border-tax-pays', '/buy-insurances', '/driver-jobs', '/quotations', '/buy-sell-taxi'],
       drivers: ['/drivers', '/driver'],
       vehicles: ['/vehicles', '/vehicle'],
       payments: ['/transactions', '/payments', '/refunds', '/driver/payouts', '/invoices', '/payment'],
@@ -30,7 +31,7 @@ const SideBar = ({ open, close }) => {
     setOpenMenu(activeMenu || null);
   }, [location.pathname]);
 
-  // Helper: Check if a link should be active
+  // Helper: Check if any of the paths match (for parent active state)
   const isActive = (paths) => {
     if (Array.isArray(paths)) {
       return paths.some(p => location.pathname.startsWith(p));
@@ -38,7 +39,7 @@ const SideBar = ({ open, close }) => {
     return location.pathname === paths || location.pathname.startsWith(paths + '/');
   };
 
-  // Helper: Exact match for submenu items
+  // Exact match for submenu items
   const isExactActive = (path) => location.pathname === path;
 
   return (
@@ -83,7 +84,7 @@ const SideBar = ({ open, close }) => {
               <li className={isExactActive('/bookings/scheduled') ? 'active' : ''}>
                 <Link to="/bookings/scheduled"><i className="ri-circle-fill circle-icon text-info-main w-auto"></i> Scheduled Rides</Link>
               </li>
-                 <li className={isExactActive('/bookings/post-rides') ? 'active' : ''}>
+              <li className={isExactActive('/bookings/post-rides') ? 'active' : ''}>
                 <Link to="/bookings/post-rides"><i className="ri-circle-fill circle-icon text-info-main w-auto"></i> Driver Post Rides</Link>
               </li>
             </ul>
@@ -105,6 +106,58 @@ const SideBar = ({ open, close }) => {
               </li>
               <li className={isExactActive('/driver/add') ? 'active' : ''}>
                 <Link to="/driver/add"><i className="ri-circle-fill circle-icon text-info-main w-auto"></i> Add Driver</Link>
+              </li>
+            </ul>
+          </li>
+
+          {/* App Categories Management */}
+          <li className="sidebar-menu-group-title">App Categories Management</li>
+
+          <li className={`dropdown ${isActive([
+            '/appcategories', '/appcategory', '/border-tax-pays', '/buy-insurances',
+            '/driver-jobs', '/quotations', '/buy-sell-taxi'
+          ]) ? 'active' : ''}`}>
+            <Link
+              to="#"
+              className={isActive([
+                '/appcategories', '/appcategory', '/border-tax-pays', '/buy-insurances',
+                '/driver-jobs', '/quotations', '/buy-sell-taxi'
+              ]) ? 'active' : ''}
+              onClick={(e) => { e.preventDefault(); toggleMenu('appcategories'); }}
+            >
+              <iconify-icon icon="mdi:apps" className="menu-icon"></iconify-icon>
+              <span>App Categories</span>
+            </Link>
+            <ul className={`sidebar-submenu ${openMenu === 'appcategories' ? 'show' : ''}`}>
+              <li className={isExactActive('/appcategories/all') ? 'active' : ''}>
+                <Link to="/appcategories/all">
+                  <i className="ri-circle-fill circle-icon text-primary-600 w-auto"></i> All Categories
+                </Link>
+              </li>
+              <li className={isExactActive('/border-tax-pays') ? 'active' : ''}>
+                <Link to="/border-tax-pays">
+                  <i className="ri-circle-fill circle-icon text-warning-main w-auto"></i> Border Tax Pays
+                </Link>
+              </li>
+              <li className={isExactActive('/buy-insurances') ? 'active' : ''}>
+                <Link to="/buy-insurances">
+                  <i className="ri-circle-fill circle-icon text-success-main w-auto"></i> Buy Insurances
+                </Link>
+              </li>
+              <li className={isExactActive('/driver-jobs') ? 'active' : ''}>
+                <Link to="/driver-jobs">
+                  <i className="ri-circle-fill circle-icon text-info-main w-auto"></i> Driver Jobs
+                </Link>
+              </li>
+              <li className={isExactActive('/quotations') ? 'active' : ''}>
+                <Link to="/quotations">
+                  <i className="ri-circle-fill circle-icon text-purple w-auto"></i> Quotations
+                </Link>
+              </li>
+              <li className={isExactActive('/buy-sell-taxi') ? 'active' : ''}>
+                <Link to="/buy-sell-taxi">
+                  <i className="ri-circle-fill circle-icon text-danger-main w-auto"></i> Buy Sell Taxi
+                </Link>
               </li>
             </ul>
           </li>

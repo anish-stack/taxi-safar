@@ -893,7 +893,7 @@ const postBooking = async () => {
                   >
                     <Text style={styles.modalItemText}>{item.toUpperCase()}</Text>
                     {vehicle === item && (
-                      <CheckCircle2 size={20} color="#3B82F6" />
+                      <CheckCircle2 size={20} color="#F2320C" />
                     )}
                   </TouchableOpacity>
                 )}
@@ -986,7 +986,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   segmentActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#F2320C',
   },
   segmentText: {
     fontSize: 14,
@@ -1156,8 +1156,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   chipActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+    backgroundColor: '#F2320C',
+    borderColor: '#F2320C',
   },
   chipText: {
     fontSize: 12,
@@ -1192,7 +1192,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#E5E7EB',
   },
   postButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#F2320C',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
@@ -1237,7 +1237,7 @@ const styles = StyleSheet.create({
   modalCloseText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#F2320C',
   },
   modalItem: {
     flexDirection: 'row',
@@ -1295,7 +1295,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   doneButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#F2320C',
     paddingHorizontal: 32,
     paddingVertical: 12,
     borderRadius: 12,

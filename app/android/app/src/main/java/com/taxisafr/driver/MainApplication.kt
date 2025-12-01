@@ -14,6 +14,10 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.taxisafr.driver.LocationUpdatePackage
 import com.taxisafr.driver.LocationPackage
+import com.taxisafr.driver.RidePackage
+import com.taxisafr.driver.FloatingWidgetPackage
+import com.taxisafr.driver.SharedPreferencesPackage
+
 
 
 import expo.modules.ApplicationLifecycleDispatcher
@@ -28,6 +32,9 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               add(LocationPackage())
               add(LocationUpdatePackage())
+              add(RidePackage())
+             add(FloatingWidgetPackage())
+           add(SharedPreferencesPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"

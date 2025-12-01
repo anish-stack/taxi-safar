@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,99 +7,132 @@ import {
   Image,
   Dimensions,
   ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
-} from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
-import useDriverStore from '../../store/driver.store';
-import { Colors } from '../../constant/ui';
-import { getCurrentLocation } from '../../services/PermissionService';
+  TouchableOpacity,
+  Alert,
+} from "react-native";
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
+import useDriverStore from "../../store/driver.store";
+import { Colors } from "../../constant/ui";
+import { getCurrentLocation } from "../../services/PermissionService";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-const offlineBanners = [
-  {
-    image:
-      'https://i.ytimg.com/vi/Bp0uMcrgils/hq720.jpg',
-  },
-  {
-    image:
-      'https://i.ytimg.com/vi/PdtgpstgEZo/hq720.jpg',
-  },
+const OFFLINE_BANNERS = [
+  { id: 1, image: "https://i.ytimg.com/vi/Bp0uMcrgils/hq720.jpg" },
+  { id: 2, image: "https://i.ytimg.com/vi/PdtgpstgEZo/hq720.jpg" },
 ];
 
+const DEFAULT_COORDS = { latitude: 28.7041, longitude: 77.1025 };
+const DEFAULT_RADIUS_KM = 5;
+
 export default function DriverMap() {
-  const { location, is_online } = useDriverStore();
+  const { location, is_online, driver } = useDriverStore();
   const [currentLocation, setCurrentLocation] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [bannerIndex, setBannerIndex] = useState(0);
   const scrollViewRef = useRef(null);
-  const isDriverOnline = is_online;
+  const intervalRef = useRef(null);
 
-  // Auto scroll banners
+  const isDriverOnline = !!is_online;
+  const currentRadius =
+    (driver?.currentRadius > 0 ? driver.currentRadius : DEFAULT_RADIUS_KM) *
+    1000; // Convert km → meters
+
+  // Auto-scroll banners when offline
   useEffect(() => {
-    if (isDriverOnline || offlineBanners.length <= 1) return;
+    if (isDriverOnline || OFFLINE_BANNERS.length <= 1) {
+      intervalRef.current && clearInterval(intervalRef.current);
+      return;
+    }
 
-    const timer = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       setBannerIndex((prev) => {
-        const next = prev === offlineBanners.length - 1 ? 0 : prev + 1;
+        const next = (prev + 1) % OFFLINE_BANNERS.length;
         scrollViewRef.current?.scrollTo({ x: next * width, animated: true });
         return next;
       });
     }, 4000);
 
-    return () => clearInterval(timer);
+    return () => intervalRef.current && clearInterval(intervalRef.current);
   }, [isDriverOnline]);
 
-  // Manual scroll - update dot index
   const handleScroll = (event) => {
-    const index = Math.round(event.nativeEvent.contentOffset.x / width);
+    const scrollPosition = event.nativeEvent.contentOffset.x;
+    const index = Math.round(scrollPosition / width);
     setBannerIndex(index);
   };
 
-  // ---- NEW CLEAN LOCATION HANDLER (using getCurrentLocation only) ----
-  useEffect(() => {
-    const loadLocation = async () => {
-      try {
-        // If user already has location from store
-        if (location && Array.isArray(location) && location.length === 2) {
-          setCurrentLocation({
-            latitude: location[1],
-            longitude: location[0],
-          });
-          setLoading(false);
-          return;
-        }
+  // Get location with fallback
+  const fetchLocation = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        // Fetch current location from your service
-        const loc = await getCurrentLocation();
-        if (loc) {
-          setCurrentLocation({
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-          });
+      let loc = null;
+
+      // Priority 1: Use location from store
+      if (
+        location &&
+        Array.isArray(location) &&
+        location.length === 2 &&
+        location[0] &&
+        location[1]
+      ) {
+        loc = { latitude: location[1], longitude: location[0] };
+      } else {
+        // Priority 2: Get fresh location
+        const freshLoc = await getCurrentLocation();
+        if (freshLoc?.latitude && freshLoc?.longitude) {
+          loc = freshLoc;
         }
-      } catch (err) {
-        console.log('Location Error:', err);
-      } finally {
-        setLoading(false);
       }
-    };
 
-    loadLocation();
+      if (loc) {
+        setCurrentLocation(loc);
+      } else {
+        throw new Error("Unable to get your location");
+      }
+    } catch (err) {
+      console.error("Location fetch error:", err);
+      setError(err.message || "Location access denied or unavailable");
+      setCurrentLocation(DEFAULT_COORDS); // Fallback
+    } finally {
+      setLoading(false);
+    }
   }, [location]);
 
-  // Loading screen
+  useEffect(() => {
+    fetchLocation();
+  }, [fetchLocation]);
+
+  // Re-fetch location if store updates (optional)
+  useEffect(() => {
+    if (location && !currentLocation) {
+      fetchLocation();
+    }
+  }, [location]);
+
+  // Show error alert once
+  useEffect(() => {
+    if (error && !loading) {
+      Alert.alert("Location Error", error + "\nUsing default location.", [
+        { text: "Retry", onPress: fetchLocation },
+      ]);
+    }
+  }, [error, loading]);
+
+  // Loading State
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#00aaa9" />
-        <Text style={styles.loadingText}>Getting current location...</Text>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Fetching your location...</Text>
       </View>
     );
   }
 
-  // OFFLINE UI (Slider)
+  // Offline State - Beautiful Banner Slider
   if (!isDriverOnline) {
     return (
       <View style={styles.offlineContainer}>
@@ -109,22 +142,29 @@ export default function DriverMap() {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleScroll}
-          style={{ flex: 1 }}
+          decelerationRate="fast"
+          snapToInterval={width}
         >
-          {offlineBanners.map((banner, index) => (
-            <View key={index} style={styles.slide}>
+          {OFFLINE_BANNERS.map((banner, index) => (
+            <View key={banner.id} style={styles.slide}>
               <Image
                 source={{ uri: banner.image }}
                 style={styles.bannerImage}
                 resizeMode="cover"
               />
+              <View style={styles.offlineOverlay}>
+                <Text style={styles.offlineTitle}>You're Offline</Text>
+                <Text style={styles.offlineSubtitle}>
+                  Go online to start accepting rides
+                </Text>
+              </View>
             </View>
           ))}
         </ScrollView>
 
-        {/* Dots */}
+        {/* Pagination Dots */}
         <View style={styles.pagination}>
-          {offlineBanners.map((_, idx) => (
+          {OFFLINE_BANNERS.map((_, idx) => (
             <View
               key={idx}
               style={[
@@ -138,120 +178,175 @@ export default function DriverMap() {
     );
   }
 
-  // ONLINE UI (Map)
+  // Online State - Map with Dynamic Radius
   return (
     <View style={styles.container}>
       <MapView
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         region={{
-          latitude: currentLocation?.latitude || 28.7010783,
-          longitude: currentLocation?.longitude || 77.1169517,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+          ...currentLocation,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.012,
         }}
-        showsUserLocation={true}
-        followsUserLocation={true}
+        showsUserLocation
+        followsUserLocation
+        loadingEnabled
       >
         {currentLocation && (
           <>
-            <Marker coordinate={currentLocation}>
-              <Image
-                source={require('../../assets/car-marker.png')}
-                style={{ width: 40, height: 40 }}
-              />
+            {/* Custom Car Marker */}
+            <Marker coordinate={currentLocation} anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={styles.carContainer}>
+                <Image
+                  source={require("../../assets/car-marker.png")}
+                  style={styles.carMarker}
+                  resizeMode="contain"
+                />
+              </View>
             </Marker>
 
+            {/* Dynamic Service Radius Circle */}
             <Circle
+              key={currentRadius} // Force re-render on radius change
               center={currentLocation}
-              radius={200}
+              radius={currentRadius}
               strokeColor={Colors.primary}
-              strokeWidth={2}
-              fillColor="rgba(0, 170, 169, 0.15)"
+              strokeWidth={2.5}
+              fillColor="rgba(0, 170, 169, 0.2)"
+              zIndex={-1}
             />
           </>
         )}
       </MapView>
-
-      <View style={styles.overlay}>
-        <Text style={styles.overlayText}>Searching for new rides nearby...</Text>
-      </View>
     </View>
   );
 }
 
-// ----------------- Styles -----------------
+// Enhanced Styles
 const styles = StyleSheet.create({
   container: {
-    height: 300,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginVertical: 10,
+    height: 420,
+    overflow: "hidden",
+    marginVertical: 12,
   },
   loadingContainer: {
-    height: 300,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fffe',
+    height: 320,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8fffe",
+    borderRadius: 20,
   },
   loadingText: {
-    marginTop: 10,
-    color: '#003873',
+    marginTop: 16,
+    color: "#003873",
     fontSize: 16,
+    fontWeight: "500",
   },
   map: {
     ...StyleSheet.absoluteFillObject,
   },
-  offlineContainer: {
-    height: 270,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    overflow: 'hidden',
-    position: 'relative',
+  carContainer: {
+    // backgroundColor: 'white',
+    padding: 6,
+    // borderRadius: 30,
+    elevation: 5,
   },
-  slide: {
-    width,
-    height: '100%',
+  carMarker: {
+    width: 22,
+    height: 22,
   },
-  bannerImage: {
-    width: '100%',
-    height: '100%',
+  statusBadge: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 30,
+    elevation: 6,
   },
-  pagination: {
-    position: 'absolute',
-    bottom: 80,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 4,
-  },
-  activeDot: {
-    backgroundColor: '#fff',
+  onlineDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    backgroundColor: "#4CAF50",
+    marginRight: 8,
   },
-  inactiveDot: {
-    backgroundColor: 'rgba(255,255,255,0.4)',
-  },
-  overlay: {
-    position: 'absolute',
-    bottom: 20,
-    alignSelf: 'center',
-    backgroundColor: '#ffffffdd',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  overlayText: {
-    color: '#003873',
-    fontWeight: '600',
+  statusText: {
+    fontWeight: "600",
+    color: "#003873",
     fontSize: 14,
+  },
+  radiusInfo: {
+    position: "absolute",
+    bottom: 16,
+    alignSelf: "center",
+    backgroundColor: "rgba(0, 170, 169, 0.9)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 30,
+  },
+  radiusText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  offlineContainer: {
+    height: 300,
+    // borderRadius: 20,
+    overflow: "hidden",
+    backgroundColor: "#000",
+    elevation: 6,
+  },
+  slide: {
+    width,
+    height: "100%",
+    position: "relative",
+  },
+  bannerImage: {
+    width: "100%",
+    height: "100%",
+  },
+  offlineOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 30,
+  },
+  offlineTitle: {
+    color: "#fff",
+    fontSize: 26,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  offlineSubtitle: {
+    color: "#ddd",
+    fontSize: 16,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  pagination: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  dot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginHorizontal: 5,
+    backgroundColor: "rgba(255,255,255,0.4)",
+  },
+  activeDot: {
+    backgroundColor: "#fff",
+    width: 24,
+    borderRadius: 6,
   },
 });

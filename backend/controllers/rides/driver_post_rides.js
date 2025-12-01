@@ -226,7 +226,7 @@ exports.postRide = async (req, res) => {
       extraKmCharge,
       extraMinCharge,
       acceptBookingType,
-      extraRequirements: extraReqObj, 
+      extraRequirements: extraReqObj,
       notes,
       paymentMethod,
       paymentStatus: "pending",
@@ -633,7 +633,7 @@ exports.searchNearbyRides = async (req, res) => {
 
     // Count rides
     const totalRides = await RidesPost.countDocuments();
-    console.log("rides",totalRides)
+    console.log("rides", totalRides);
     if (totalRides === 0) {
       return res.status(200).json({
         success: true,
@@ -649,9 +649,12 @@ exports.searchNearbyRides = async (req, res) => {
     console.log("driver post → pending rides count:", allRides.length);
 
     allRides.forEach((r) =>
-      console.log("driver post → pickup coordinates:", r.pickupLocation.coordinates)
+      console.log(
+        "driver post → pickup coordinates:",
+        r.pickupLocation.coordinates
+      )
     );
-    console.log("longitude, latitude",longitude, latitude)
+    console.log("longitude, latitude", longitude, latitude);
 
     // Count rides matching vehicle type
     const vehicleMatchCount = await RidesPost.countDocuments({
@@ -723,7 +726,6 @@ exports.searchNearbyRides = async (req, res) => {
     });
   }
 };
-
 
 // Get ride statistics
 exports.getRideStatistics = async (req, res) => {

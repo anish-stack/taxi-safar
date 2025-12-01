@@ -1,8 +1,6 @@
-import React from 'react';
 import { Outlet } from 'react-router-dom';
 import SideBar from '../../components/SideBar'
 import { useState } from 'react';
-import Overview from '../Dashboard/Overview';
 
 export const Home = () => {
   const [open, setOpen] = useState(false);

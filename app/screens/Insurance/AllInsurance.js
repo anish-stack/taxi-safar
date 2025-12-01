@@ -24,6 +24,7 @@ export default function AllInsurance({ navigation }) {
       const res = await axios.get(`${API_URL_APP}/api/v1/insurance/my`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+       console.log("Fetch Insurance Error:", res.data);
       setData(res.data.data);
     } catch (error) {
       console.log("Fetch Insurance Error:", error);
