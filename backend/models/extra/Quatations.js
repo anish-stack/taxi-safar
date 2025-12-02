@@ -64,7 +64,7 @@ const quotationSchema = new mongoose.Schema(
           },
         },
         TotalAmountOftrip:{
-          type: Number, required: true
+          type: Number
         },
         total_days: { type: Number,  },
         per_day_cab_charges: { type: Number,  },
