@@ -1219,12 +1219,11 @@ exports.addBankDetails = async (req, res) => {
   try {
     console.log("📥 Incoming Request Body:", req.body);
 
-    // Driver ID — from token or params
+    // Driver ID — from params OR token
     const driverId = req.params.driverId || req.user?.userId;
-    console.log("🆔 Driver ID Received:", driverId);
+    console.log("🆔 Driver ID:", driverId);
 
     if (!driverId) {
-      console.log("❌ DriverId missing!");
       return res.status(400).json({
         success: false,
         message: "Driver ID is missing. Please log in again.",
@@ -1240,36 +1239,35 @@ exports.addBankDetails = async (req, res) => {
       upi_id,
     } = req.body;
 
-    // Validation
+    // ------------------------------- VALIDATION -------------------------------
     if (!bank_name || !account_number || !ifsc_code || !account_holder_name) {
-      console.log("⚠️ Required fields missing!");
       return res.status(400).json({
         success: false,
         message:
-          "Please fill in all required fields: Bank Name, Account Number, IFSC Code, Account Holder Name.",
+          "Please fill all required fields: Bank Name, Account Number, IFSC Code, Account Holder Name.",
       });
     }
 
-    // Find Driver
-    console.log("🔍 Checking driver in DB...");
+    // ------------------------------- FIND DRIVER -------------------------------
+    console.log("🔍 Finding driver...");
     const driver = await Driver.findById(driverId);
 
     console.log("👀 Driver Found:", driver);
 
     if (!driver) {
-      console.log("❌ No driver found");
       return res.status(404).json({
         success: false,
         message: "Driver not found.",
       });
     }
 
-    // Check existing bank details
-    console.log("🔍 Checking existing bank details...");
+    // ------------------------------- CHECK EXISTING BANK DETAILS -------------------------------
+    console.log("🔎 Checking existing bank details...");
     let bankDetails = await BankDetails.findOne({ driver_id: driverId });
 
+    // ======================== UPDATE EXISTING BANK DETAILS ========================
     if (bankDetails) {
-      console.log("✏️ Updating existing bank details:", bankDetails);
+      console.log("✏ Updating existing bank details:", bankDetails);
 
       bankDetails.bank_name = bank_name;
       bankDetails.account_number = account_number;
@@ -1281,11 +1279,12 @@ exports.addBankDetails = async (req, res) => {
       bankDetails.verified_at = null;
 
       await bankDetails.save();
+
       driver.BankDetails = bankDetails._id;
-      driver.account_status = "active";
+      driver.account_status = "active";   // ⭐ FIXED
       await driver.save();
 
-      console.log("💾 Bank details updated successfully");
+      console.log("💾 Bank details updated successfully!");
 
       return res.status(200).json({
         success: true,
@@ -1295,8 +1294,8 @@ exports.addBankDetails = async (req, res) => {
       });
     }
 
-    // Create new bank details entry
-    console.log("🆕 Creating new BankDetails document...");
+    // ======================== CREATE NEW BANK DETAILS ========================
+    console.log("🆕 Creating new BankDetails...");
     const newBankDetails = await BankDetails.create({
       driver_id: driverId,
       bank_name,
@@ -1310,12 +1309,12 @@ exports.addBankDetails = async (req, res) => {
 
     console.log("📄 New BankDetails Created:", newBankDetails);
 
-    // Link to Driver
+    // Link with driver
     driver.BankDetails = newBankDetails._id;
-    console.log("🔗 Linking BankDetails to Driver:", driver);
-
+    driver.account_status = "active";    // ⭐ FIXED for NEW case also
     await driver.save();
-    console.log("💾 Driver saved successfully with BankDetails.");
+
+    console.log("💾 Driver updated with new BankDetails!");
 
     return res.status(201).json({
       success: true,
@@ -1323,8 +1322,9 @@ exports.addBankDetails = async (req, res) => {
         "Your bank details have been added successfully. Verification pending.",
       data: newBankDetails,
     });
+
   } catch (error) {
-    console.log("❌ ERROR while saving bank details:", error);
+    console.log("❌ ERROR in addBankDetails:", error);
     return res.status(500).json({
       success: false,
       message:
