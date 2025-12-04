@@ -1,5 +1,5 @@
 // components/common/Layout.js
-import React from "react";
+import React,{useContext} from "react";
 import {
   View,
   ScrollView,
@@ -7,7 +7,11 @@ import {
   Platform,
   StatusBar,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
 
 import Header from "./header";
 import CustomBottomTabs from "./CustomBottomNav";
@@ -22,19 +26,15 @@ const Layout = ({
   stopFloatingWidget,
   startFloatingWidget,
   startPoolingService,
-  contentContainerStyle = {},   // ← यहाँ कोई default flexGrow नहीं डालेंगे
+  contentContainerStyle = {}, // ← यहाँ कोई default flexGrow नहीं डालेंगे
   backgroundColor = "#ffffff",
   state,
 }) => {
   const insets = useSafeAreaInsets();
-
+  const tabBarHeight = useContext(BottomTabBarHeightContext) || 0;
   const defaultContentStyle = {
     flexGrow: 1,
-    paddingBottom: showBottomTabs
-      ? Platform.OS === "ios"
-        ? 100 + insets.bottom
-        : 80 + insets.bottom
-      : 20,
+    paddingBottom: tabBarHeight + insets.bottom + 20, // real dynamic height
   };
 
   const finalContentStyle = [
@@ -43,14 +43,16 @@ const Layout = ({
   ];
 
   const content = (
-    <View style={[styles.content, { backgroundColor }]}>
-      {children}
-    </View>
+    <View style={[styles.content, { backgroundColor }]}>{children}</View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" translucent={false} />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="#ffffff"
+        translucent={false}
+      />
 
       {/* Header */}
       {showHeader && (
@@ -67,7 +69,7 @@ const Layout = ({
       {scrollable ? (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={finalContentStyle}   // ← यहाँ सही style
+          contentContainerStyle={finalContentStyle} // ← यहाँ सही style
           showsVerticalScrollIndicator={false}
           bounces={true}
           keyboardShouldPersistTaps="handled"
@@ -91,9 +93,10 @@ const Layout = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#ffffff",
   },
   scrollView: {
+    backgroundColor: "#FFFBF1",
+
     flex: 1,
   },
   staticContent: {

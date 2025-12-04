@@ -1674,7 +1674,7 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
 exports.verifyAadhaarOtp = async (req, res) => {
   try {
     const {
-      request_id, // ✅ using exact name from body
+      request_id,
       otp,
       deviceId,
       aadhaarNumber,
@@ -1682,153 +1682,121 @@ exports.verifyAadhaarOtp = async (req, res) => {
       isByPass = false,
     } = req.body;
 
-    console.log("Verify OTP Body:", req.body);
+    console.log("🔹 verifyAadhaarOtp Request:", req.body);
 
-    // ------------------------ VALIDATION ------------------------
-    if (!request_id || !otp || !aadhaarNumber || !deviceId) {
+    // ---------------- VALIDATION ----------------
+    if (!request_id || !deviceId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Missing required fields (OTP, request_id, Aadhaar, deviceId).",
+        message: "request_id and deviceId are required",
       });
     }
 
-    // ------------------------ CACHE CHECK ------------------------
-    const cached = await AadharDetails.findOne({ device_id: deviceId });
-
-    const isCacheValid =
-      cached &&
-      cached.aadhar_verification_data?.aadhaar_number === aadhaarNumber &&
-      cached.aadhar_verification_data?.status === "success_aadhaar" &&
-      Date.now() < new Date(cached.expiredDataHour).getTime();
-
-    // ------------------------ BYPASS MODE ------------------------
+    // ---------------------------------------------------
+    // 🔥 BYPASS MODE
+    // ---------------------------------------------------
     if (isByPass === true) {
       console.log("⚠️ BYPASS MODE ENABLED");
 
       const dummyData = {
         aadhaar_number: aadhaarNumber,
         name: "Dummy User",
-        gender: "Male",
         dob: "1995-06-01",
-        mobile: mobile,
+        gender: "Male",
+        mobile,
+        address: "Dummy Address, India",
         status: "success_aadhaar",
       };
 
-      await AadharDetails.create({
-        aadhar_verification_data: dummyData,
-        device_id: deviceId,
-        expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
-      });
+      await AadharDetails.findOneAndUpdate(
+        { device_id: deviceId },
+        {
+          aadhar_verification_data: dummyData,
+          device_id: deviceId,
+          expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
+        },
+        { upsert: true, new: true }
+      );
 
       return res.status(200).json({
         success: true,
         redirect: "register",
         isNewDriver: true,
-        message: "Bypass Aadhaar verification successful.",
         aadhaarData: dummyData,
         fromCache: false,
+        message: "Bypass Aadhaar verification successful.",
       });
     }
 
-    // ------------------------ USE CACHE IF VALID ------------------------
-    if (isCacheValid) {
-      console.log("🔁 Using Cached Aadhaar Data");
-
-      const data = cached.aadhar_verification_data;
-
-      let driver = await Driver.findOne({ aadhar_number: aadhaarNumber });
-
-      if (!driver) {
-        return res.status(200).json({
-          success: true,
-          redirect: "register",
-          isNewDriver: true,
-          message: "Aadhaar already verified earlier. Continue registration.",
-          aadhaarData: data,
-          fromCache: true,
-        });
-      }
-
-      driver.aadhar_verified = true;
-      driver.aadhaar_details = data;
-      await driver.save();
-
-      return res.status(200).json({
-        success: true,
-        isNewDriver: false,
-        message: "Aadhaar verified (from cached data).",
-        driver,
-        aadhaarData: data,
-        fromCache: true,
+    // ---------------- OTP REQUIRED FOR NON-BYPASS ----------------
+    if (!otp) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP is required",
       });
     }
 
-    // ------------------------ CALL QUICK-EKYC API ------------------------
+    // ---------------------------------------------------
+    // 🔥 VERIFY OTP USING QUICK-EKYC
+    // ---------------------------------------------------
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/aadhaar-v2/submit-otp",
       {
         key: process.env.QUICKEKYC_API_KEY,
-        request_id: request_id.toString(), // <-- important
+        request_id: request_id.toString(),
         otp,
       },
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 20000,
-      }
+      { headers: { "Content-Type": "application/json" }, timeout: 20000 }
     );
 
-    console.log("QuickEKYC OTP Response:", response.data);
+    console.log("📥 QuickEKYC OTP Response:", response.data);
 
     if (response.data.status !== "success") {
       return res.status(400).json({
         success: false,
-        message: response.data.message || "OTP verification failed.",
+        message: response.data.message || "OTP verification failed",
       });
     }
 
     const data = response.data.data;
-
-    // ------------------------ SAVE NEW VERIFIED DATA ------------------------
-    await AadharDetails.create({
-      aadhar_verification_data: data,
-      device_id: deviceId,
-      expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
-    });
-
-    // ------------------------ CHECK DRIVER ------------------------
-    let driver = await Driver.findOne({ aadhar_number: aadhaarNumber });
-
-    if (!driver) {
-      return res.status(200).json({
-        success: true,
-        redirect: "register",
-        isNewDriver: true,
-        message: "Aadhaar verified successfully. Continue registration.",
-        aadhaarData: data,
-        fromCache: false,
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        message: "Aadhaar data missing from API",
       });
     }
 
-    driver.aadhar_verified = true;
-    driver.aadhaar_details = data;
-    await driver.save();
+    // ---------------------------------------------------
+    // 🔥 UPDATE EXISTING DOCUMENT ONLY (NO NEW CREATION)
+    // ---------------------------------------------------
+    const updatedRecord = await AadharDetails.findOneAndUpdate(
+      { device_id: deviceId },
+      {
+        aadhar_verification_data: data,
+        device_id: deviceId,
+        expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
+      },
+      { upsert: true, new: true }
+    );
 
+    // ---------------------------------------------------
+    // 🔥 RESPONSE
+    // ---------------------------------------------------
     return res.status(200).json({
       success: true,
-      isNewDriver: false,
-      message: "Aadhaar verified successfully.",
-      driver,
+      redirect: "register",
       aadhaarData: data,
+      message: "Aadhaar verified successfully.",
       fromCache: false,
     });
+
   } catch (error) {
-    console.error("Aadhaar OTP Verification Error:", error);
+    console.error("❌ Aadhaar OTP Verification Error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Something went wrong while verifying OTP.",
-      error: error.message,
+      error: error?.response?.data || error.message,
     });
   }
 };
@@ -2101,7 +2069,7 @@ exports.verifyRcDetails = async (req, res) => {
 
 exports.sendOtp = async (req, res) => {
   try {
-    const { number } = req.body;
+    const { number ,device_id} = req.body;
 
     if (!number || !/^\d{10}$/.test(number)) {
       return res.status(400).json({
@@ -2112,7 +2080,6 @@ exports.sendOtp = async (req, res) => {
 
     // Step 1: Check if number exists in AadharDetails
     let aadharUser = await AadharDetails.findOne({ contact_number: number });
-    console.log("aadharUser", aadharUser);
     // Step 2: If mobile already verified → check driver status & redirect accordingly
     if (aadharUser?.mobile_verify === true) {
       const driver = await Driver.findOne({ driver_contact_number: number })
@@ -2198,6 +2165,7 @@ exports.sendOtp = async (req, res) => {
     await AadharDetails.findOneAndUpdate(
       { contact_number: number },
       {
+        device_id,
         contact_number: number,
         otp_mobile: otp,
         otp_expire_time_mobile: new Date(Date.now() + 5 * 60 * 1000), // 5 min

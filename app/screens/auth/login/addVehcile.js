@@ -34,7 +34,7 @@ export default function AddVehicle({ navigation }) {
   const { data, fetchSettings } = useSettings({ autoFetch: true });
 
   // RC States
-  const [rcNumber, setRcNumber] = useState("DL4CBE0478");
+  const [rcNumber, setRcNumber] = useState("");
   const [rcData, setRcData] = useState(null);
   const [isRcVerified, setIsRcVerified] = useState(false);
   const [isVerifyingRc, setIsVerifyingRc] = useState(false);

@@ -161,9 +161,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     padding: 14, // कम किया
     borderRadius: 16,
-    marginVertical: 6, // कम किया (12 → 6)
+    marginVertical: 16, // कम किया (12 → 6)
     marginHorizontal: 8,
-    elevation: 2,
+    elevation: .4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,

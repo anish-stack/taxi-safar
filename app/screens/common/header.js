@@ -382,14 +382,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#fff",
-    borderRadius: 12,
+    // borderRadius: 12,
     paddingVertical: isSmallScreen ? 8 : 10,
     paddingHorizontal: isSmallScreen ? 10 : 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+
   },
 
   // Logo styles

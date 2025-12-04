@@ -70,7 +70,7 @@ export default function RegisterScreen({ navigation }) {
   // === STATES ===
   const [currentStep, setCurrentStep] = useState(1);
   const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [mobile, setMobile] = useState("7217619794");
+  const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
   const [dob, setDob] = useState(null);
   const [email, setEmail] = useState("");
@@ -485,12 +485,14 @@ export default function RegisterScreen({ navigation }) {
       );
     }
 
+        const deviceId = await Application.getAndroidId();
+
     setIsSendingMobileOtp(true);
     try {
-      const res = await axios.post(
-        `http://192.168.1.11:3100/api/v1/send-mobile-otp`,
-        { number: mobile.trim() }
-      );
+      const res = await axios.post(`${API_URL_APP}/api/v1/send-mobile-otp`, {
+        number: mobile.trim(),
+        device_id:deviceId
+      });
 
       // अब success: true हो सकता है redirect के साथ भी!
       if (res.data.success) {
@@ -569,13 +571,10 @@ export default function RegisterScreen({ navigation }) {
 
     setIsVerifyingMobileOtp(true);
     try {
-      const res = await axios.post(
-        `http://192.168.1.11:3100/api/v1/verify-mobile-otp`,
-        {
-          mobileNumber: mobile.trim(),
-          otp,
-        }
-      );
+      const res = await axios.post(`${API_URL_APP}/api/v1/verify-mobile-otp`, {
+        mobileNumber: mobile.trim(),
+        otp,
+      });
 
       if (res.data.success) {
         setMobileVerified(true);
@@ -797,7 +796,7 @@ export default function RegisterScreen({ navigation }) {
     <Modal
       visible={showOtpModal}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={() => setShowOtpModal(false)}
     >
       <View style={styles.modalOverlay}>
@@ -1611,14 +1610,21 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
+    justifyContent: "center", // ← center में
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
   modalContent: {
     backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 24,
     padding: 24,
-    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 380,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
   },
   modalHandle: {
     width: 40,
