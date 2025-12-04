@@ -2106,6 +2106,7 @@ exports.sendOtp = async (req, res) => {
         return res.status(400).json({
           success: false,
           redirect: "step-1",
+          driver:aadharUser?.aadhar_verification_data || driver,
           message: "Please complete registration first.",
         });
       }

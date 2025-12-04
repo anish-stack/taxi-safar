@@ -485,13 +485,13 @@ export default function RegisterScreen({ navigation }) {
       );
     }
 
-        const deviceId = await Application.getAndroidId();
+    const deviceId = await Application.getAndroidId();
 
     setIsSendingMobileOtp(true);
     try {
       const res = await axios.post(`${API_URL_APP}/api/v1/send-mobile-otp`, {
         number: mobile.trim(),
-        device_id:deviceId
+        device_id: deviceId,
       });
 
       // अब success: true हो सकता है redirect के साथ भी!
