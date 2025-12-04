@@ -56,9 +56,20 @@ export default function RegisterScreen({ navigation }) {
     setAlertVisible(true);
   };
 
+  const [mobileVerified, setMobileVerified] = useState(false);
+  const [showMobileOtpModal, setShowMobileOtpModal] = useState(false);
+  const [mobileOtp, setMobileOtp] = useState(["", "", "", "", "", ""]);
+  const [mobileTimer, setMobileTimer] = useState(0);
+  const [isSendingMobileOtp, setIsSendingMobileOtp] = useState(false);
+  const [isVerifyingMobileOtp, setIsVerifyingMobileOtp] = useState(false);
+
+  const mobileOtpRefs = Array(6)
+    .fill()
+    .map(() => useRef(null));
+
   // === STATES ===
   const [currentStep, setCurrentStep] = useState(1);
-  const [aadhaarNumber, setAadhaarNumber] = useState("710710364164");
+  const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [mobile, setMobile] = useState("7217619794");
   const [name, setName] = useState("");
   const [dob, setDob] = useState(null);
@@ -139,6 +150,7 @@ export default function RegisterScreen({ navigation }) {
 
   // === REDIRECT HANDLER ===
   const handleRedirect = (redirect, message, driver) => {
+    console.log("redirect", redirect);
     let routeName = "";
     let params = {};
     console.log("redirect", redirect);
@@ -463,6 +475,138 @@ export default function RegisterScreen({ navigation }) {
     setCameraOpen(true);
   };
 
+  // Send Mobile OTP
+  const handleSendMobileOtp = async () => {
+    if (!/^\d{10}$/.test(mobile)) {
+      return showAlert(
+        "error",
+        "Invalid Mobile",
+        "Enter valid 10-digit number"
+      );
+    }
+
+    setIsSendingMobileOtp(true);
+    try {
+      const res = await axios.post(
+        `http://192.168.1.11:3100/api/v1/send-mobile-otp`,
+        { number: mobile.trim() }
+      );
+
+      // अब success: true हो सकता है redirect के साथ भी!
+      if (res.data.success) {
+        // 1. Direct home login
+        if (res.data.alreadyVerified || res.data.redirect === "home") {
+          showAlert(
+            "success",
+            "Welcome Back! Number already registered",
+            "Please Login ",
+            () => {
+              navigation.replace("AuthLogin", { driver: res.data.driver });
+            }
+          );
+          return;
+        }
+
+        // 2. Redirect to any step
+        if (res.data.redirect) {
+          const redirect = res.data.redirect;
+          const driver = res.data.driver;
+          const message = res.data.message;
+
+          showAlert("info", "Action Required", message, () => {
+            handleRedirect(redirect, message, driver);
+          });
+          return;
+        }
+
+        // 3. OTP sent (first time)
+        if (res.data.message?.includes("OTP")) {
+          setShowMobileOtpModal(true);
+          setMobileTimer(30);
+          setMobileOtp(["", "", "", "", "", ""]);
+          showAlert("success", "OTP Sent", "Check your SMS");
+        }
+      }
+    } catch (error) {
+      console.log("API Error:", error.response?.data);
+
+      const errData = error.response?.data || {};
+
+      // अब catch में सिर्फ real error आएगा
+      if (errData.redirect) {
+        showAlert(
+          "info",
+          "Continue Registration",
+          errData.message || "Please complete your profile",
+          () => {
+            handleRedirect(errData.redirect, errData.message, errData.driver);
+          }
+        );
+      } else {
+        showAlert(
+          "error",
+          "Error",
+          errData.message || "Network error. Try again."
+        );
+      }
+    } finally {
+      setIsSendingMobileOtp(false);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (showMobileOtpModal && mobileTimer > 0) {
+      interval = setInterval(() => setMobileTimer((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showMobileOtpModal, mobileTimer]);
+  // Verify Mobile OTP
+  const handleVerifyMobileOtp = async () => {
+    const otp = mobileOtp.join("");
+    if (otp.length !== 6)
+      return showAlert("error", "Invalid", "Enter 6-digit OTP");
+
+    setIsVerifyingMobileOtp(true);
+    try {
+      const res = await axios.post(
+        `http://192.168.1.11:3100/api/v1/verify-mobile-otp`,
+        {
+          mobileNumber: mobile.trim(),
+          otp,
+        }
+      );
+
+      if (res.data.success) {
+        setMobileVerified(true);
+        setShowMobileOtpModal(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showAlert(
+          "success",
+          "Verified!",
+          "Mobile number verified successfully"
+        );
+      } else {
+        showAlert("error", "Invalid OTP", res.data.message || "Try again");
+      }
+    } catch (error) {
+      console.log("error.response?.data", error.response?.data);
+      const errData = error.response?.data || {};
+
+      // Extract redirect info if error contains redirect & driver
+      const redirect =
+        errData.redirect || errData?.aadhaarData?.redirect || null;
+      if (redirect) {
+        console.log("🔁 Redirecting from catch block");
+        handleRedirect(redirect, message, driver);
+        return; // stop further alerts
+      }
+      showAlert("error", "Error", error.response?.data?.message || "Failed");
+    } finally {
+      setIsVerifyingMobileOtp(false);
+    }
+  };
+
   const pickDocFromGallery = async (type) => {
     const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
     if (!result.canceled) {
@@ -768,136 +912,292 @@ export default function RegisterScreen({ navigation }) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {currentStep === 1 ? (
+          {/* ==================== STEP 1: MOBILE VERIFICATION ==================== */}
+          {!mobileVerified ? (
             <>
-              {/* -------------------- STEP 1 -------------------- */}
-              {!isAadhaarVerified ? (
-                <>
-                  <Text style={styles.title}>Verify Aadhaar</Text>
-                  <Text style={styles.subtitle}>
-                    Enter your details to continue
-                  </Text>
+              <Text style={styles.title}>Welcome! Let's get started</Text>
+              <Text style={styles.subtitle}>
+                Enter your mobile number to continue
+              </Text>
 
-                  <View style={styles.form}>
-                    {/* Aadhaar Number */}
-                    <Text style={styles.label}>Aadhaar Number</Text>
-                    <TextInput
-                      placeholder="12-digit Aadhaar"
-                      value={aadhaarNumber}
-                      onChangeText={setAadhaarNumber}
-                      keyboardType="number-pad"
-                      maxLength={12}
-                      editable={!isAadhaarVerified}
-                      style={[
-                        styles.input,
-                        isAadhaarVerified && { backgroundColor: "#f0f0f0" },
-                      ]}
-                    />
+              <View style={styles.form}>
+                <Text style={styles.label}>Mobile Number *</Text>
+                <TextInput
+                  placeholder="Enter 10-digit mobile"
+                  value={mobile}
+                  onChangeText={setMobile}
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  style={styles.input}
+                />
 
-                    {/* Mobile Number */}
-                    <Text style={styles.label}>Mobile Number</Text>
-                    <TextInput
-                      placeholder="10-digit mobile"
-                      value={mobile}
-                      onChangeText={setMobile}
-                      keyboardType="phone-pad"
-                      maxLength={10}
-                      editable={!isAadhaarVerified}
-                      style={[
-                        styles.input,
-                        isAadhaarVerified && { backgroundColor: "#f0f0f0" },
-                      ]}
-                    />
-
-                    {/* Send OTP Button */}
-                    <TouchableOpacity
-                      style={[
-                        styles.nextButton,
-                        isVerifying && { opacity: 0.7 },
-                      ]}
-                      onPress={handleGenerateAadhaarOTP}
-                      disabled={isAadhaarVerified || isVerifying}
-                    >
-                      {isVerifying ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <Text style={styles.nextText}>
-                          {isAadhaarVerified ? "Verified ✓" : "Send OTP"}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  {/* Aadhaar Verified UI */}
-                  {profileImage && (
-                    <TouchableOpacity
-                      style={styles.avatarContainer}
-                      onPress={() => (
-                        setCameraMode("selfie"), setCameraOpen(true)
-                      )}
-                    >
-                      <Image
-                        source={{ uri: profileImage }}
-                        style={styles.avatar}
-                      />
-                      <View style={styles.cameraBadge}>
-                        <Ionicons
-                          name="camera"
-                          size={16}
-                          color={Colors.white}
-                        />
-                      </View>
-                    </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.nextButton,
+                    (!mobile || mobile.length !== 10 || isSendingMobileOtp) && {
+                      backgroundColor: "#ccc",
+                    },
+                  ]}
+                  onPress={handleSendMobileOtp}
+                  disabled={
+                    !mobile || mobile.length !== 10 || isSendingMobileOtp
+                  }
+                >
+                  {isSendingMobileOtp ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.nextText}>Send OTP</Text>
                   )}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : !isAadhaarVerified ? (
+            /* ==================== STEP 2: AADHAAR VERIFICATION ==================== */
+            <>
+              <Text style={styles.title}>Verify Aadhaar</Text>
+              <Text style={styles.subtitle}>
+                Your mobile is verified. Now enter Aadhaar details
+              </Text>
 
-                  {/* Name */}
-                  <Text style={styles.label}>Name</Text>
-                  <TextInput
-                    value={name}
-                    editable={false}
-                    style={[styles.input, { backgroundColor: "#f0f0f0" }]}
+              <View style={styles.form}>
+                <Text style={styles.label}>Aadhaar Number *</Text>
+                <TextInput
+                  placeholder="12-digit Aadhaar number"
+                  value={aadhaarNumber}
+                  onChangeText={setAadhaarNumber}
+                  keyboardType="number-pad"
+                  maxLength={12}
+                  style={styles.input}
+                />
+
+                <TouchableOpacity
+                  style={[
+                    styles.nextButton,
+                    (!aadhaarNumber ||
+                      aadhaarNumber.length !== 12 ||
+                      isVerifying) && {
+                      backgroundColor: "#ccc",
+                    },
+                  ]}
+                  onPress={handleGenerateAadhaarOTP}
+                  disabled={
+                    !aadhaarNumber || aadhaarNumber.length !== 12 || isVerifying
+                  }
+                >
+                  {isVerifying ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.nextText}>Send Aadhaar OTP</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : currentStep === 1 ? (
+            /* ==================== STEP 3: AADHAAR VERIFIED + DOCUMENTS ==================== */
+            <>
+              {/* Profile Picture */}
+              {profileImage && (
+                <TouchableOpacity
+                  style={styles.avatarContainer}
+                  onPress={() => {
+                    setCameraMode("selfie");
+                    setCameraOpen(true);
+                  }}
+                >
+                  <Image source={{ uri: profileImage }} style={styles.avatar} />
+                  <View style={styles.cameraBadge}>
+                    <Ionicons name="camera" size={16} color={Colors.white} />
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                value={name}
+                editable={false}
+                style={[styles.input, { backgroundColor: "#f0f0f0" }]}
+              />
+
+              <Text style={styles.label}>Date of Birth</Text>
+              <TextInput
+                value={dob?.toLocaleDateString("en-GB") || ""}
+                editable={false}
+                style={[styles.input, { backgroundColor: "#f0f0f0" }]}
+              />
+
+              <Text style={styles.label}>Email (Optional)</Text>
+              <TextInput
+                placeholder="email@domain.com"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                style={styles.input}
+              />
+
+              <Text style={styles.label}>Referral ID (Optional)</Text>
+              <TextInput
+                placeholder="Enter referral code"
+                value={referralId}
+                onChangeText={setReferralId}
+                style={styles.input}
+              />
+
+              {/* Aadhaar Upload */}
+              <Text style={styles.label}>Upload Aadhaar *</Text>
+              <View style={styles.documentRow}>
+                <TouchableOpacity
+                  style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
+                  onPress={() => pickDocument("aadhaar_front")}
+                >
+                  {aadhaarFrontDoc ? (
+                    <Image
+                      source={{ uri: aadhaarFrontDoc.uri }}
+                      style={styles.docPreview}
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="cloud-upload-outline"
+                        size={24}
+                        color={Colors.textSecondary}
+                      />
+                      <Text style={styles.uploadTextSmall}>Front</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
+                  onPress={() => pickDocument("aadhaar_back")}
+                >
+                  {aadhaarBackDoc ? (
+                    <Image
+                      source={{ uri: aadhaarBackDoc.uri }}
+                      style={styles.docPreview}
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="cloud-upload-outline"
+                        size={24}
+                        color={Colors.textSecondary}
+                      />
+                      <Text style={styles.uploadTextSmall}>Back</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.nextButton}
+                onPress={handleStep1Submit}
+              >
+                <Text style={styles.nextText}>Next</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            /* ==================== STEP 4: FINAL DOCUMENTS & DL ==================== */
+            <>
+              <Text style={styles.title}>Upload Documents</Text>
+              <Text style={styles.subtitle}>Complete your registration</Text>
+
+              {/* PAN */}
+              <Text style={styles.label}>PAN Card *</Text>
+              <TouchableOpacity
+                style={styles.uploadBox}
+                onPress={() => pickDocument("pan")}
+              >
+                {panDoc ? (
+                  <Image
+                    source={{ uri: panDoc.uri }}
+                    style={styles.docPreviewFull}
                   />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="cloud-upload-outline"
+                      size={24}
+                      color={Colors.textSecondary}
+                    />
+                    <Text style={styles.uploadText}>Upload PAN</Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
-                  {/* DOB */}
-                  <Text style={styles.label}>Date of Birth</Text>
-                  <TextInput
-                    value={dob?.toLocaleDateString("en-GB") || ""}
-                    editable={false}
-                    style={[styles.input, { backgroundColor: "#f0f0f0" }]}
-                  />
+              {/* DL Verification */}
+              <Text style={styles.label}>Driving License Number *</Text>
+              <View style={styles.inputWithButton}>
+                <TextInput
+                  placeholder="Enter DL Number"
+                  value={licenseNumber}
+                  onChangeText={(v) => setLicenseNumber(v.toUpperCase())}
+                  autoCapitalize="characters"
+                  editable={!isDLVerified}
+                  style={[
+                    styles.input,
+                    styles.inputFlex,
+                    isDLVerified && { backgroundColor: "#f0f0f0" },
+                  ]}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.verifyBtn,
+                    isDLVerified
+                      ? styles.verifyBtnSuccess
+                      : styles.verifyBtnNormal,
+                    isVerifying && { opacity: 0.7 },
+                  ]}
+                  onPress={handleVerifyDL}
+                  disabled={isDLVerified || isVerifying}
+                >
+                  {isVerifying ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={isDLVerified ? "#fff" : Colors.primary}
+                    />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.verifyBtnText,
+                        isDLVerified && { color: "#fff" },
+                      ]}
+                    >
+                      {isDLVerified ? "Verified" : "Verify"}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
 
-                  {/* Email */}
-                  <Text style={styles.label}>Email (Optional)</Text>
-                  <TextInput
-                    placeholder="email@domain.com"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    style={styles.input}
-                  />
+              {/* DL Details */}
+              {isDLVerified && dlData && (
+                <>
+                  <View style={styles.infoBox}>
+                    <Text style={styles.infoLabel}>Name:</Text>
+                    <Text style={styles.infoValue}>{dlData.name}</Text>
+                  </View>
+                  {dlData.permanent_address && (
+                    <View style={styles.infoBox}>
+                      <Text style={styles.infoLabel}>Address:</Text>
+                      <Text style={styles.infoValue}>
+                        {dlData.permanent_address}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
 
-                  {/* Referral ID */}
-                  <Text style={styles.label}>Referral ID (Optional)</Text>
-                  <TextInput
-                    placeholder="Enter referral"
-                    value={referralId}
-                    onChangeText={setReferralId}
-                    style={styles.input}
-                  />
-
-                  {/* Aadhaar Document Upload */}
-                  <Text style={styles.label}>Upload Aadhaar</Text>
+              {/* DL Upload */}
+              {isDLVerified && (
+                <>
+                  <Text style={styles.label}>Upload Driving License *</Text>
                   <View style={styles.documentRow}>
-                    {/* Front */}
                     <TouchableOpacity
                       style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
-                      onPress={() => pickDocument("aadhaar_front")}
+                      onPress={() => pickDocument("license_front")}
                     >
-                      {aadhaarFrontDoc ? (
+                      {licenseFrontDoc ? (
                         <Image
-                          source={{ uri: aadhaarFrontDoc.uri }}
+                          source={{ uri: licenseFrontDoc.uri }}
                           style={styles.docPreview}
                         />
                       ) : (
@@ -912,14 +1212,13 @@ export default function RegisterScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
 
-                    {/* Back */}
                     <TouchableOpacity
                       style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
-                      onPress={() => pickDocument("aadhaar_back")}
+                      onPress={() => pickDocument("license_back")}
                     >
-                      {aadhaarBackDoc ? (
+                      {licenseBackDoc ? (
                         <Image
-                          source={{ uri: aadhaarBackDoc.uri }}
+                          source={{ uri: licenseBackDoc.uri }}
                           style={styles.docPreview}
                         />
                       ) : (
@@ -934,195 +1233,146 @@ export default function RegisterScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
                   </View>
-
-                  {/* Next Button */}
-                  <TouchableOpacity
-                    style={styles.nextButton}
-                    onPress={handleStep1Submit}
-                  >
-                    <Text style={styles.nextText}>Next</Text>
-                  </TouchableOpacity>
                 </>
               )}
-            </>
-          ) : (
-            <>
-              {/* -------------------- STEP 2 -------------------- */}
-              <Text style={styles.title}>Upload Documents</Text>
-              <Text style={styles.subtitle}>Complete your registration</Text>
 
-              <View style={styles.form}>
-                {/* PAN */}
-                <Text style={styles.label}>PAN Card</Text>
-                <TouchableOpacity
-                  style={styles.uploadBox}
-                  onPress={() => pickDocument("pan")}
-                >
-                  {panDoc ? (
-                    <Image
-                      source={{ uri: panDoc.uri }}
-                      style={styles.docPreviewFull}
-                    />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="cloud-upload-outline"
-                        size={24}
-                        color={Colors.textSecondary}
-                      />
-                      <Text style={styles.uploadText}>Upload PAN</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {/* DL Input + Verify Button */}
-                <Text style={styles.label}>Driving License Number</Text>
-                <View style={styles.inputWithButton}>
-                  <TextInput
-                    placeholder="Enter DL Number"
-                    value={licenseNumber}
-                    onChangeText={(v) => setLicenseNumber(v.toUpperCase())}
-                    autoCapitalize="characters"
-                    editable={!isDLVerified}
-                    style={[
-                      styles.input,
-                      styles.inputFlex,
-                      isDLVerified && { backgroundColor: "#f0f0f0" },
-                    ]}
-                  />
-
-                  <TouchableOpacity
-                    style={[
-                      styles.verifyBtn,
-                      isDLVerified
-                        ? styles.verifyBtnSuccess
-                        : styles.verifyBtnNormal,
-                      isVerifying && { opacity: 0.7 },
-                    ]}
-                    onPress={handleVerifyDL}
-                    disabled={isDLVerified || isVerifying}
-                  >
-                    {isVerifying ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={isDLVerified ? "#fff" : Colors.primary}
-                      />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.verifyBtnText,
-                          isDLVerified && { color: "#fff" },
-                        ]}
-                      >
-                        {isDLVerified ? "Verified" : "Verify"}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                {/* DL Details + Upload */}
-                {isDLVerified && dlData && (
-                  <>
-                    {/* Name */}
-                    <View style={styles.infoBox}>
-                      <Text style={styles.infoLabel}>Name:</Text>
-                      <Text style={styles.infoValue}>{dlData.name}</Text>
-                    </View>
-
-                    {/* Address */}
-                    {dlData.permanent_address && (
-                      <View style={styles.infoBox}>
-                        <Text style={styles.infoLabel}>Address:</Text>
-                        <Text style={styles.infoValue}>
-                          {dlData.permanent_address}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Upload DL Images */}
-                    <Text style={styles.label}>Upload Driving License</Text>
-                    <View style={styles.documentRow}>
-                      {/* Front */}
-                      <TouchableOpacity
-                        style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
-                        onPress={() => pickDocument("license_front")}
-                      >
-                        {licenseFrontDoc ? (
-                          <Image
-                            source={{ uri: licenseFrontDoc.uri }}
-                            style={styles.docPreview}
-                          />
-                        ) : (
-                          <>
-                            <Ionicons
-                              name="cloud-upload-outline"
-                              size={24}
-                              color={Colors.textSecondary}
-                            />
-                            <Text style={styles.uploadTextSmall}>Front</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-
-                      {/* Back */}
-                      <TouchableOpacity
-                        style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
-                        onPress={() => pickDocument("license_back")}
-                      >
-                        {licenseBackDoc ? (
-                          <Image
-                            source={{ uri: licenseBackDoc.uri }}
-                            style={styles.docPreview}
-                          />
-                        ) : (
-                          <>
-                            <Ionicons
-                              name="cloud-upload-outline"
-                              size={24}
-                              color={Colors.textSecondary}
-                            />
-                            <Text style={styles.uploadTextSmall}>Back</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </>
+              <TouchableOpacity
+                style={[
+                  styles.nextButton,
+                  (!isDLVerified || isSubmitting) && {
+                    backgroundColor: "#ccc",
+                  },
+                ]}
+                onPress={handleStep2Submit}
+                disabled={!isDLVerified || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.nextText}>Submit Registration</Text>
                 )}
-
-                {/* Submit Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.nextButton,
-                    (!isDLVerified || isSubmitting) && {
-                      backgroundColor: "#ccc",
-                    },
-                  ]}
-                  onPress={handleStep2Submit}
-                  disabled={!isDLVerified || isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.nextText}>Submit Registration</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </>
           )}
         </ScrollView>
 
-        {renderOtpModal()}
-      </KeyboardAvoidingView>
+        {/* Mobile OTP Modal */}
+        <Modal visible={showMobileOtpModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Verify Mobile Number</Text>
+              <Text style={styles.modalSubtitle}>
+                Enter 6-digit OTP sent to +91 {mobile}
+              </Text>
 
-      <UniversalAlert
-        visible={alertVisible}
-        type={alertConfig.type}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        primaryButton={alertConfig.primaryButton}
-        onPrimaryPress={alertConfig.onPrimaryPress}
-        onClose={() => setAlertVisible(false)}
-      />
+              <View style={styles.otpContainer}>
+                {mobileOtp.map((digit, i) => (
+                  <TextInput
+                    key={i}
+                    ref={mobileOtpRefs[i]}
+                    style={styles.otpInput}
+                    value={digit}
+                    onChangeText={(v) => {
+                      if (v.length > 1) return;
+                      const newOtp = [...mobileOtp];
+                      newOtp[i] = v;
+                      setMobileOtp(newOtp);
+                      if (v && i < 5) mobileOtpRefs[i + 1].current?.focus();
+                    }}
+                    onKeyPress={(e) =>
+                      e.nativeEvent.key === "Backspace" &&
+                      !mobileOtp[i] &&
+                      i > 0 &&
+                      mobileOtpRefs[i - 1].current?.focus()
+                    }
+                    keyboardType="number-pad"
+                    maxLength={1}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.verifyButton,
+                  isVerifyingMobileOtp && { opacity: 0.7 },
+                ]}
+                onPress={handleVerifyMobileOtp}
+              >
+                {isVerifyingMobileOtp ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.verifyButtonText}>Verify & Continue</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.resendContainer}
+                onPress={handleSendMobileOtp}
+                disabled={mobileTimer > 0}
+              >
+                <Text
+                  style={[
+                    styles.resendText,
+                    mobileTimer > 0 && styles.resendTextDisabled,
+                  ]}
+                >
+                  {mobileTimer > 0
+                    ? `Resend in 00:${mobileTimer.toString().padStart(2, "0")}`
+                    : "Resend OTP"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Aadhaar OTP Modal (पुराना वाला) */}
+        {renderOtpModal()}
+
+        {/* Camera View */}
+        {cameraOpen && (
+          <View style={styles.fullScreen}>
+            <CameraView
+              ref={cameraRef}
+              style={styles.fullScreen}
+              facing={cameraMode === "selfie" ? "front" : "back"}
+            >
+              <View style={styles.cameraOverlay}>
+                <TouchableOpacity
+                  style={styles.closeCamera}
+                  onPress={() => {
+                    setCameraOpen(false);
+                    setCameraMode(null);
+                  }}
+                >
+                  <Ionicons name="close" size={32} color={Colors.white} />
+                </TouchableOpacity>
+                <Text style={styles.cameraInstruction}>
+                  {cameraMode === "selfie"
+                    ? "Take Selfie"
+                    : `Capture ${cameraMode.replace(/_/g, " ")}`}
+                </Text>
+                <TouchableOpacity
+                  style={styles.captureBtn}
+                  onPress={takePicture}
+                >
+                  <View style={styles.captureInner} />
+                </TouchableOpacity>
+              </View>
+            </CameraView>
+          </View>
+        )}
+
+        <UniversalAlert
+          visible={alertVisible}
+          type={alertConfig.type}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          primaryButton={alertConfig.primaryButton}
+          onPrimaryPress={alertConfig.onPrimaryPress}
+          onClose={() => setAlertVisible(false)}
+        />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

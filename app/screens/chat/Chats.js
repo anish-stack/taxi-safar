@@ -16,17 +16,20 @@ import { API_URL_APP, API_URL_APP_CHAT } from "../../constant/api";
 import { useNavigation } from "@react-navigation/native";
 import io from "socket.io-client";
 import { Ionicons } from "@expo/vector-icons";
+import useDriverStore from "../../store/driver.store";
 
 const Chat = () => {
-  const { token, driver } = loginStore();
+  const { token } = loginStore();
   const navigation = useNavigation();
   const socketRef = useRef(null);
+  const { driver, fetchDriverDetails } = useDriverStore();
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [chats, setChats] = useState([]);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("posted"); // "posted" or "received"
 
   // Initialize Socket.IO for real-time updates
   useEffect(() => {
@@ -78,6 +81,7 @@ const Chat = () => {
   // Fetch all chats
   const fetchChats = async () => {
     try {
+      await fetchDriverDetails();
       if (!token) {
         setError("❌ Token missing. Please login again.");
         setLoading(false);
@@ -127,6 +131,63 @@ const Chat = () => {
       console.log("error fetching unread messages", error);
     }
   };
+
+  // Filter chats based on active tab
+  const getFilteredChats = () => {
+    console.log("🔍 Filtering Chats...");
+    console.log("Active Tab:", activeTab);
+    console.log("Driver ID:", driver);
+    console.log("Total Chats:", chats.length);
+
+    if (!driver?._id) {
+      console.log("❌ No driver ID found. Returning empty list.");
+      return [];
+    }
+
+    if (activeTab === "posted") {
+      console.log("📤 Showing POSTED chats (init by driver)");
+
+      const postedChats = chats.filter((chat) => {
+        const match =
+          chat.init_driver_id?._id === driver._id ||
+          chat.init_driver_id === driver._id;
+
+        console.log(
+          `Chat ID: ${chat?._id} | init_driver_id: ${
+            chat?.init_driver_id?._id || chat?.init_driver_id
+          } | Match Posted:`,
+          match
+        );
+
+        return match;
+      });
+
+      console.log("📥 Posted Chats Count:", postedChats.length);
+      return postedChats;
+    } else {
+      console.log("📥 Showing RECEIVED chats (others initiated)");
+
+      const receivedChats = chats.filter((chat) => {
+        const match =
+          chat.init_driver_id?._id !== driver._id &&
+          chat.init_driver_id !== driver._id;
+
+        console.log(
+          `Chat ID: ${chat?._id} | init_driver_id: ${
+            chat?.init_driver_id?._id || chat?.init_driver_id
+          } | Match Received:`,
+          match
+        );
+
+        return match;
+      });
+
+      console.log("📥 Received Chats Count:", receivedChats.length);
+      return receivedChats;
+    }
+  };
+
+  const filteredChats = getFilteredChats();
 
   // Handle chat press
   const handleChatPress = (chat) => {
@@ -178,70 +239,47 @@ const Chat = () => {
       otherDriver?.avatar ||
       "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-    // Determine role badge
-    const getRoleBadge = () => {
-      if (item.isInitializedByMe) {
-        return { text: "You Initiated", icon: "send" };
-      } else if (item.isRideOwner) {
-        return { text: "Ride Owner", icon: "car-sport" };
-      } else {
-        return { text: "Participant", icon: "person" };
-      }
+    const bookingId = ridePost?.booking_id || ridePost?._id || "N/A";
+
+    const formatBookingId = (id) => {
+      if (!id || id === "N/A") return "N/A";
+
+      const str = String(id);
+
+      if (str.length <= 7) return str; // Not enough length to trim
+
+      return str.slice(0, 3) + "..." + str.slice(-4);
     };
 
-    const roleBadge = getRoleBadge();
-
+    const shortBookingId = formatBookingId(bookingId);
+    console.log("shortBookingId", shortBookingId);
     return (
       <TouchableOpacity
         style={styles.chatBox}
         onPress={() => handleChatPress(item)}
-        activeOpacity={0.8}
+        activeOpacity={0.7}
       >
-        <View style={styles.avatarContainer}>
-          <Image source={{ uri: avatarUri }} style={styles.avatar} />
-          {item.unreadCount > 0 && <View style={styles.onlineIndicator} />}
-        </View>
+        <Image source={{ uri: avatarUri }} style={styles.avatar} />
 
         <View style={styles.chatInfo}>
           <View style={styles.chatHeader}>
             <Text style={styles.nameText} numberOfLines={1}>
               {driverName}
             </Text>
-            <Text style={styles.timeText}>{formatTime(item.lastMessageAt)}</Text>
+            <Text style={styles.bookingId}>Booking Id: {shortBookingId}</Text>
           </View>
 
-          <View style={styles.messageRow}>
-            <Text
-              style={[
-                styles.messageText,
-                item.unreadCount > 0 && styles.unreadMessage,
-              ]}
-              numberOfLines={1}
-            >
-              {item.lastMessage || "No messages yet"}
-            </Text>
-            {item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>{item.unreadCount}</Text>
-              </View>
-            )}
-          </View>
+          <Text
+            style={[
+              styles.messageText,
+              item.unreadCount > 0 && styles.unreadMessage,
+            ]}
+            numberOfLines={1}
+          >
+            {item.lastMessage || "No messages yet"}
+          </Text>
 
-          <View style={styles.chatFooter}>
-            <View style={styles.badge}>
-              <Ionicons name={roleBadge.icon} size={12} color="#FF3B30" />
-              <Text style={styles.badgeText}>{roleBadge.text}</Text>
-            </View>
-
-            {ridePost && (
-              <View style={styles.rideRoute}>
-                <Text style={styles.routeText} numberOfLines={1}>
-                  {ridePost.pickupAddress?.substring(0, 15)}... →{" "}
-                  {ridePost.dropAddress?.substring(0, 15)}...
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text style={styles.timeText}>{formatTime(item.lastMessageAt)}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -292,48 +330,95 @@ const Chat = () => {
     );
   }
 
-  if (chats.length === 0) {
-    return (
-      <Layout>
-        <View style={styles.centerContainer}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="chatbubbles-outline" size={64} color="#1a1a1a" />
-          </View>
-          <Text style={styles.emptyTitle}>No Conversations Yet</Text>
-          <Text style={styles.emptySubText}>
-            Start chatting with other drivers to coordinate rides
-          </Text>
-        </View>
-      </Layout>
-    );
-  }
-
   return (
-    <Layout>
+    <Layout showHeader={false}>
       <View style={styles.container}>
+        {/* Header with Tabs */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Messages</Text>
-          <View style={styles.headerStats}>
-            <Text style={styles.chatCount}>{chats.length}</Text>
-            <Text style={styles.chatCountLabel}>Active</Text>
+          <View
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              backgroundColor: "#fff",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 22,
+                fontWeight: "700",
+                textAlign: "center",
+                    fontFamily: "SFProDisplay-Bold",
+
+                color: "#000",
+              }}
+            >
+              Chats
+            </Text>
+          </View>
+
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "posted" && styles.activeTab]}
+              onPress={() => setActiveTab("posted")}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "posted" && styles.activeTabText,
+                ]}
+              >
+                Posted
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "received" && styles.activeTab]}
+              onPress={() => setActiveTab("received")}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "received" && styles.activeTabText,
+                ]}
+              >
+                Received
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <FlatList
-          data={chats}
-          keyExtractor={(item) => item._id}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#FF3B30"
-              colors={["#FF3B30"]}
-            />
-          }
-          renderItem={renderChatItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        {/* Chat List */}
+        {filteredChats.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <View style={styles.emptyIconContainer}>
+              <Ionicons name="chatbubbles-outline" size={64} color="#999" />
+            </View>
+            <Text style={styles.emptyTitle}>No Conversations Yet</Text>
+            <Text style={styles.emptySubText}>
+              {activeTab === "posted"
+                ? "You haven't initiated any chats yet"
+                : "No one has started a chat with you yet"}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredChats}
+            keyExtractor={(item) => item._id}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#FFA800"
+                colors={["#FFA800"]}
+              />
+            }
+            renderItem={renderChatItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
     </Layout>
   );
@@ -342,46 +427,47 @@ const Chat = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#F5F5F5",
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
     backgroundColor: "#ffffff",
+    paddingTop: 16,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    borderBottomColor: "#E0E0E0",
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#1a1a1a",
-    letterSpacing: -0.5,
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 25,
+    padding: 4,
+    marginBottom: 16,
   },
-  headerStats: {
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 20,
     alignItems: "center",
+    justifyContent: "center",
   },
-  chatCount: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#FF3B30",
+  activeTab: {
+    backgroundColor: "#000",
   },
-  chatCountLabel: {
-    fontSize: 10,
+  tabText: {
+    fontSize: 15,
     fontWeight: "600",
     color: "#666",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  },
+  activeTabText: {
+    color: "#ffffff",
+    fontWeight: "700",
   },
   centerContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#F5F5F5",
   },
   listContent: {
     padding: 16,
@@ -393,33 +479,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     padding: 16,
     marginBottom: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
-    
-  },
-  avatarContainer: {
-    position: "relative",
-    marginRight: 14,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: "#f5f5f5",
-    borderWidth: 2,
-    borderColor: "#1a1a1a",
-  },
-  onlineIndicator: {
-    position: "absolute",
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#FF3B30",
-    borderWidth: 2,
-    borderColor: "#ffffff",
+    marginRight: 14,
   },
   chatInfo: {
     flex: 1,
@@ -428,97 +500,46 @@ const styles = StyleSheet.create({
   chatHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 6,
   },
   nameText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     color: "#1a1a1a",
     flex: 1,
     marginRight: 8,
-    letterSpacing: -0.3,
   },
-  timeText: {
-    fontSize: 12,
+  bookingId: {
+    fontSize: 11,
     color: "#999",
     fontWeight: "500",
-  },
-  messageRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
   },
   messageText: {
     color: "#666",
     fontSize: 14,
-    flex: 1,
-    marginRight: 8,
+    marginBottom: 6,
     lineHeight: 20,
   },
   unreadMessage: {
     color: "#1a1a1a",
     fontWeight: "600",
   },
-  chatFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff5f5",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ffe5e5",
-  },
-  badgeText: {
-    color: "#FF3B30",
+  timeText: {
     fontSize: 11,
-    fontWeight: "700",
-    marginLeft: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  unreadBadge: {
-    backgroundColor: "#FF3B30",
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 7,
-  },
-  unreadText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  rideRoute: {
-    flex: 1,
-    marginLeft: 8,
-  },
-  routeText: {
-    fontSize: 11,
-    color: "#666",
+    color: "#999",
     fontWeight: "500",
   },
 
   // Empty States
   emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: "#f5f5f5",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: "#f0f0f0",
+    marginBottom: 20,
   },
   loadingText: {
     marginTop: 16,
@@ -536,15 +557,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: "#1a1a1a",
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 8,
-    letterSpacing: -0.5,
   },
   emptySubText: {
     color: "#666",
-    fontSize: 15,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
     maxWidth: 280,
@@ -556,18 +576,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 28,
     borderRadius: 12,
-    shadowColor: "#FF3B30",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   retryText: {
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "700",
     marginLeft: 8,
-    letterSpacing: 0.3,
   },
 });
 

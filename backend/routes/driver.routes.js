@@ -22,6 +22,9 @@ const {
   verifyAadhaarOtp,
   verifyDrivingLicense,
   verifyRcDetails,
+  sendOtp,
+  verifyOtpMobile,
+  getDriverDetailsOfDriverMobile,
 } = require("../controllers/registration/driver.reg");
 
 const { refreshAccessToken: refreshToken } = require("../controllers/registration/refreshAccessToken");
@@ -118,6 +121,11 @@ router.post("/login", login);
 router.post("/verify-login-otp", verifyOtp);
 router.post("/resend-otp", resendOtp);
 router.post("/refresh-token", refreshToken);
+
+router.post("/send-mobile-otp",sendOtp)
+router.post("/verify-mobile-otp",verifyOtpMobile)
+router.get("/get-mobile-driver",getDriverDetailsOfDriverMobile)
+
 
 // ---------------------------------------------
 // 🔥 EKYC

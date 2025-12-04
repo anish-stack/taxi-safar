@@ -339,13 +339,13 @@ Amount to Pay: ₹${commissionAmount}
     const lowerUrl = url.toLowerCase();
 
     if (lowerUrl.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i)) {
-      return { type: "image", icon: "image-outline", color: "#007AFF" };
+      return { type: "image", icon: "image-outline", color: "#000" };
     } else if (lowerUrl.match(/\.(mp4|avi|mov|wmv|flv|webm|mkv)(\?.*)?$/i)) {
       return { type: "video", icon: "videocam-outline", color: "#FF3B30" };
     } else if (lowerUrl.match(/\.(pdf)(\?.*)?$/i)) {
       return { type: "pdf", icon: "document-text-outline", color: "#FF9500" };
     } else {
-      return { type: "link", icon: "link-outline", color: "#007AFF" };
+      return { type: "link", icon: "link-outline", color: "#000" };
     }
   };
 
@@ -471,22 +471,18 @@ Amount to Pay: ₹${commissionAmount}
 
   const renderRideCard = () => {
     const ride = chat?.ride_post_id || chat?.rideData;
-    console.log("ride", ride);
 
     return (
       <View style={styles.rideCard}>
         <View style={styles.rideHeader}>
           <View style={styles.vehicleIconContainer}>
-            <Ionicons name="car" size={24} color="#007AFF" />
+            <Ionicons name="car" size={24} color="#000" />
           </View>
           <View style={styles.rideHeaderInfo}>
             <Text style={styles.rideTitle}>
               {ride?.vehicleType || "Vehicle"}
             </Text>
-            <View style={styles.statusBadge}>
-              <View style={styles.statusDot} />
-              <Text style={styles.rideStatus}>{ride.rideStatus || ""}</Text>
-            </View>
+           
           </View>
           <View style={styles.dateContainer}>
             <Ionicons name="calendar-outline" size={14} color="#666" />
@@ -596,7 +592,7 @@ Amount to Pay: ₹${commissionAmount}
                     : "information-circle-outline"
                 }
                 size={18}
-                color={detailsSent ? "#999" : "#007AFF"}
+                color={detailsSent ? "#999" : "#000"}
               />
               <Text
                 style={[
@@ -630,7 +626,7 @@ Amount to Pay: ₹${commissionAmount}
               disabled={!paymentLinkSent}
               activeOpacity={0.8}
             >
-              <Ionicons name="card-outline" size={18} color="#fff" />
+              <Ionicons name="card-outline" size={18} color="#000" />
               <Text style={styles.actionButtonText}>
                 {paymentLinkSent
                   ? `Pay ₹${
@@ -773,7 +769,7 @@ Amount to Pay: ₹${commissionAmount}
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#000" />
           <Text style={styles.loadingText}>Loading conversation...</Text>
         </View>
       </SafeAreaView>
@@ -998,7 +994,7 @@ const styles = StyleSheet.create({
   },
   typingHeader: {
     fontSize: 13,
-    color: "#007AFF",
+    color: "#000",
     marginTop: 2,
     fontStyle: "italic",
   },
@@ -1136,7 +1132,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   earningAmount: {
-    color: "#007AFF",
+    color: "#000",
   },
   priceLabel: {
     fontSize: 10,
@@ -1172,7 +1168,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
   },
   routeLine: {
     width: 2,
@@ -1218,7 +1214,7 @@ const styles = StyleSheet.create({
   // Action Buttons
   actionButton: {
     flexDirection: "row",
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
@@ -1232,17 +1228,17 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "#007AFF",
+    borderColor: "#000",
     flex: 1,
   },
   actionButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#fff",
+    color: "#000",
     marginLeft: 6,
   },
   secondaryButtonText: {
-    color: "#007AFF",
+    color: "#000",
   },
   disabledButton: {
     backgroundColor: "#F2F2F7",
@@ -1268,7 +1264,7 @@ const styles = StyleSheet.create({
     maxWidth: "80%",
   },
   myBubble: {
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
     borderBottomRightRadius: 4,
   },
   otherBubble: {
@@ -1339,7 +1335,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   payButtonActive: {
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
   },
   payButtonSent: {
     backgroundColor: "#34C759",
@@ -1363,7 +1359,7 @@ const styles = StyleSheet.create({
   },
   typingText: {
     fontSize: 12,
-    color: "#007AFF",
+    color: "#000",
     fontStyle: "italic",
   },
   inputBar: {
@@ -1392,7 +1388,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E5EA",
   },
   sendButtonActive: {
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
   },
 });
 

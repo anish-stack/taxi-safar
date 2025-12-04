@@ -39,7 +39,7 @@ const ReserveRideDetailsAssigned = () => {
   const navigation = useNavigation();
   const { rideId } = route.params;
   const { driver, fetchDriverDetails } = useDriverStore();
-  
+
   // State Management
   const [routeCoords, setRouteCoords] = useState([]);
   const [rideData, setRideData] = useState(null);
@@ -49,13 +49,13 @@ const ReserveRideDetailsAssigned = () => {
   const [duration, setDuration] = useState(0);
   const [mapRegion, setMapRegion] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
-  
+
   // Modal States
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  
+
   // Form States
   const [otp, setOtp] = useState('');
   const [collectedAmount, setCollectedAmount] = useState('');
@@ -88,7 +88,7 @@ const ReserveRideDetailsAssigned = () => {
   // Check if driver is near location
   const isNearLocation = (targetLocation, threshold = 0.5) => {
     if (!currentLocation || !targetLocation?.coordinates) return false;
-    
+
     const [lng, lat] = targetLocation.coordinates;
     const distance = calculateDistance(
       currentLocation.latitude,
@@ -96,7 +96,7 @@ const ReserveRideDetailsAssigned = () => {
       lat,
       lng
     );
-    
+
     return distance <= threshold; // Within 500 meters
   };
 
@@ -125,12 +125,14 @@ const ReserveRideDetailsAssigned = () => {
     try {
       if (showLoader) setLoading(true);
       setRefreshing(!showLoader);
-      
+
       await fetchDriverDetails();
       const { data } = await axios.get(`${API_URL_APP}/api/v1/post-rides/${rideId}`);
 
       if (data.success) {
         const ride = data.data;
+        console.log("contactType", ride?.contactType)
+
         setRideData(ride);
 
         const [pickupLng, pickupLat] = ride.pickupLocation.coordinates;
@@ -201,13 +203,14 @@ const ReserveRideDetailsAssigned = () => {
     }
   };
 
+
   const updateRideStatus = async (status) => {
     try {
       const { data } = await axios.patch(
         `${API_URL_APP}/api/v1/rides/${rideId}/status`,
         { status }
       );
-      
+
       if (data.success) {
         setRideData(prev => ({ ...prev, rideStatus: status }));
         if (status === 'completed') {
@@ -234,7 +237,7 @@ const ReserveRideDetailsAssigned = () => {
       if (data.success) {
         setShowOtpModal(false);
         setOtp('');
-        
+
         if (otpType === 'pickup') {
           updateRideStatus('reached-pickup');
         } else {
@@ -285,9 +288,10 @@ const ReserveRideDetailsAssigned = () => {
     }
   };
 
+
   const handleMoreOptions = (option) => {
     setShowMoreOptions(false);
-    
+
     switch (option) {
       case 'police':
         Linking.openURL('tel:100');
@@ -381,7 +385,7 @@ const ReserveRideDetailsAssigned = () => {
             {formatDate(rideData.pickupDate)} • {formatTime(rideData.pickupTime)}
           </Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.moreButton}
           onPress={() => setShowMoreOptions(true)}
         >
@@ -389,7 +393,7 @@ const ReserveRideDetailsAssigned = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -617,13 +621,13 @@ const ReserveRideDetailsAssigned = () => {
               <Text style={styles.actionButtonText}>I Reached at Pickup</Text>
             </TouchableOpacity>
           )}
-          
+
           {rideData.rideStatus === 'reached-pickup' && (
             <TouchableOpacity style={styles.actionButton} onPress={handleReachedDrop}>
               <Text style={styles.actionButtonText}>I Reached at Drop</Text>
             </TouchableOpacity>
           )}
-          
+
           {!isMyRide && (
             <TouchableOpacity style={styles.chatButton} onPress={initChat}>
               <MessageCircle size={20} color="#fff" />
@@ -640,36 +644,36 @@ const ReserveRideDetailsAssigned = () => {
         animationType="fade"
         onRequestClose={() => setShowMoreOptions(false)}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.modalOverlay}
           onPress={() => setShowMoreOptions(false)}
         >
           <View style={styles.moreOptionsModal}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.moreOption}
               onPress={() => handleMoreOptions('refresh')}
             >
               <RefreshCw size={20} color="#6B7280" />
               <Text style={styles.moreOptionText}>Refresh Ride</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.moreOption}
               onPress={() => handleMoreOptions('police')}
             >
               <Shield size={20} color="#DC2626" />
               <Text style={styles.moreOptionText}>Call Police</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.moreOption}
               onPress={() => handleMoreOptions('support')}
             >
               <Headphones size={20} color="#059669" />
               <Text style={styles.moreOptionText}>TaxiSafar Support</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={[styles.moreOption, styles.cancelOption]}
               onPress={() => handleMoreOptions('cancel')}
             >
@@ -693,7 +697,7 @@ const ReserveRideDetailsAssigned = () => {
             <Text style={styles.otpSubtitle}>
               Please enter the OTP provided by the customer
             </Text>
-            
+
             <TextInput
               style={styles.otpInput}
               value={otp}
@@ -702,16 +706,16 @@ const ReserveRideDetailsAssigned = () => {
               keyboardType="numeric"
               maxLength={4}
             />
-            
+
             <View style={styles.otpButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.otpCancelButton}
                 onPress={() => setShowOtpModal(false)}
               >
                 <Text style={styles.otpCancelText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.otpVerifyButton}
                 onPress={verifyOtp}
               >
@@ -735,7 +739,7 @@ const ReserveRideDetailsAssigned = () => {
             <Text style={styles.collectionSubtitle}>
               Enter the amount collected from customer
             </Text>
-            
+
             <TextInput
               style={styles.collectionInput}
               value={collectedAmount}
@@ -743,16 +747,16 @@ const ReserveRideDetailsAssigned = () => {
               placeholder={`₹${rideData.totalAmount}`}
               keyboardType="numeric"
             />
-            
+
             <View style={styles.collectionButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.collectionCancelButton}
                 onPress={() => setShowCollectionModal(false)}
               >
                 <Text style={styles.collectionCancelText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.collectionConfirmButton}
                 onPress={completeRide}
               >
@@ -777,8 +781,8 @@ const ReserveRideDetailsAssigned = () => {
             <Text style={styles.successSubtitle}>
               You have successfully completed this ride
             </Text>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.successButton}
               onPress={() => {
                 setShowSuccessModal(false);
@@ -795,23 +799,23 @@ const ReserveRideDetailsAssigned = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#FFFFFF" 
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF"
   },
-  center: { 
-    flex: 1, 
-    justifyContent: "center", 
-    alignItems: "center" 
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
   },
-  loadingText: { 
-    marginTop: 16, 
-    fontSize: 16, 
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
     color: "#6B7280",
     fontWeight: "500"
   },
-  errorText: { 
-    fontSize: 16, 
+  errorText: {
+    fontSize: 16,
     color: "#DC2626",
     fontWeight: "500"
   },
@@ -838,7 +842,7 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  backButton: { 
+  backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -846,22 +850,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerCenter: { 
-    flex: 1, 
-    alignItems: "center" 
+  headerCenter: {
+    flex: 1,
+    alignItems: "center"
   },
-  headerTitle: { 
-    fontSize: 20, 
-    fontWeight: "700", 
-    color: "#1F2937" 
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1F2937"
   },
-  headerSubtitle: { 
-    fontSize: 14, 
-    color: "#6B7280", 
+  headerSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
     marginTop: 2,
     fontWeight: "500"
   },
-  moreButton: { 
+  moreButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -919,8 +923,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F3F4F6",
   },
-  map: { 
-    ...StyleSheet.absoluteFillObject 
+  map: {
+    ...StyleSheet.absoluteFillObject
   },
   mapPlaceholder: {
     flex: 1,
@@ -929,10 +933,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  mapText: { 
-    fontSize: 14, 
-    fontWeight: "500", 
-    color: "#6B7280" 
+  mapText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B7280"
   },
 
   pickupMarker: {
@@ -977,10 +981,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  driverInfo: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    flex: 1 
+  driverInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1
   },
   avatarContainer: {
     marginRight: 16,
@@ -998,17 +1002,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     resizeMode: "cover",
   },
-  avatarText: { 
-    fontSize: 20, 
-    fontWeight: "800", 
-    color: "#FFFFFF" 
+  avatarText: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FFFFFF"
   },
-  driverDetails: { 
-    flex: 1 
+  driverDetails: {
+    flex: 1
   },
-  driverName: { 
-    fontSize: 18, 
-    fontWeight: "700", 
+  driverName: {
+    fontSize: 18,
+    fontWeight: "700",
     color: "#1F2937",
     marginBottom: 4,
   },
@@ -1023,15 +1027,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  ratingText: { 
-    fontSize: 14, 
+  ratingText: {
+    fontSize: 14,
     color: "#6B7280",
     fontWeight: "600",
   },
 
-  contactButtons: { 
-    flexDirection: "row", 
-    gap: 8 
+  contactButtons: {
+    flexDirection: "row",
+    gap: 8
   },
   phoneButton: {
     width: 44,
@@ -1055,9 +1059,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
   },
-  earningItem: { 
-    flex: 1, 
-    alignItems: "center" 
+  earningItem: {
+    flex: 1,
+    alignItems: "center"
   },
   earningAmount: {
     fontSize: 18,
@@ -1071,9 +1075,9 @@ const styles = StyleSheet.create({
     color: "#059669",
     marginBottom: 4,
   },
-  earningLabel: { 
-    fontSize: 12, 
-    color: "#6B7280", 
+  earningLabel: {
+    fontSize: 12,
+    color: "#6B7280",
     fontWeight: "600",
     textAlign: "center",
   },
@@ -1137,9 +1141,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  locationText: { 
-    fontSize: 14, 
-    color: "#1F2937", 
+  locationText: {
+    fontSize: 14,
+    color: "#1F2937",
     lineHeight: 20,
     fontWeight: "500",
   },
@@ -1151,15 +1155,15 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
 
-  requirementsText: { 
-    fontSize: 14, 
-    color: "#6B7280", 
+  requirementsText: {
+    fontSize: 14,
+    color: "#6B7280",
     lineHeight: 20,
     fontWeight: "500",
   },
-  notesText: { 
-    fontSize: 14, 
-    color: "#6B7280", 
+  notesText: {
+    fontSize: 14,
+    color: "#6B7280",
     lineHeight: 20,
     fontStyle: "italic",
   },
@@ -1402,8 +1406,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  bottomSpacing: { 
-    height: 20 
+  bottomSpacing: {
+    height: 20
   },
 });
 

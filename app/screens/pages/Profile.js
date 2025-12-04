@@ -8,7 +8,11 @@ import {
   Modal,
   StyleSheet,
 } from "react-native";
-import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from "@expo/vector-icons";
+import {
+  MaterialCommunityIcons,
+  Ionicons,
+  FontAwesome5,
+} from "@expo/vector-icons";
 import loginStore from "../../store/auth.store";
 import useDriverStore from "../../store/driver.store";
 import Layout from "../common/layout";
@@ -20,7 +24,7 @@ export default function Profile() {
   const { driver, fetchDriverDetails } = useDriverStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState(null);
-  const navigation = useNavigation()
+  const navigation = useNavigation();
   useEffect(() => {
     fetchDriverDetails();
   }, [token]);
@@ -52,7 +56,10 @@ export default function Profile() {
               value={new Date(driver.driver_dob).toLocaleDateString()}
             />
             <DetailRow label="Account Status" value={driver.account_status} />
-            <DetailRow label="Total Rides" value={driver.total_rides?.toString()} />
+            <DetailRow
+              label="Total Rides"
+              value={driver.total_rides?.toString()}
+            />
             <DetailRow
               label="Completed Rides"
               value={driver.completed_rides?.toString()}
@@ -70,9 +77,14 @@ export default function Profile() {
             <Text style={styles.modalTitle}>My Wallet</Text>
             <View style={styles.walletCard}>
               <Text style={styles.walletLabel}>Current Balance</Text>
-              <Text style={styles.walletAmount}>₹{driver.wallet?.balance || "0"}</Text>
+              <Text style={styles.walletAmount}>
+                ₹{driver.wallet?.balance || "0"}
+              </Text>
             </View>
-            <DetailRow label="Total Rides" value={driver.total_rides?.toString()} />
+            <DetailRow
+              label="Total Rides"
+              value={driver.total_rides?.toString()}
+            />
             <DetailRow
               label="Completed Rides"
               value={driver.completed_rides?.toString()}
@@ -95,7 +107,9 @@ export default function Profile() {
             />
             <DetailRow
               label="Insurance Expiry"
-              value={new Date(vehicle.insurance?.expiry_date).toLocaleDateString()}
+              value={new Date(
+                vehicle.insurance?.expiry_date
+              ).toLocaleDateString()}
             />
             <DetailRow
               label="Insurance Verified"
@@ -133,7 +147,9 @@ export default function Profile() {
             />
             <DetailRow
               label="Uploaded"
-              value={new Date(doc.aadhar_card?.uploaded_at).toLocaleDateString()}
+              value={new Date(
+                doc.aadhar_card?.uploaded_at
+              ).toLocaleDateString()}
             />
 
             <SectionHeader title="Driving License" />
@@ -176,7 +192,10 @@ export default function Profile() {
           <View>
             <Text style={styles.modalTitle}>Bank Details</Text>
             <DetailRow label="Bank Name" value={bank.bank_name} />
-            <DetailRow label="Account Holder" value={bank.account_holder_name} />
+            <DetailRow
+              label="Account Holder"
+              value={bank.account_holder_name}
+            />
             <DetailRow label="Account Number" value={bank.account_number} />
             <DetailRow label="IFSC Code" value={bank.ifsc_code} />
             <DetailRow label="Branch Name" value={bank.branch_name} />
@@ -276,8 +295,8 @@ export default function Profile() {
             icon={<Ionicons name="settings-outline" size={22} color="black" />}
             label="App Settings"
           />
-            <MenuItem
-              onPress={() => navigation.navigate("job-posted-u")}
+          <MenuItem
+            onPress={() => navigation.navigate("job-posted-u")}
             icon={<Ionicons name="bag" size={22} color="black" />}
             label="Jobs Posted You"
           />
@@ -292,7 +311,7 @@ export default function Profile() {
             label="Document Registration"
             onPress={() => openModal("document")}
           />
-             <MenuItem
+          <MenuItem
             icon={
               <Ionicons name="document-text-outline" size={22} color="black" />
             }
@@ -324,7 +343,7 @@ export default function Profile() {
             icon={<Ionicons name="log-out-outline" size={22} color="#dc2626" />}
             label="Logout"
             color="#dc2626"
-            onPress={logout}
+            onPress={() => logout(navigation)}
           />
         </Section>
       </ScrollView>

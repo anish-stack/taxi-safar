@@ -63,7 +63,7 @@ const loginStore = create(
       error: null,
 
       // Logout
-      logout: () => {
+      logout: (navigation) => {
         set({ loading: true });
 
         return Promise.all([
@@ -80,6 +80,11 @@ const loginStore = create(
               role: null,
             
             });
+        navigation.reset({
+  index: 0,
+  routes: [{ name: "splash" }],
+});
+
             console.log('Logged out successfully');
           })
           .catch((err) => {

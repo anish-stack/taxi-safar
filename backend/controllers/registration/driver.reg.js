@@ -606,9 +606,9 @@ exports.login = async (req, res) => {
     // ⭐ SPECIAL CONDITION → Default OTP for specific number
     // ------------------------------------------------------
     let otp;
-    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); 
 
-    if (number === "7217619794") {
+    if (number === "7217619794" || number === "7042129128") {
       otp = 123456;
       console.log("🎯 Test number detected. Using default OTP:", otp);
     } else {
@@ -940,12 +940,10 @@ exports.addVehicleDetails = async (req, res) => {
     // Required fields
     if (!vehicleType || !vehicleNumber) {
       cleanupFiles(files);
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "vehicleType and vehicleNumber are required.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "vehicleType and vehicleNumber are required.",
+      });
     }
 
     // Check duplicate vehicle
@@ -1507,7 +1505,10 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
     // ========================================================================
     // SCENARIO 2: Driver Exists But Aadhaar Not Verified
     // ========================================================================
-    console.log("👤 Existing Driver Found → Aadhaar Verified:", driver.aadhar_verified);
+    console.log(
+      "👤 Existing Driver Found → Aadhaar Verified:",
+      driver.aadhar_verified
+    );
 
     if (!driver.aadhar_verified) {
       console.log("⚠ Aadhaar Not Verified Yet");
@@ -1669,7 +1670,6 @@ async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
     });
   }
 }
-
 
 exports.verifyAadhaarOtp = async (req, res) => {
   try {
@@ -1838,13 +1838,8 @@ exports.verifyDrivingLicense = async (req, res) => {
     console.log("\n=================== DL VERIFY START ===================");
     console.log("📥 Incoming Req Body:", req.body);
 
-    const {
-      licenseNumber,
-      dob,
-      aadhaarName,
-      deviceId,
-      aadhaarNumber,
-    } = req.body;
+    const { licenseNumber, dob, aadhaarName, deviceId, aadhaarNumber } =
+      req.body;
 
     const settings = await AppSettings.findOne();
     const ByPass = Boolean(settings?.ByPassApi);
@@ -2101,5 +2096,204 @@ exports.verifyRcDetails = async (req, res) => {
       message: "Something went wrong during RC verification.",
       error: error.message,
     });
+  }
+};
+
+exports.sendOtp = async (req, res) => {
+  try {
+    const { number } = req.body;
+
+    if (!number || !/^\d{10}$/.test(number)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid 10-digit mobile number is required",
+      });
+    }
+
+    // Step 1: Check if number exists in AadharDetails
+    let aadharUser = await AadharDetails.findOne({ contact_number: number });
+    console.log("aadharUser", aadharUser);
+    // Step 2: If mobile already verified → check driver status & redirect accordingly
+    if (aadharUser?.mobile_verify === true) {
+      const driver = await Driver.findOne({ driver_contact_number: number })
+        .populate("BankDetails", "account_number")
+        .populate("document_id")
+        .lean();
+
+      // If driver not found → force registration
+      if (!driver) {
+        return res.status(400).json({
+          success: false,
+          redirect: "step-1",
+          message: "Please complete registration first.",
+        });
+      }
+
+      const documents = driver.document_id;
+
+      // Redirect Logic (Only if already verified)
+      if (!driver.aadhar_verified) {
+        return res.status(400).json({
+          success: false,
+          driver,
+          redirect: "step-2",
+          message: "Please verify your Aadhaar first.",
+        });
+      }
+
+      const hasPanAndDL =
+        documents?.pan_card?.document?.url &&
+        documents?.driving_license?.front?.url &&
+        documents?.driving_license?.back?.url;
+
+      if (!hasPanAndDL) {
+        return res.status(400).json({
+          success: false,
+          driver,
+          redirect: "step-2",
+          message: "Please upload PAN & Driving License.",
+        });
+      }
+
+      if (!driver.current_vehicle_id) {
+        return res.status(400).json({
+          success: false,
+          driver,
+          redirect: "step-3",
+          message: "Please add your vehicle.",
+        });
+      }
+
+      if (!driver.BankDetails?.account_number) {
+        return res.status(400).json({
+          success: false,
+          driver,
+          redirect: "step-4",
+          message: "Please add bank details.",
+        });
+      }
+
+      if (!["active", "suspended", "blocked"].includes(driver.account_status)) {
+        return res.status(403).json({
+          success: false,
+          driver,
+          redirect: "step-5",
+          message: "Your account is under review. Please wait for approval.",
+        });
+      }
+
+      // If all good → allow login (no OTP needed again)
+      return res.status(200).json({
+        success: true,
+        alreadyVerified: true,
+        driver,
+        message: "Login successful",
+        redirect: "home", // ← directly to home
+      });
+    }
+
+    // Step 3: First time → Generate & Send OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await AadharDetails.findOneAndUpdate(
+      { contact_number: number },
+      {
+        contact_number: number,
+        otp_mobile: otp,
+        otp_expire_time_mobile: new Date(Date.now() + 5 * 60 * 1000), // 5 min
+        mobile_verify: false,
+      },
+      { upsert: true, new: true }
+    );
+
+    // Send OTP via SMS
+    await sendDltMessage(number, otp);
+
+    return res.status(200).json({
+      success: true,
+      otp_sent: true,
+      message: "OTP sent successfully",
+    });
+  } catch (error) {
+    console.error("sendOtp error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again.",
+    });
+  }
+};
+// 📌 2️⃣ VERIFY OTP
+exports.verifyOtpMobile = async (req, res) => {
+  try {
+    const { mobileNumber: contact_number, otp } = req.body;
+
+    if (!contact_number || !otp)
+      return res
+        .status(400)
+        .json({ success: false, message: "Contact number and OTP required" });
+
+    const user = await AadharDetails.findOne({ contact_number });
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    // Check expiry
+    if (new Date() > user.otp_expire_time_mobile) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired. Please request a new one.",
+      });
+    }
+
+    // Check otp match
+    if (user.otp_mobile !== otp) {
+      return res.status(400).json({ success: false, message: "Invalid OTP" });
+    }
+
+    // Mark verified
+    user.mobile_verify = true;
+    user.otp_mobile = null; // optional: clear OTP
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+  } catch (error) {
+    console.log("OTP verify error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// 📌 3️⃣ GET DETAILS AFTER VERIFICATION
+exports.getDriverDetailsOfDriverMobile = async (req, res) => {
+  try {
+    const { contact_number } = req.query;
+
+    if (!contact_number)
+      return res
+        .status(400)
+        .json({ success: false, message: "Contact number required" });
+
+    const user = await AadharDetails.findOne({ contact_number });
+
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    if (!user.mobile_verify)
+      return res
+        .status(400)
+        .json({ success: false, message: "Mobile number not verified" });
+
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.log("Get details error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };

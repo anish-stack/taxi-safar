@@ -2,6 +2,25 @@ const mongoose = require("mongoose");
 
 const aadharDetailsSchema = new mongoose.Schema(
   {
+    contact_number: {
+      type: String,
+    },
+
+    otp_mobile: {
+      type: String,
+    },
+
+    // Auto set expiry time = now + 5 minutes
+    otp_expire_time_mobile: {
+      type: Date,
+      default: () => new Date(Date.now() + 5 * 60 * 1000),
+    },
+
+    mobile_verify: {
+      type: Boolean,
+      default: false,
+    },
+
     aadhar_verification_data: {
       type: mongoose.Schema.Types.Mixed,
     },
@@ -9,6 +28,7 @@ const aadharDetailsSchema = new mongoose.Schema(
     dl_data: {
       type: mongoose.Schema.Types.Mixed,
     },
+
     device_id: {
       type: String,
     },
@@ -21,9 +41,9 @@ const aadharDetailsSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
     expiredDataHour: {
       type: Date,
-      required: true,
     },
 
     isExpired: {
