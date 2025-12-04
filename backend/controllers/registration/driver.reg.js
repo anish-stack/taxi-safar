@@ -1977,14 +1977,12 @@ exports.verifyRcDetails = async (req, res) => {
     console.log("🔹 RC Verification Request Body:", req.body);
 
     if (!rcNumber) {
-      console.log("❌ RC number missing in request");
       return res.status(400).json({
         success: false,
         message: "RC number is required.",
       });
     }
 
-    console.log(`📡 Calling QuickEKYC RC API for RC: ${rcNumber}`);
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
       {
@@ -1997,86 +1995,89 @@ exports.verifyRcDetails = async (req, res) => {
       }
     );
 
-    console.log("📥 RC API Response:", response.data);
-
     if (response.data.status !== "success" || !response.data.data) {
-      console.log("❌ RC verification failed:", response.data.message);
       return res.status(400).json({
         success: false,
         message: response.data.message || "RC verification failed.",
       });
     }
 
-    const rcInfo = response.data.data;
-    console.log("✅ RC Data Received:", rcInfo);
+    let rcInfo = response.data.data; // ← IMPORTANT (let so we can edit)
 
-    if (!isByPass) {
-      // ----------------- Vehicle category check -----------------
-      const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
-      const isBike =
-        vehicleCategory.includes("2W") ||
-        vehicleCategory.includes("TWO WHEELER") ||
-        vehicleCategory.includes("MOTORCYCLE");
+    // --------- Detect bike ----------
+    const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
+    const isBike =
+      vehicleCategory.includes("2W") ||
+      vehicleCategory.includes("TWO WHEELER") ||
+      vehicleCategory.includes("MOTORCYCLE");
 
-      console.log(`🚗 Vehicle category: ${vehicleCategory}, isBike: ${isBike}`);
+    // =====================================================================
+    // 🔥 BYPASS MODE → Modify vehicle category if bike detected
+    // =====================================================================
+    if (isByPass === true) {
+      console.log("⚡ Bypass Mode → Vehicle type override if bike");
+
       if (isBike) {
-        console.log("❌ Vehicle is a bike. Registration not allowed.");
-        return res.status(400).json({
-          success: false,
-          message: "Bikes/Two-wheelers are not allowed. Please register a car.",
-        });
+        // ⭐ MODIFY vehicle_category directly here
+        rcInfo.vehicle_category = "CAR (FORCED BYPASS)";
       }
 
-      // ----------------- Aadhaar name match -----------------
-      const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
-        .sort({ createdAt: -1 })
-        .lean();
-      console.log("📂 Aadhaar record fetched:", aadhaarRecord);
-
-      if (!aadhaarRecord || !aadhaarRecord.aadhar_verification_data) {
-        console.log("❌ Aadhaar verification required before RC verification");
-        return res.status(400).json({
-          success: false,
-          message: "Aadhaar verification required before RC verification.",
-        });
-      }
-
-      const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name
-        .toLowerCase()
-        .trim();
-      const rcOwnerName = rcInfo.owner_name.toLowerCase().trim();
-
-      console.log(
-        `👤 Comparing Aadhaar name "${aadhaarName}" with RC owner name "${rcOwnerName}"`
-      );
-      if (aadhaarName !== rcOwnerName) {
-        console.log("❌ Name mismatch between Aadhaar and RC");
-        return res.status(400).json({
-          success: false,
-          rcData: rcInfo,
-          message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarRecord.aadhar_verification_data.full_name}".`,
-        });
-      }
-    } else {
-      console.log(
-        "⚡ Bypass mode enabled → Skipping bike & Aadhaar validations"
-      );
+      return res.status(200).json({
+        success: true,
+        message: "RC verified successfully (bypass).",
+        rcData: rcInfo,     // ← updated category sent here
+        aadhaarData: null,
+        bikeDetected: isBike,
+        bypassUsed: true,
+      });
     }
 
-    console.log("✅ RC verification successful");
+    // =====================================================================
+    // Normal mode (bike not allowed)
+    // =====================================================================
+    if (isBike) {
+      return res.status(400).json({
+        success: false,
+        message: "Bikes/Two-wheelers are not allowed. Please register a car.",
+      });
+    }
 
+    // ---------------- Aadhaar match ---------------
+    const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!aadhaarRecord?.aadhar_verification_data) {
+      return res.status(400).json({
+        success: false,
+        message: "Aadhaar verification required before RC verification.",
+      });
+    }
+
+    const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name
+      .toLowerCase()
+      .trim();
+    const rcOwnerName = rcInfo.owner_name.toLowerCase().trim();
+
+    if (aadhaarName !== rcOwnerName) {
+      return res.status(400).json({
+        success: false,
+        rcData: rcInfo,
+        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarRecord.aadhar_verification_data.full_name}".`,
+      });
+    }
+
+    // ---------------- SUCCESS ----------------
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
       rcData: rcInfo,
-      aadhaarData: isByPass
-        ? null
-        : (await AadharDetails.findOne({ device_id: deviceId }).lean())
-            ?.aadhar_verification_data,
-      bypassUsed: !!isByPass,
+      aadhaarData: aadhaarRecord.aadhar_verification_data,
+      bikeDetected: false,
+      bypassUsed: false,
     });
+
   } catch (error) {
-    console.error("❌ RC Verification Error:", error);
     return res.status(500).json({
       success: false,
       message: "Something went wrong during RC verification.",
