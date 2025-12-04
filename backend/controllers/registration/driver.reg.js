@@ -1983,6 +1983,10 @@ exports.verifyRcDetails = async (req, res) => {
       });
     }
 
+        const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
+      .sort({ createdAt: -1 })
+      .lean();
+
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
       {
@@ -2019,6 +2023,7 @@ exports.verifyRcDetails = async (req, res) => {
 
       if (isBike) {
         // ⭐ MODIFY vehicle_category directly here
+        rcInfo.owner_name = aadhaarRecord?.aadhar_verification_data?.full_name;
         rcInfo.vehicle_category = "CAR (FORCED BYPASS)";
       }
 
@@ -2043,9 +2048,6 @@ exports.verifyRcDetails = async (req, res) => {
     }
 
     // ---------------- Aadhaar match ---------------
-    const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
-      .sort({ createdAt: -1 })
-      .lean();
 
     if (!aadhaarRecord?.aadhar_verification_data) {
       return res.status(400).json({
