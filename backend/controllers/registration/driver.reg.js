@@ -1708,11 +1708,17 @@ exports.verifyAadhaarOtp = async (req, res) => {
         status: "success_aadhaar",
       };
 
+      // ---------------- MATCH BY deviceId OR mobile ----------------
+      const matchQuery = mobile
+        ? { $or: [{ device_id: deviceId }, { mobile }] }
+        : { device_id: deviceId };
+
       await AadharDetails.findOneAndUpdate(
-        { device_id: deviceId },
+        matchQuery,
         {
           aadhar_verification_data: dummyData,
           device_id: deviceId,
+          mobile: mobile,
           expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
         },
         { upsert: true, new: true }
@@ -1767,13 +1773,20 @@ exports.verifyAadhaarOtp = async (req, res) => {
     }
 
     // ---------------------------------------------------
-    // 🔥 UPDATE EXISTING DOCUMENT ONLY (NO NEW CREATION)
+    // 🔥 UPDATE EXISTING DOCUMENT ONLY
+    // (MATCH BY deviceId OR mobile)
     // ---------------------------------------------------
+
+    const matchQuery = mobile
+      ? { $or: [{ device_id: deviceId }, { mobile }] }
+      : { device_id: deviceId };
+
     const updatedRecord = await AadharDetails.findOneAndUpdate(
-      { device_id: deviceId },
+      matchQuery,
       {
         aadhar_verification_data: data,
         device_id: deviceId,
+        mobile: mobile,
         expiredDataHour: new Date(Date.now() + 6 * 60 * 60 * 1000),
       },
       { upsert: true, new: true }
