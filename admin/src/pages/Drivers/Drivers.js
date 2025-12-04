@@ -82,7 +82,7 @@ const Drivers = () => {
         }
 
         const res = await fetch(
-          `http://localhost:3100/api/v1/get-drivers?${new URLSearchParams(params)}`
+          `https://test.taxi.olyox.in/api/v1/get-drivers?${new URLSearchParams(params)}`
         );
         
         const data = await res.json();
@@ -120,7 +120,7 @@ const Drivers = () => {
     if (!result.isConfirmed) return;
 
     try {
-      await axios.patch(`http://localhost:3100/api/v1/driver/${driverId}/status`, {
+      await axios.patch(`https://test.taxi.olyox.in/api/v1/driver/${driverId}/status`, {
         account_status: newStatus,
       });
 

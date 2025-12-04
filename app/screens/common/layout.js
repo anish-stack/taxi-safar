@@ -1,3 +1,4 @@
+// components/common/Layout.js
 import React from "react";
 import {
   View,
@@ -6,7 +7,8 @@ import {
   Platform,
   StatusBar,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
 import Header from "./header";
 import CustomBottomTabs from "./CustomBottomNav";
 
@@ -20,21 +22,35 @@ const Layout = ({
   stopFloatingWidget,
   startFloatingWidget,
   startPoolingService,
-  contentContainerStyle = {},
+  contentContainerStyle = {},   // ← यहाँ कोई default flexGrow नहीं डालेंगे
   backgroundColor = "#ffffff",
   state,
 }) => {
+  const insets = useSafeAreaInsets();
+
+  const defaultContentStyle = {
+    flexGrow: 1,
+    paddingBottom: showBottomTabs
+      ? Platform.OS === "ios"
+        ? 100 + insets.bottom
+        : 80 + insets.bottom
+      : 20,
+  };
+
+  const finalContentStyle = [
+    defaultContentStyle,
+    contentContainerStyle, // ← user का style last में आएगा → override करेगा
+  ];
+
   const content = (
-    <View style={[styles.content, { backgroundColor }]}>{children}</View>
+    <View style={[styles.content, { backgroundColor }]}>
+      {children}
+    </View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#ffffff"
-        translucent={false}
-      />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" translucent={false} />
 
       {/* Header */}
       {showHeader && (
@@ -51,7 +67,7 @@ const Layout = ({
       {scrollable ? (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+          contentContainerStyle={finalContentStyle}   // ← यहाँ सही style
           showsVerticalScrollIndicator={false}
           bounces={true}
           keyboardShouldPersistTaps="handled"
@@ -59,11 +75,15 @@ const Layout = ({
           {content}
         </ScrollView>
       ) : (
-        <View style={styles.staticContent}>{content}</View>
+        <View style={[styles.staticContent, contentContainerStyle]}>
+          {content}
+        </View>
       )}
 
       {/* Bottom Tabs */}
-      {showBottomTabs && <CustomBottomTabs state={state} />}
+      {showBottomTabs && (
+        <CustomBottomTabs state={state} bottomInset={insets.bottom} />
+      )}
     </SafeAreaView>
   );
 };
@@ -76,13 +96,11 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: Platform.OS === "ios" ? 100 : 80, // Space for bottom tabs
-  },
   staticContent: {
     flex: 1,
-    marginBottom: Platform.OS === "ios" ? 85 : 65, // Space for bottom tabs when not scrolling
+  },
+  content: {
+    flex: 1,
   },
 });
 

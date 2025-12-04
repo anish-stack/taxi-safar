@@ -1,25 +1,36 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
-  ActivityIndicator,
   StyleSheet,
   Image,
   Dimensions,
   ScrollView,
-  TouchableOpacity,
-  Alert,
 } from "react-native";
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, {
+  Marker,
+  Circle,
+  PROVIDER_GOOGLE,
+} from "react-native-maps";
+
 import useDriverStore from "../../store/driver.store";
 import { Colors } from "../../constant/ui";
 import { getCurrentLocation } from "../../services/PermissionService";
 
 const { width } = Dimensions.get("window");
 
+// 16:9 Banner Height
+const BANNER_HEIGHT = width * 0.5625;
+
+// Offline Banners
 const OFFLINE_BANNERS = [
-  { id: 1, image: "https://i.ytimg.com/vi/Bp0uMcrgils/hq720.jpg" },
-  { id: 2, image: "https://i.ytimg.com/vi/PdtgpstgEZo/hq720.jpg" },
+  { id: 1, image: require("./taxi1.jpeg") },
+  { id: 2, image: require("./taxi2.jpeg") }
 ];
 
 const DEFAULT_COORDS = { latitude: 28.7041, longitude: 77.1025 };
@@ -27,150 +38,149 @@ const DEFAULT_RADIUS_KM = 5;
 
 export default function DriverMap() {
   const { location, is_online, driver } = useDriverStore();
-  const [currentLocation, setCurrentLocation] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+
+  // Use default location immediately, update later
+  const [currentLocation, setCurrentLocation] = useState(DEFAULT_COORDS);
   const [bannerIndex, setBannerIndex] = useState(0);
-  const scrollViewRef = useRef(null);
+  const [locationReady, setLocationReady] = useState(false);
+
+  const scrollRef = useRef(null);
   const intervalRef = useRef(null);
+  const locationFetchedRef = useRef(false);
 
   const isDriverOnline = !!is_online;
+
   const currentRadius =
     (driver?.currentRadius > 0 ? driver.currentRadius : DEFAULT_RADIUS_KM) *
-    1000; // Convert km → meters
+    1000;
 
-  // Auto-scroll banners when offline
+
+    console.log("currentLocation",currentLocation)
+
+  // -----------------------------
+  // 🚀 Fast Location Fetch (Silent)
+  // -----------------------------
+  const fetchLocation = useCallback(async () => {
+    // Prevent multiple simultaneous fetches
+    if (locationFetchedRef.current) return;
+    locationFetchedRef.current = true;
+
+    try {
+      let loc = null;
+
+      // Priority 1: Use store location if available (fastest)
+      if (
+        location &&
+        Array.isArray(location) &&
+        location[0] &&
+        location[1]
+      ) {
+        loc = { latitude: location[1], longitude: location[0] };
+        console.log("📍 Using store location:", loc);
+      } 
+      // Priority 2: Fetch fresh location (silent)
+      else {
+        console.log("📍 Fetching fresh location...");
+        const fresh = await getCurrentLocation();
+        if (fresh?.latitude && fresh?.longitude) {
+          loc = fresh;
+          console.log("📍 Fresh location acquired:", loc);
+        }
+      }
+
+      // Update location silently (no loader shown)
+      if (loc) {
+        setCurrentLocation(loc);
+        setLocationReady(true);
+      } else {
+        // Keep default location, mark as ready
+        console.log("📍 Using default location");
+        setLocationReady(true);
+      }
+    } catch (err) {
+      console.error("❌ Location error:", err);
+      // Keep default location on error
+      setLocationReady(true);
+    } finally {
+      locationFetchedRef.current = false;
+    }
+  }, [location]);
+
+  // Fetch location immediately on mount
   useEffect(() => {
-    if (isDriverOnline || OFFLINE_BANNERS.length <= 1) {
-      intervalRef.current && clearInterval(intervalRef.current);
+    fetchLocation();
+  }, [fetchLocation]);
+
+  // Refetch location when driver goes online
+  useEffect(() => {
+    if (isDriverOnline && !locationReady) {
+      fetchLocation();
+    }
+  }, [isDriverOnline, locationReady, fetchLocation]);
+
+  // -----------------------------
+  // 🚀 Auto Banner Slider (Offline)
+  // -----------------------------
+  useEffect(() => {
+    if (isDriverOnline) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
       return;
     }
 
     intervalRef.current = setInterval(() => {
       setBannerIndex((prev) => {
         const next = (prev + 1) % OFFLINE_BANNERS.length;
-        scrollViewRef.current?.scrollTo({ x: next * width, animated: true });
+        scrollRef.current?.scrollTo({
+          x: next * width,
+          animated: true,
+        });
         return next;
       });
     }, 4000);
 
-    return () => intervalRef.current && clearInterval(intervalRef.current);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
   }, [isDriverOnline]);
 
-  const handleScroll = (event) => {
-    const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / width);
-    setBannerIndex(index);
-  };
-
-  // Get location with fallback
-  const fetchLocation = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      let loc = null;
-
-      // Priority 1: Use location from store
-      if (
-        location &&
-        Array.isArray(location) &&
-        location.length === 2 &&
-        location[0] &&
-        location[1]
-      ) {
-        loc = { latitude: location[1], longitude: location[0] };
-      } else {
-        // Priority 2: Get fresh location
-        const freshLoc = await getCurrentLocation();
-        if (freshLoc?.latitude && freshLoc?.longitude) {
-          loc = freshLoc;
-        }
-      }
-
-      if (loc) {
-        setCurrentLocation(loc);
-      } else {
-        throw new Error("Unable to get your location");
-      }
-    } catch (err) {
-      console.error("Location fetch error:", err);
-      setError(err.message || "Location access denied or unavailable");
-      setCurrentLocation(DEFAULT_COORDS); // Fallback
-    } finally {
-      setLoading(false);
-    }
-  }, [location]);
-
-  useEffect(() => {
-    fetchLocation();
-  }, [fetchLocation]);
-
-  // Re-fetch location if store updates (optional)
-  useEffect(() => {
-    if (location && !currentLocation) {
-      fetchLocation();
-    }
-  }, [location]);
-
-  // Show error alert once
-  useEffect(() => {
-    if (error && !loading) {
-      Alert.alert("Location Error", error + "\nUsing default location.", [
-        { text: "Retry", onPress: fetchLocation },
-      ]);
-    }
-  }, [error, loading]);
-
-  // Loading State
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Fetching your location...</Text>
-      </View>
-    );
-  }
-
-  // Offline State - Beautiful Banner Slider
+  // -----------------------------
+  // 🚀 OFFLINE UI (16:9 Banner)
+  // -----------------------------
   if (!isDriverOnline) {
     return (
       <View style={styles.offlineContainer}>
         <ScrollView
-          ref={scrollViewRef}
+          ref={scrollRef}
           horizontal
           pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleScroll}
           decelerationRate="fast"
           snapToInterval={width}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+            setBannerIndex(idx);
+          }}
         >
-          {OFFLINE_BANNERS.map((banner, index) => (
+          {OFFLINE_BANNERS.map((banner) => (
             <View key={banner.id} style={styles.slide}>
               <Image
-                source={{ uri: banner.image }}
+                source={banner.image}
                 style={styles.bannerImage}
                 resizeMode="cover"
               />
-              <View style={styles.offlineOverlay}>
-                <Text style={styles.offlineTitle}>You're Offline</Text>
-                <Text style={styles.offlineSubtitle}>
-                  Go online to start accepting rides
-                </Text>
-              </View>
             </View>
           ))}
         </ScrollView>
 
-        {/* Pagination Dots */}
         <View style={styles.pagination}>
-          {OFFLINE_BANNERS.map((_, idx) => (
+          {OFFLINE_BANNERS.map((_, i) => (
             <View
-              key={idx}
-              style={[
-                styles.dot,
-                bannerIndex === idx ? styles.activeDot : styles.inactiveDot,
-              ]}
+              key={i}
+              style={[styles.dot, bannerIndex === i ? styles.dotActive : {}]}
             />
           ))}
         </View>
@@ -178,175 +188,139 @@ export default function DriverMap() {
     );
   }
 
-  // Online State - Map with Dynamic Radius
+  // -----------------------------
+  // 🚀 ONLINE UI (Map + Radius + Car)
+  // No loading screen - show immediately
+  // -----------------------------
   return (
-    <View style={styles.container}>
+    <View style={styles.mapContainer}>
       <MapView
         provider={PROVIDER_GOOGLE}
         style={styles.map}
+        initialRegion={{
+          ...currentLocation,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.012,
+        }}
         region={{
           ...currentLocation,
           latitudeDelta: 0.015,
           longitudeDelta: 0.012,
         }}
-        showsUserLocation
-        followsUserLocation
-        loadingEnabled
+        showsUserLocation={false} // Disable default blue dot
+        followsUserLocation={true}
+        loadingEnabled={false}
+        loadingIndicatorColor="transparent"
+        loadingBackgroundColor="transparent"
+        moveOnMarkerPress={false}
+        toolbarEnabled={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
       >
-        {currentLocation && (
-          <>
-            {/* Custom Car Marker */}
-            <Marker coordinate={currentLocation} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={styles.carContainer}>
-                <Image
-                  source={require("../../assets/car-marker.png")}
-                  style={styles.carMarker}
-                  resizeMode="contain"
-                />
-              </View>
-            </Marker>
+{currentLocation && (
+  <Marker
+    coordinate={{
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+    }}
+  >
+    <Image
+      source={require("../../assets/car-marker.png")}
+      style={{ width: 24, height: 24 }}
+    />
+  </Marker>
+)}
 
-            {/* Dynamic Service Radius Circle */}
-            <Circle
-              key={currentRadius} // Force re-render on radius change
-              center={currentLocation}
-              radius={currentRadius}
-              strokeColor={Colors.primary}
-              strokeWidth={2.5}
-              fillColor="rgba(0, 170, 169, 0.2)"
-              zIndex={-1}
-            />
-          </>
-        )}
+
+        {/* Search Radius Circle */}
+        <Circle
+          center={currentLocation}
+          radius={currentRadius}
+          strokeColor={Colors.primary}
+          strokeWidth={2.5}
+          fillColor="rgba(0, 170, 169, 0.090)"
+        />
       </MapView>
+
+      {/* Silent location indicator (optional) */}
+      {!locationReady && (
+        <View style={styles.silentIndicator}>
+          <View style={styles.pulsingDot} />
+        </View>
+      )}
     </View>
   );
 }
 
-// Enhanced Styles
+// -----------------------------------------
+// 🎨 Styles
+// -----------------------------------------
 const styles = StyleSheet.create({
-  container: {
+  mapContainer: {
     height: 420,
-    overflow: "hidden",
+    overflow: "hidden", // No border radius
     marginVertical: 12,
   },
-  loadingContainer: {
-    height: 320,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#f8fffe",
-    borderRadius: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    color: "#003873",
-    fontSize: 16,
-    fontWeight: "500",
-  },
+
   map: {
     ...StyleSheet.absoluteFillObject,
   },
-  carContainer: {
-    // backgroundColor: 'white',
-    padding: 6,
-    // borderRadius: 30,
-    elevation: 5,
-  },
-  carMarker: {
-    width: 22,
-    height: 22,
-  },
-  statusBadge: {
-    position: "absolute",
-    top: 16,
-    left: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 30,
-    elevation: 6,
-  },
-  onlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#4CAF50",
-    marginRight: 8,
-  },
-  statusText: {
-    fontWeight: "600",
-    color: "#003873",
-    fontSize: 14,
-  },
-  radiusInfo: {
-    position: "absolute",
-    bottom: 16,
-    alignSelf: "center",
-    backgroundColor: "rgba(0, 170, 169, 0.9)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 30,
-  },
-  radiusText: {
-    color: "white",
-    fontWeight: "700",
-    fontSize: 13,
-  },
+
+  // ---------- Offline ----------
   offlineContainer: {
-    height: 300,
-    // borderRadius: 20,
-    overflow: "hidden",
+    height: BANNER_HEIGHT,
+    overflow: "hidden", // No border radius
     backgroundColor: "#000",
-    elevation: 6,
   },
+
   slide: {
     width,
-    height: "100%",
-    position: "relative",
+    height: BANNER_HEIGHT,
   },
+
   bannerImage: {
     width: "100%",
     height: "100%",
   },
-  offlineOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 30,
-  },
-  offlineTitle: {
-    color: "#fff",
-    fontSize: 26,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  offlineSubtitle: {
-    color: "#ddd",
-    fontSize: 16,
-    marginTop: 8,
-    textAlign: "center",
-  },
+
   pagination: {
     position: "absolute",
-    bottom: 20,
-    left: 0,
-    right: 0,
+    bottom: 12,
+    width: "100%",
     flexDirection: "row",
     justifyContent: "center",
   },
+
   dot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    marginHorizontal: 5,
+    width: 10,
+    height: 10,
+    borderRadius: 6,
+    marginHorizontal: 4,
     backgroundColor: "rgba(255,255,255,0.4)",
   },
-  activeDot: {
-    backgroundColor: "#fff",
+
+  dotActive: {
     width: 24,
+    backgroundColor: "#fff",
+  },
+
+  // Silent loading indicator (subtle)
+  silentIndicator: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 12,
+    height: 12,
     borderRadius: 6,
+    backgroundColor: "rgba(220, 38, 38, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  pulsingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#fff",
   },
 });

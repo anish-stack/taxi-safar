@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   TouchableOpacity,
@@ -8,6 +8,7 @@ import {
   Modal,
   FlatList,
   Alert,
+  Dimensions,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import logo from "../../assets/taxisafar-logo.png";
@@ -20,6 +21,12 @@ import axios from "axios";
 import messaging from "@react-native-firebase/messaging";
 
 const KM = [5, 10, 15, 20, 25, 30];
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// Responsive breakpoints
+const isSmallScreen = SCREEN_WIDTH < 360;
+const isMediumScreen = SCREEN_WIDTH >= 360 && SCREEN_WIDTH < 400;
+const isLargeScreen = SCREEN_WIDTH >= 400;
 
 export default function Header({
   startPoolingService,
@@ -44,6 +51,9 @@ export default function Header({
   const [radius, setRadius] = useState(5);
   const [modalVisible, setModalVisible] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  // Refs to track service calls
+  const isTogglingRef = useRef(false);
 
   // Sync UI with store
   useEffect(() => {
@@ -79,41 +89,110 @@ export default function Header({
 
   // Handle Online/Offline toggle
   const handleToggle = async () => {
-    if (isToggling) return;
+    // Prevent multiple simultaneous toggles
+    if (isToggling || isTogglingRef.current) {
+      console.log("⏸️ Toggle already in progress, ignoring");
+      return;
+    }
 
+    isTogglingRef.current = true;
     setIsToggling(true);
+    
     const newStatus = !localStatus;
+    const previousStatus = localStatus;
 
+    console.log(`🔄 Toggle: ${previousStatus ? "ONLINE" : "OFFLINE"} → ${newStatus ? "ONLINE" : "OFFLINE"}`);
+
+    // Optimistically update UI
     setLocalStatus(newStatus);
-    toggle(newStatus);
 
     try {
       if (newStatus) {
-        console.log("Going ONLINE");
-        await startFloatingWidget?.();
-        await startPoolingService?.();
+        // Going ONLINE
+        console.log("🟢 Going ONLINE");
+        
+        // Update store first
+        toggle(newStatus);
+        
+        // Start services with error handling
+        try {
+          if (startFloatingWidget) {
+            console.log("🎯 Starting floating widget...");
+            await startFloatingWidget();
+            console.log("✅ Floating widget started");
+          }
+        } catch (widgetError) {
+          console.error("❌ Floating widget error:", widgetError);
+          // Continue even if widget fails
+        }
+
+        try {
+          if (startPoolingService) {
+            console.log("🚀 Starting pooling service...");
+            await startPoolingService();
+            console.log("✅ Pooling service started");
+          }
+        } catch (poolingError) {
+          console.error("❌ Pooling service error:", poolingError);
+          // Continue even if pooling fails
+        }
+
       } else {
-        console.log("Going OFFLINE");
-        await stopPoolingService?.();
-        await stopFloatingWidget?.();
+        // Going OFFLINE
+        console.log("🔴 Going OFFLINE");
+        
+        // Stop services first with error handling
+        try {
+          if (stopPoolingService) {
+            console.log("🛑 Stopping pooling service...");
+            await stopPoolingService();
+            console.log("✅ Pooling service stopped");
+          }
+        } catch (poolingError) {
+          console.error("❌ Error stopping pooling:", poolingError);
+          // Continue even if pooling stop fails
+        }
+
+        try {
+          if (stopFloatingWidget) {
+            console.log("🛑 Stopping floating widget...");
+            await stopFloatingWidget();
+            console.log("✅ Floating widget stopped");
+          }
+        } catch (widgetError) {
+          console.error("❌ Error stopping widget:", widgetError);
+          // Continue even if widget stop fails
+        }
+
+        // Update store after stopping services
+        toggle(newStatus);
       }
 
+      // Fetch updated driver details
       await fetchDriverDetails();
+      
+      console.log(`✅ Toggle complete: ${newStatus ? "ONLINE" : "OFFLINE"}`);
+
     } catch (error) {
-      console.error("Toggle failed:", error);
+      console.error("❌ Toggle failed:", error);
 
-      // revert
-      setLocalStatus(!newStatus);
-      toggle(!newStatus);
+      // Revert UI and store
+      setLocalStatus(previousStatus);
+      toggle(previousStatus);
 
-      Alert.alert("Error", "Status change failed. Please try again.");
+      Alert.alert(
+        "Error",
+        `Failed to go ${newStatus ? "ONLINE" : "OFFLINE"}. Please try again.`,
+        [{ text: "OK" }]
+      );
     } finally {
       setIsToggling(false);
+      isTogglingRef.current = false;
     }
   };
 
   // Select search radius
-  const selectRadius = async km => {
+  const selectRadius = async (km) => {
     setRadius(km);
     await IncreaseRadiusArea(km, Alert);
     setModalVisible(false);
@@ -126,7 +205,9 @@ export default function Header({
       try {
         const disabled = await LocationService.isBatteryOptimizationDisabled();
         if (!disabled) await LocationService.requestBatteryOptimization();
-      } catch {}
+      } catch (error) {
+        console.log("Battery optimization check failed:", error);
+      }
     };
 
     init();
@@ -142,14 +223,25 @@ export default function Header({
 
   return (
     <View style={styles.container}>
+      {/* LOGO */}
       <View style={styles.logoContainer}>
-        <Image source={logo} style={styles.logo} resizeMode="contain" />
+        <Image 
+          source={logo} 
+          style={[
+            styles.logo,
+            isSmallScreen && styles.logoSmall,
+            isMediumScreen && styles.logoMedium,
+          ]} 
+          resizeMode="contain" 
+        />
       </View>
 
       {/* ONLINE / OFFLINE BUTTON */}
       <TouchableOpacity
         style={[
           styles.statusButton,
+          isSmallScreen && styles.statusButtonSmall,
+          isMediumScreen && styles.statusButtonMedium,
           { backgroundColor: localStatus ? "#4CAF50" : "#F44336" },
           isToggling && { opacity: 0.7 },
         ]}
@@ -157,39 +249,82 @@ export default function Header({
         disabled={isToggling}
         activeOpacity={0.8}
       >
-        <Text style={styles.statusText}>
-          {isToggling ? "Please wait..." : localStatus ? "ONLINE" : "OFFLINE"}
+        <Text 
+          style={[
+            styles.statusText,
+            isSmallScreen && styles.statusTextSmall,
+          ]}
+          numberOfLines={1}
+        >
+          {isToggling ? "Wait..." : localStatus ? "ONLINE" : "OFFLINE"}
         </Text>
 
-        <View style={styles.statusDot} />
+        <View 
+          style={[
+            styles.statusDot,
+            isSmallScreen && styles.statusDotSmall,
+          ]} 
+        />
       </TouchableOpacity>
 
       {/* RIGHT SIDE ICONS */}
       <View style={styles.rightContainer}>
         {/* Radius Selector */}
         <TouchableOpacity
-          style={styles.radiusButton}
+          style={[
+            styles.radiusButton,
+            isSmallScreen && styles.radiusButtonSmall,
+          ]}
           onPress={() => setModalVisible(true)}
         >
-          <Text style={styles.radiusText}>{radius} km</Text>
-          <Icon name="chevron-down" size={16} color="#000" />
+          <Text 
+            style={[
+              styles.radiusText,
+              isSmallScreen && styles.radiusTextSmall,
+            ]}
+          >
+            {radius}km
+          </Text>
+          <Icon 
+            name="chevron-down" 
+            size={isSmallScreen ? 14 : 16} 
+            color="#000" 
+          />
         </TouchableOpacity>
 
         {/* Notifications */}
-        <TouchableOpacity style={styles.notificationButton}>
-          <Icon name="notifications-outline" size={24} color="#000" />
+        <TouchableOpacity 
+          style={[
+            styles.iconButton,
+            isSmallScreen && styles.iconButtonSmall,
+          ]}
+        >
+          <Icon 
+            name="notifications-outline" 
+            size={isSmallScreen ? 20 : 24} 
+            color="#000" 
+          />
         </TouchableOpacity>
 
         {/* Chat */}
         <TouchableOpacity
           onPress={() => navigation.navigate("chat")}
-          style={styles.notificationButton}
+          style={[
+            styles.iconButton,
+            isSmallScreen && styles.iconButtonSmall,
+          ]}
         >
-          <Icon name="chatbubble-outline" size={24} color="#000" />
+          <Icon 
+            name="chatbubble-outline" 
+            size={isSmallScreen ? 20 : 24} 
+            color="#000" 
+          />
 
           {unreadChatCount > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{unreadChatCount}</Text>
+              <Text style={styles.badgeText}>
+                {unreadChatCount > 99 ? "99+" : unreadChatCount}
+              </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -208,9 +343,10 @@ export default function Header({
           onPress={() => setModalVisible(false)}
         >
           <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Search Radius</Text>
             <FlatList
               data={KM}
-              keyExtractor={i => i.toString()}
+              keyExtractor={(i) => i.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[
@@ -227,6 +363,9 @@ export default function Header({
                   >
                     {item} km
                   </Text>
+                  {item === radius && (
+                    <Icon name="checkmark" size={20} color="#4CAF50" />
+                  )}
                 </TouchableOpacity>
               )}
             />
@@ -244,66 +383,124 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "#fff",
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: isSmallScreen ? 8 : 10,
+    paddingHorizontal: isSmallScreen ? 10 : 16,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
 
-  logoContainer: { flex: 1 },
-  logo: { width: 100, height: 40 },
+  // Logo styles
+  logoContainer: { 
+    flex: 0,
+    marginRight: isSmallScreen ? 6 : 8,
+  },
+  logo: { 
+    width: 100, 
+    height: 40,
+  },
+  logoSmall: {
+    width: 70,
+    height: 30,
+  },
+  logoMedium: {
+    width: 85,
+    height: 35,
+  },
 
+  // Status button styles
   statusButton: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 50,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    marginHorizontal: 4,
+    minWidth: isSmallScreen ? 75 : 85,
+    justifyContent: "center",
+  },
+  statusButtonSmall: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    minWidth: 70,
+  },
+  statusButtonMedium: {
     paddingVertical: 6,
     paddingHorizontal: 12,
+    minWidth: 80,
   },
   statusText: {
     color: "#fff",
     fontWeight: "bold",
     fontSize: 12,
+    marginRight: 4,
+  },
+  statusTextSmall: {
+    fontSize: 10,
   },
   statusDot: {
     width: 10,
     height: 10,
     backgroundColor: "#fff",
     borderRadius: 5,
-    marginLeft: 6,
+  },
+  statusDotSmall: {
+    width: 8,
+    height: 8,
   },
 
+  // Right container
   rightContainer: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 0,
   },
 
+  // Radius button
   radiusButton: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f5f5f5",
     borderRadius: 20,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    marginRight: 10,
+    marginRight: isSmallScreen ? 4 : 6,
+  },
+  radiusButtonSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 4,
   },
   radiusText: {
     fontSize: 13,
     fontWeight: "600",
     color: "#000",
-    marginRight: 4,
+    marginRight: 3,
+  },
+  radiusTextSmall: {
+    fontSize: 11,
   },
 
-  notificationButton: {
+  // Icon buttons
+  iconButton: {
     backgroundColor: "#f5f5f5",
     padding: 8,
     borderRadius: 50,
-    marginLeft: 6,
+    marginLeft: isSmallScreen ? 4 : 6,
+  },
+  iconButtonSmall: {
+    padding: 6,
+    marginLeft: 4,
   },
 
+  // Badge
   badge: {
     position: "absolute",
     top: -3,
     right: -3,
-    backgroundColor: "red",
+    backgroundColor: "#FF3B30",
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 10,
@@ -317,24 +514,52 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
+  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingVertical: 8,
-    width: 160,
-    maxHeight: 300,
+    borderRadius: 16,
+    paddingVertical: 16,
+    width: SCREEN_WIDTH * 0.7,
+    maxWidth: 280,
+    maxHeight: 400,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#000",
+    textAlign: "center",
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   modalItem: {
-    paddingVertical: 10,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
   },
-  modalItemSelected: { backgroundColor: "#e0e0e0" },
-  modalItemText: { fontSize: 14, color: "#000" },
-  modalItemTextSelected: { fontWeight: "bold" },
+  modalItemSelected: { 
+    backgroundColor: "#f0f9ff",
+  },
+  modalItemText: { 
+    fontSize: 15, 
+    color: "#333",
+  },
+  modalItemTextSelected: { 
+    fontWeight: "bold",
+    color: "#4CAF50",
+  },
 });

@@ -80,7 +80,7 @@ const PostRides = () => {
         }
 
         const res = await fetch(
-          `http://localhost:3100/api/v1/post-rides?${new URLSearchParams(params)}`
+          `https://test.taxi.olyox.in/api/v1/post-rides?${new URLSearchParams(params)}`
         );
         const data = await res.json();
 
@@ -113,7 +113,7 @@ const PostRides = () => {
     if (!result.isConfirmed) return;
 
     try {
-      await axios.delete(`http://localhost:3100/api/v1/post-rides/${rideId}`);
+      await axios.delete(`https://test.taxi.olyox.in/api/v1/post-rides/${rideId}`);
       toast.success("Ride post deleted successfully");
       setRides((prev) => prev.filter((r) => r._id !== rideId));
       setTotal((prev) => prev - 1);

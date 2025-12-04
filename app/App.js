@@ -4,12 +4,13 @@ import {
   Platform,
   StatusBar as RNStatusBar,
   AppState,
-  NativeModules,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
-
+import { useFonts } from "expo-font";
 // Services
 import { requestAppPermissions } from "./services/PermissionService";
 import { initializeNotifications } from "./utils/initNotifications";
@@ -18,6 +19,7 @@ import { useDriverServices } from "./hooks/useDriverServices";
 
 // Store
 import loginStore from "./store/auth.store";
+import useDriverStore from "./store/driver.store";
 
 // Constants
 import { API_URL_APP } from "./constant/api";
@@ -79,20 +81,28 @@ import AllInsurance from "./screens/Insurance/AllInsurance";
 // Screens - Others
 import BuySellTaxi from "./screens/BuySellTaxi/BuySellTaxi";
 import MyTrips from "./screens/MyTrips/MyTrips";
-import useDriverStore from "./store/driver.store";
 
 const Stack = createNativeStackNavigator();
 
 // Configuration constants
 const CONFIG = {
   NOTIFICATION_INTERVAL: 60000, // 1 minute
-  LOCATION_UPDATE_INTERVAL: 60000, // 10 seconds
+  LOCATION_UPDATE_INTERVAL: 60000, // 1 minute
   PERMISSION_CHECK_INTERVAL: 300000, // 5 minutes
 };
 
 export default function App() {
   const { token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
+
+  const [fontsLoaded] = useFonts({
+    "SFProDisplay-Regular": require("./assets/fonts/SF-Pro-Display-Regular.otf"),
+    "SFProDisplay-Medium": require("./assets/fonts/SF-Pro-Display-Medium.otf"),
+    "SFProDisplay-Semibold": require("./assets/fonts/SF-Pro-Display-Semibold.otf"),
+    "SFProDisplay-Bold": require("./assets/fonts/SF-Pro-Display-Bold.otf"),
+  });
+
+
   // Refs for cleanup
   const notificationIntervalRef = useRef(null);
   const permissionCheckIntervalRef = useRef(null);
@@ -102,11 +112,13 @@ export default function App() {
   // State
   const [isInitialized, setIsInitialized] = useState(false);
   const [isDriverOnline, setIsDriverOnline] = useState(false);
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
 
   // Get driver info
   const driverId = driver?._id || driver;
 
   // Initialize driver services (Ride Pooling & Floating Widget)
+  // IMPORTANT: Only initialize AFTER permissions are granted
   const {
     isPoolingActive,
     isWidgetActive,
@@ -121,20 +133,50 @@ export default function App() {
     token,
     isDriverOnline,
     enableFloatingWidget: true,
+    enabled: permissionsGranted, // Only enable after permissions
   });
 
   /**
-   * Initialize notifications and request permissions
+   * Request all permissions FIRST - before any service initialization
+   */
+  const requestAllPermissions = async () => {
+    try {
+      console.log("🔐 Requesting all permissions...");
+        
+      const granted = await requestAppPermissions();
+      
+      if (granted) {
+        console.log("✅ All permissions granted");
+        setPermissionsGranted(true);
+        return true;
+      } else {
+        console.warn("⚠️ Some permissions denied");
+        Alert.alert(
+          "Permissions Required",
+          "This app requires location and notification permissions to work properly. Please enable them in settings.",
+          [
+            { text: "OK" }
+          ]
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Error requesting permissions:", error);
+      return false;
+    }
+  };
+
+  /**
+   * Initialize notifications and fetch driver details
    */
   const initializeApp = async (authToken) => {
     try {
       console.log("📱 Initializing app...");
-      fetchDriverDetails();
+      
+      // Fetch driver details
+      await fetchDriverDetails();
 
-      const permissionsGranted = await requestAppPermissions();
-      console.log("✅ Permissions granted:", permissionsGranted);
-
-      // Initialize notifications
+      // Initialize notifications (only if token exists)
       if (authToken) {
         await initializeNotifications(authToken);
         console.log("🔔 Notifications initialized");
@@ -149,6 +191,7 @@ export default function App() {
 
   /**
    * Start location tracking service
+   * ONLY call this AFTER permissions are granted
    */
   const startLocationTracking = async (authToken) => {
     try {
@@ -162,9 +205,18 @@ export default function App() {
         return;
       }
 
+      if (!permissionsGranted) {
+        console.warn("⚠️ Cannot start location tracking - permissions not granted");
+        return;
+      }
+
       console.log("📍 Starting location tracking...");
 
       const apiUrl = `${API_URL_APP}/api/v1/update-driver-location`;
+      
+      // Add delay to ensure permissions are fully processed
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       await locationService.startTracking(apiUrl, authToken);
 
       isLocationTrackingActiveRef.current = true;
@@ -227,14 +279,11 @@ export default function App() {
           const granted = await requestAppPermissions();
 
           if (!granted) {
-            console.warn(
-              "⚠️ Permissions were revoked, stopping location tracking"
-            );
+            console.warn("⚠️ Permissions revoked, stopping services");
+            setPermissionsGranted(false);
             await stopLocationTracking();
-          } else if (!isLocationTrackingActiveRef.current && token) {
-            console.log(
-              "🔄 Permissions restored, restarting location tracking"
-            );
+          } else if (!isLocationTrackingActiveRef.current && token && permissionsGranted) {
+            console.log("🔄 Permissions restored, restarting location tracking");
             await startLocationTracking(token);
           }
         }
@@ -248,9 +297,7 @@ export default function App() {
    * Handle app state changes (foreground/background)
    */
   const handleAppStateChange = async (nextAppState) => {
-    console.log(
-      `📱 App state changed: ${appStateRef.current} -> ${nextAppState}`
-    );
+    console.log(`📱 App state: ${appStateRef.current} -> ${nextAppState}`);
 
     // App coming to foreground
     if (
@@ -261,8 +308,8 @@ export default function App() {
 
       const authToken = (await SecureStore.getItemAsync("auth_token")) || token;
 
-      if (authToken) {
-        // Reinitialize everything
+      if (authToken && permissionsGranted) {
+        // Reinitialize services
         await initializeApp(authToken);
         await startLocationTracking(authToken);
       }
@@ -281,7 +328,7 @@ export default function App() {
   };
 
   /**
-   * Main setup effect
+   * Main setup effect - runs once on app start
    */
   useEffect(() => {
     let appStateSubscription;
@@ -290,7 +337,16 @@ export default function App() {
       try {
         console.log("🚀 Starting app setup...");
 
-        // Get auth token
+        // STEP 1: Request permissions FIRST
+        const permissionsOk = await requestAllPermissions();
+        
+        if (!permissionsOk) {
+          console.warn("⚠️ Permissions not granted, skipping service initialization");
+          setIsInitialized(true);
+          return;
+        }
+
+        // STEP 2: Get auth token
         const storedToken = await SecureStore.getItemAsync("auth_token");
         const authToken = storedToken || token;
 
@@ -300,26 +356,24 @@ export default function App() {
           return;
         }
 
-        // Initialize app (permissions & notifications)
-        const initialized = await initializeApp(authToken);
+        // STEP 3: Initialize app (fetch driver, init notifications)
+        await initializeApp(authToken);
 
-        if (initialized) {
-          // Start location tracking
-          await startLocationTracking(authToken);
+        // STEP 4: Start location tracking (with delay)
+        await startLocationTracking(authToken);
 
-          // Setup periodic refreshes
-          setupNotificationRefresh(authToken);
-          setupPermissionCheck();
+        // STEP 5: Setup periodic refreshes
+        setupNotificationRefresh(authToken);
+        setupPermissionCheck();
 
-          // Setup app state listener
-          appStateSubscription = AppState.addEventListener(
-            "change",
-            handleAppStateChange
-          );
-        }
+        // STEP 6: Setup app state listener
+        appStateSubscription = AppState.addEventListener(
+          "change",
+          handleAppStateChange
+        );
 
         setIsInitialized(true);
-        console.log("✅ App setup completed");
+        console.log("✅ App setup completed successfully");
       } catch (error) {
         console.error("❌ Error in app setup:", error);
         setIsInitialized(true);
@@ -332,40 +386,31 @@ export default function App() {
     return () => {
       console.log("🧹 Cleaning up app...");
 
-      // Clear intervals
       if (notificationIntervalRef.current) {
         clearInterval(notificationIntervalRef.current);
       }
       if (permissionCheckIntervalRef.current) {
         clearInterval(permissionCheckIntervalRef.current);
       }
-
-      // Remove app state listener
       if (appStateSubscription) {
         appStateSubscription.remove();
       }
 
-      // Stop location tracking
       stopLocationTracking();
     };
-  }, [token]);
+  }, []); // Run only once on mount
 
   /**
    * Handle token changes
    */
   useEffect(() => {
     const handleTokenChange = async () => {
-      if (token && isInitialized) {
+      if (token && isInitialized && permissionsGranted) {
         console.log("🔑 Token changed, reinitializing services...");
 
-        // Restart location tracking with new token
         await stopLocationTracking();
         await startLocationTracking(token);
-
-        // Reinitialize notifications
         await initializeNotifications(token);
-
-        // Reset intervals
         setupNotificationRefresh(token);
       } else if (!token && isLocationTrackingActiveRef.current) {
         console.log("🔑 Token removed, stopping services...");
@@ -378,22 +423,29 @@ export default function App() {
     };
 
     handleTokenChange();
-  }, [token, isInitialized]);
+  }, [token, isInitialized, permissionsGranted]);
 
   // Log service status
   useEffect(() => {
     console.log("📊 Service Status:", {
+      permissionsGranted,
       isDriverOnline,
       isPoolingActive,
       isWidgetActive,
       hasOverlayPermission,
     });
-  }, [isDriverOnline, isPoolingActive, isWidgetActive, hasOverlayPermission]);
+  }, [permissionsGranted, isDriverOnline, isPoolingActive, isWidgetActive, hasOverlayPermission]);
 
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#000" />
+      </View>
+    );
+  }
   return (
     <NavigationContainer>
       <View style={{ flex: 1 }}>
-        {/* Status Bar */}
         {Platform.OS === "android" && (
           <RNStatusBar backgroundColor="#FFF" barStyle="dark-content" />
         )}
@@ -444,25 +496,13 @@ export default function App() {
           {/* Driver Post & Reserve */}
           <Stack.Screen name="Add" component={Driver_Post} />
           <Stack.Screen name="Reserve" component={Reserve} />
-          <Stack.Screen
-            name="DriverPostDetails"
-            component={ReserveRideDetails}
-          />
-          <Stack.Screen
-            name="ReserveRideDetailsAssigned"
-            component={ReserveRideDetailsAssigned}
-          />
+          <Stack.Screen name="DriverPostDetails" component={ReserveRideDetails} />
+          <Stack.Screen name="ReserveRideDetailsAssigned" component={ReserveRideDetailsAssigned} />
 
           {/* Taxi Safari */}
           <Stack.Screen name="TaxiSafarView" component={TaxiSafarView} />
-          <Stack.Screen
-            name="TaxiSafarTripDetailScreen"
-            component={TaxiSafarTripDetailScreen}
-          />
-          <Stack.Screen
-            name="ProgressTaxiSafarRide"
-            component={ProgressTaxiSafarRide}
-          />
+          <Stack.Screen name="TaxiSafarTripDetailScreen" component={TaxiSafarTripDetailScreen} />
+          <Stack.Screen name="ProgressTaxiSafarRide" component={ProgressTaxiSafarRide} />
 
           {/* Chat */}
           <Stack.Screen name="chat" component={Chat} />
@@ -477,10 +517,7 @@ export default function App() {
 
           {/* Driver Jobs */}
           <Stack.Screen name="DriverJobs" component={DriverJobIntro} />
-          <Stack.Screen
-            name="driver-job-create"
-            component={DriverJobCreateAndEdit}
-          />
+          <Stack.Screen name="driver-job-create" component={DriverJobCreateAndEdit} />
           <Stack.Screen name="driver-job-list" component={MyJobsPosted} />
           <Stack.Screen name="job-posted-u" component={MyJobsPosted} />
 

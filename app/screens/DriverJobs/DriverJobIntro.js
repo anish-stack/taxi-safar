@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Image,
   Dimensions,
+  ScrollView,
 } from "react-native";
 import Layout from "../common/layout";
 import BackWithLogo from "../common/back_with_logo";
@@ -18,85 +19,90 @@ export default function DriverJobIntro() {
   const navigation = useNavigation();
 
   return (
-    <Layout showHeader={false}>
+    <Layout scrollable={true} showHeader={false}>
       <BackWithLogo title="Driver Jobs" />
 
-      <View style={styles.container}>
-        {/* Hero Illustration */}
-        <View style={styles.illustrationContainer}>
-          <Image
-            source={require("../../assets/job-intro.jpg")} // Keep your image
-            style={styles.illustration}
-            resizeMode="cover"
-          />
-          <View style={styles.overlay}>
-            <Text style={styles.overlayText}>Hire Trusted Drivers</Text>
-            <Text style={styles.overlaySubtext}>Fast • Verified • Reliable</Text>
-          </View>
-        </View>
-
-        {/* Main Content */}
-        <View style={styles.content}>
-          <Text style={styles.heading}>Need a Professional Driver?</Text>
-          <Text style={styles.subheading}>
-            Post your job in minutes and connect with experienced, verified drivers across India.
-          </Text>
-
-          {/* Feature Highlights */}
-          <View style={styles.features}>
-            <View style={styles.featureItem}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-              </View>
-              <Text style={styles.featureText}>Verified & Background Checked</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="shield-checkmark" size={24} color="#3b82f6" />
-              </View>
-              <Text style={styles.featureText}>Safe & Reliable Drivers</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="flash" size={24} color="#f59e0b" />
-              </View>
-              <Text style={styles.featureText}>Quick Hiring Process</Text>
+  
+        <View style={styles.container}>
+          {/* Hero Illustration */}
+          <View style={styles.illustrationContainer}>
+            <Image
+              source={require("../../assets/job-intro.jpg")} // Keep your image
+              style={styles.illustration}
+              resizeMode="cover"
+            />
+            <View style={styles.overlay}>
+              <Text style={styles.overlayText}>Hire Trusted Drivers</Text>
+              <Text style={styles.overlaySubtext}>
+                Fast • Verified • Reliable
+              </Text>
             </View>
           </View>
 
-          {/* Action Buttons */}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => navigation.navigate("driver-job-create")}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="add-circle" size={24} color="#fff" />
-            <Text style={styles.primaryButtonText}>Post a New Job</Text>
-          </TouchableOpacity>
+          {/* Main Content */}
+          <View style={styles.content}>
+            <Text style={styles.heading}>Need a Professional Driver?</Text>
+            <Text style={styles.subheading}>
+              Post your job in minutes and connect with experienced, verified
+              drivers across India.
+            </Text>
 
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => navigation.navigate("driver-job-list")}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.secondaryButtonText}>View Posted Jobs</Text>
-            <Ionicons name="arrow-forward" size={20} color="#EF4444" />
-          </TouchableOpacity>
+            {/* Feature Highlights */}
+            <View style={styles.features}>
+              <View style={styles.featureItem}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                </View>
+                <Text style={styles.featureText}>
+                  Verified & Background Checked
+                </Text>
+              </View>
+              <View style={styles.featureItem}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="shield-checkmark" size={24} color="#3b82f6" />
+                </View>
+                <Text style={styles.featureText}>Safe & Reliable Drivers</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="flash" size={24} color="#f59e0b" />
+                </View>
+                <Text style={styles.featureText}>Quick Hiring Process</Text>
+              </View>
+            </View>
 
+            {/* Action Buttons */}
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => navigation.navigate("driver-job-create")}
+              activeOpacity={0.9}
+            >
+              <Ionicons name="add-circle" size={24} color="#fff" />
+              <Text style={styles.primaryButtonText}>Post a New Job</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => navigation.navigate("driver-job-list")}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryButtonText}>View Posted Jobs</Text>
+              <Ionicons name="arrow-forward" size={20} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1,
     backgroundColor: "#f8fafc",
   },
   illustrationContainer: {
     position: "relative",
-    height: 280,
+    height: 230,
     borderRadius: 20,
     overflow: "hidden",
     marginHorizontal: 20,

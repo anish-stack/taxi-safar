@@ -6,18 +6,49 @@ import mini from "../../assets/mini.png";
 import sedan from "../../assets/sedan.jpeg";
 import suv from "../../assets/suv.png";
 
-// Status config — just mapping your enum to nice badge
 const STATUS_CONFIG = {
-  searching: { label: "Searching Driver", color: "#F59E0B", icon: "search-outline" },
+  searching: {
+    label: "Searching Driver",
+    color: "#F59E0B",
+    icon: "search-outline",
+  },
   reserved: { label: "Reserved", color: "#8B5CF6", icon: "calendar-outline" },
-  driver_assigned: { label: "Driver Assigned", color: "#3B82F6", icon: "car-outline" },
-  driver_arrived: { label: "Driver Arrived", color: "#10B981", icon: "checkmark-circle" },
+  driver_assigned: {
+    label: "Driver Assigned",
+    color: "#3B82F6",
+    icon: "car-outline",
+  },
+  driver_arrived: {
+    label: "Driver Arrived",
+    color: "#10B981",
+    icon: "checkmark-circle",
+  },
   trip_started: { label: "Trip Started", color: "#06B6D4", icon: "navigate" },
-  trip_completed: { label: "Completed", color: "#10B981", icon: "checkmark-done" },
-  cancelled_by_user: { label: "Cancelled (User)", color: "#EF4444", icon: "close-circle" },
-  cancelled_by_driver: { label: "Cancelled (Driver)", color: "#EF4444", icon: "close-circle" },
-  cancelled_by_system: { label: "Cancelled (System)", color: "#6B7280", icon: "alert-circle" },
-  no_driver_found: { label: "No Driver Found", color: "#DC2626", icon: "car-sport-outline" },
+  trip_completed: {
+    label: "Completed",
+    color: "#10B981",
+    icon: "checkmark-done",
+  },
+  cancelled_by_user: {
+    label: "Cancelled",
+    color: "#EF4444",
+    icon: "close-circle",
+  },
+  cancelled_by_driver: {
+    label: "Cancelled",
+    color: "#EF4444",
+    icon: "close-circle",
+  },
+  cancelled_by_system: {
+    label: "Cancelled",
+    color: "#6B7280",
+    icon: "alert-circle",
+  },
+  no_driver_found: {
+    label: "No Driver Found",
+    color: "#DC2626",
+    icon: "car-sport-outline",
+  },
 };
 
 const RideCard = ({
@@ -39,98 +70,84 @@ const RideCard = ({
   onPress,
 }) => {
   const vehicleImage =
-    vehicleType === "mini"
-      ? mini
-      : vehicleType === "sedan"
-      ? sedan
-      : vehicleType === "suv"
-      ? suv
-      : mini;
+    vehicleType === "mini" ? mini : vehicleType === "sedan" ? sedan : suv;
 
-  const statusInfo = STATUS_CONFIG[status] || {
-    label: status?.replace(/_/g, " ")?.toUpperCase() || "UNKNOWN",
-    color: "#6B7280",
-    icon: "help-outline",
+  const shortenAddress = (address) => {
+    if (!address) return "";
+
+    const parts = address.split(",").map((x) => x.trim());
+
+    // take last 4 meaningful parts
+    const shortParts = parts.slice(-4);
+
+    return shortParts.join(", ");
   };
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.card}>
-      {/* TOP HEADER */}
-      <View style={styles.rowBetween}>
+      {/* TOP ROW: Name + Rating + Price */}
+      <View style={styles.topRow}>
         <View style={styles.row}>
           <View style={styles.avatar}>
             <Image source={vehicleImage} style={styles.vehicleImg} />
           </View>
-
           <View>
             <Text style={styles.name}>{name}</Text>
-
-            <View style={styles.row}>
-              <Icon name="star" size={16} color="#ffb300" />
+            <View style={styles.ratingRow}>
+              <Icon name="star" size={14} color="#ffb300" />
               <Text style={styles.rating}>{rating}</Text>
               <Text style={styles.ratingCount}>({totalRatings})</Text>
             </View>
           </View>
         </View>
-
         <Text style={styles.price}>₹{price}</Text>
       </View>
 
-      {/* ONLY ADDED: Status Badge */}
-      <View style={styles.statusWrapper}>
-        <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + "20" }]}>
-          <Icon name={statusInfo.icon} size={15} color={statusInfo.color} />
-          <Text style={[styles.statusText, { color: statusInfo.color }]}>
-            {statusInfo.label}
-          </Text>
-        </View>
+      {/* DATE & TIME - Compact */}
+      <View style={styles.dateSection}>
+        {original_tryipType === "oneWay" ? (
+          <>
+            <Text style={styles.dateTime}>{startDate}</Text>
+            <View style={styles.dotLine} />
+            <Text style={styles.dateTime}>{startTime}</Text>
+          </>
+        ) : (
+          <>
+            <View>
+              <Text style={styles.dateTime}>{startDate}</Text>
+              <Text style={styles.dateTimeSmall}>{startTime}</Text>
+            </View>
+            <View style={styles.dotLine} />
+            <View>
+              <Text style={styles.dateTime}>{endDate}</Text>
+              <Text style={styles.dateTimeSmall}>{endTime}</Text>
+            </View>
+          </>
+        )}
       </View>
 
-      {/* DATE SECTION (unchanged) */}
-      {original_tryipType === "oneWay" ? (
-        <View style={styles.roundSection}>
-          <View>
-            <Text style={styles.date}>{startDate}</Text>
-          </View>
-
-          <View style={styles.dotLine} />
-
-          <View>
-            <Text style={styles.time}>{startTime}</Text>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.roundSection}>
-          <View>
-            <Text style={styles.date}>{startDate}</Text>
-            <Text style={styles.time}>{startTime}</Text>
-          </View>
-
-          <View style={styles.dotLine} />
-
-          <View>
-            <Text style={styles.date}>{endDate}</Text>
-            <Text style={styles.time}>{endTime}</Text>
-          </View>
-        </View>
-      )}
-
-      {/* ADDRESS SECTION (unchanged) */}
+      {/* ADDRESS + TRIP TAG */}
       <View style={styles.addressBox}>
-        <View style={styles.row}>
-          <Icon name="navigate-outline" size={18} color="#555" />
-          <Text style={styles.address}>{pickup}</Text>
-        </View>
-
-        <View style={styles.centerTag}>
-          <Text style={styles.tripTag}>
-            {tripType} Trip - {distance} km
+        <View style={styles.addressRow}>
+          <Icon name="navigate-outline" size={16} color="#666" />
+          <Text style={styles.address} numberOfLines={1}>
+            {" "}
+            {shortenAddress(pickup)}
           </Text>
         </View>
 
-        <View style={styles.row}>
-          <Icon name="location-outline" size={18} color="#555" />
-          <Text style={styles.address}>{drop}</Text>
+        <View style={styles.tripTagContainer}>
+          <Text style={styles.tripTag}>
+            {tripType} • {distance} km
+          </Text>
+        </View>
+
+        <View style={styles.addressRow}>
+          <Icon name="location-outline" size={16} color="#666" />
+          <Text style={styles.address} numberOfLines={1}>
+            {" "}
+            {shortenAddress(drop)}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -139,128 +156,126 @@ const RideCard = ({
 
 export default RideCard;
 
-/* ---------------------------- STYLES (only added status styles) ---------------------------- */
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#fff",
-    padding: 18,
-    borderRadius: 18,
-    marginVertical: 12,
-    marginHorizontal: 6,
+    padding: 14, // कम किया
+    borderRadius: 16,
+    marginVertical: 6, // कम किया (12 → 6)
+    marginHorizontal: 8,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
 
   row: { flexDirection: "row", alignItems: "center" },
-  rowBetween: {
+
+  topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8, // कम किया
   },
 
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#f7f7f7",
-    marginRight: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#f9f9f9",
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 10, // कम किया
   },
   vehicleImg: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
     resizeMode: "contain",
   },
 
   name: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#222",
   },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
   rating: {
     marginLeft: 4,
+    fontSize: 13,
     fontWeight: "600",
     color: "#333",
   },
   ratingCount: {
     marginLeft: 4,
-    color: "#777",
+    fontSize: 12,
+    color: "#888",
   },
   price: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
     color: "#e53935",
   },
 
-  // ONLY NEW STYLES BELOW
-  statusWrapper: {
-    marginTop: 12,
-    alignItems: "flex-start",
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-
-  // Rest of your original styles (unchanged)
-  roundSection: {
-    marginTop: 16,
+  dateSection: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "#fafafa",
-    padding: 14,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8, // कम किया
+    borderRadius: 10,
+    marginBottom: 10, // कम किया
   },
   dotLine: {
-    width: 50,
+    width: 32,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderRadius: 1,
-    borderColor: "#aaa",
+    borderColor: "#ccc",
   },
-  date: {
-    fontSize: 15,
+  dateTime: {
+    fontSize: 13.5,
     color: "#444",
+    fontWeight: "600",
   },
-  time: {
-    fontSize: 15,
-    marginTop: 2,
-    fontWeight: "700",
-    color: "#111",
+  dateTimeSmall: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 1,
   },
+
   addressBox: {
-    backgroundColor: "#f4f4f4",
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 20,
+    backgroundColor: "#f8f8f8",
+    borderRadius: 12,
+    padding: 10, // कम किया
+  },
+  addressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 3, // कम किया
   },
   address: {
     flex: 1,
-    marginLeft: 8,
-    color: "#333",
-    fontSize: 14,
-    lineHeight: 18,
+    marginLeft: 6,
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 16,
   },
-  centerTag: {
+  tripTagContainer: {
     alignItems: "center",
-    marginVertical: 10,
+    marginVertical: 6, // कम किया
   },
   tripTag: {
     backgroundColor: "#000",
     color: "#fff",
-    fontSize: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    fontSize: 11,
+    fontWeight: "600",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
 });

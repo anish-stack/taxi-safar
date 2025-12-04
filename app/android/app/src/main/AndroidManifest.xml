@@ -78,20 +78,24 @@
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="location"
-        android:stopWithTask="false" />
+        android:stopWithTask="false"
+         android:permission="android.permission.BIND_JOB_SERVICE"  />
 
     <service
         android:name=".RidePoolingService"
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="location|dataSync"
-        android:stopWithTask="false" />
+        android:stopWithTask="false"
+          android:permission="android.permission.BIND_JOB_SERVICE"  />
 
     <service
         android:name=".FloatingWidgetService"
         android:enabled="true"
         android:exported="false"
-        android:stopWithTask="false" />
+        android:stopWithTask="false"
+         android:foregroundServiceType="dataSync"
+          />
 
     <!-- BROADCAST RECEIVERS FOR AUTO-RESTART -->
     

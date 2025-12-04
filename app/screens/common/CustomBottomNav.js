@@ -1,11 +1,6 @@
+// components/common/CustomBottomNav.js
 import React from "react";
-import {
-  View,
-  TouchableOpacity,
-  Text,
-  StyleSheet,
-  Platform,
-} from "react-native";
+import { View, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
 
@@ -17,18 +12,16 @@ const TABS = [
   { name: "Settings", icon: "person", iconOutline: "person-outline", label: "Account", screen: "Account" },
 ];
 
-const CustomBottomTabs = ({ state }) => {
+const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहाँ लें
   const navigation = useNavigation();
   const activeIndex = state?.index || 0;
 
   const handleTabPress = (index, screen) => {
-    if (screen) {
-      navigation.navigate(screen);
-    }
+    if (screen) navigation.navigate(screen);
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>   {/* ← यहाँ apply */}
       {/* Floating Center Button */}
       <View style={styles.centerButtonWrapper}>
         <TouchableOpacity
@@ -45,10 +38,7 @@ const CustomBottomTabs = ({ state }) => {
       {/* Bottom Tab Bar */}
       <View style={styles.tabBar}>
         {TABS.map((tab, index) => {
-          if (tab.isCenter) {
-            // Empty space for center button
-            return <View key={index} style={styles.centerSpace} />;
-          }
+          if (tab.isCenter) return <View key={index} style={styles.centerSpace} />;
 
           const isActive = activeIndex === index;
 
@@ -60,27 +50,14 @@ const CustomBottomTabs = ({ state }) => {
               activeOpacity={0.7}
             >
               <View style={styles.tabContent}>
-                {/* Icon with background when active */}
-                <View
-                  style={[
-                    styles.iconContainer,
-                    isActive && styles.iconContainerActive,
-                  ]}
-                >
+                <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
                   <Icon
                     name={isActive ? tab.icon : tab.iconOutline}
                     size={24}
                     color={isActive ? "#000000" : "#9CA3AF"}
                   />
                 </View>
-
-                {/* Label */}
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    isActive && styles.tabLabelActive,
-                  ]}
-                >
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
                   {tab.label}
                 </Text>
               </View>
@@ -94,18 +71,17 @@ const CustomBottomTabs = ({ state }) => {
 
 const styles = StyleSheet.create({
   container: {
+      backgroundColor: "#ffffff",
+
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
   },
-
-  // Tab Bar
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#ffffff",
     height: Platform.OS === "ios" ? 85 : 75,
-    paddingBottom: Platform.OS === "ios" ? 25 : 18,
     paddingTop: 8,
     paddingHorizontal: 8,
     alignItems: "center",
@@ -120,18 +96,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
-
-  tabItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  tabContent: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  tabContent: { alignItems: "center" },
   iconContainer: {
     width: 44,
     height: 44,
@@ -139,29 +105,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 2,
-    backgroundColor: "transparent",
   },
+  iconContainerActive: { backgroundColor: "#F3F4F6" },
+  tabLabel: { fontSize: 11, fontWeight: "600", color: "#9CA3AF", marginTop: 2 },
+  tabLabelActive: { color: "#000000" },
 
-  iconContainerActive: {
-    backgroundColor: "#F3F4F6",
-  },
-
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#9CA3AF",
-    marginTop: 2,
-  },
-
-  tabLabelActive: {
-    color: "#000000",
-  },
-
-  // Center Button
-  centerSpace: {
-    width: 70,
-  },
-
+  centerSpace: { width: 70 },
   centerButtonWrapper: {
     position: "absolute",
     bottom: Platform.OS === "ios" ? 50 : 25,
@@ -169,7 +118,6 @@ const styles = StyleSheet.create({
     marginLeft: -35,
     zIndex: 100,
   },
-
   centerButton: {
     width: 70,
     height: 70,
@@ -177,9 +125,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     justifyContent: "center",
     alignItems: "center",
-   
   },
-
   centerButtonInner: {
     width: 60,
     height: 60,
@@ -195,4 +141,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CustomBottomTabs
+export default CustomBottomTabs;

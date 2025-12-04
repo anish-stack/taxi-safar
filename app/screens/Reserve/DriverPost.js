@@ -1,33 +1,24 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+} from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import mini from '../../assets/mini.png';
-import sedan from '../../assets/sedan.jpeg';
-import suv from '../../assets/suv.png';
+import mini from "../../assets/mini.png";
+import sedan from "../../assets/sedan.jpeg";
+import suv from "../../assets/suv.png";
 import { useNavigation } from "@react-navigation/native";
-
-// Status badge configuration
-const STATUS_CONFIG = {
-  pending: { label: "Pending", color: "#F59E0B", icon: "time-outline" },
-  "driver-assigned": { label: "Driver Assigned", color: "#3B82F6", icon: "car-outline" },
-  "driver-accepted": { label: "Accepted", color: "#10B981", icon: "checkmark-circle" },
-  "driver-rejected": { label: "Rejected", color: "#EF4444", icon: "close-circle" },
-  completed: { label: "Completed", color: "#10B981", icon: "checkmark-done" },
-  "cancelled-by-customer": { label: "Cancelled (Customer)", color: "#EF4444", icon: "person-outline" },
-  "cancelled-by-driver": { label: "Cancelled (Driver)", color: "#EF4444", icon: "car-outline" },
-  "cancelled-by-admin": { label: "Cancelled (Admin)", color: "#6B7280", icon: "shield-outline" },
-  "no-show": { label: "No Show", color: "#DC2626", icon: "walk-outline" },
-  failed: { label: "Failed", color: "#991B1B", icon: "alert-circle" },
-};
 
 export default function DriverPost({
   _id,
   vehicleName = "Maruti WagonR",
-  assignedStatus = "Not Assigned",
-  assignedColor = "#d4a017",
   vehicleType = "mini",
   totalAmount = "₹8,000",
-  status = "pending", // your new status enum
+  requirement = {},
   commission = "₹2,000",
   driverEarning = "₹6,000",
   pickup = "220 Yonge St, Toronto, ON M5B 2H1, Delhi",
@@ -35,118 +26,141 @@ export default function DriverPost({
   tripType = "One way Trip - 60 km",
   date = "08 Mar, 2025",
   time = "07:00 PM",
-  onChatPress = () => {},
 }) {
   const navigation = useNavigation();
 
-  const vehicleImage =
-    vehicleType === "mini"
-      ? mini
-      : vehicleType === "sedan"
-      ? sedan
-      : vehicleType === "suv"
-      ? suv
-      : mini;
+  const shortenAddress = (address) => {
+  if (!address) return "";
 
-  const statusInfo = STATUS_CONFIG[status] || {
-    label: status?.replace(/-/g, " ")?.toUpperCase() || "UNKNOWN",
-    color: "#6B7280",
-    icon: "help-outline",
+  const parts = address.split(",").map(x => x.trim());
+
+  // take last 4 meaningful parts
+  const shortParts = parts.slice(-4);
+
+  return shortParts.join(", ");
+};
+
+  const vehicleImage =
+    vehicleType === "mini" ? mini : vehicleType === "sedan" ? sedan : suv;
+  const capacityMap = { mini: 3, sedan: 4, suv: 5 };
+  const capacity = capacityMap[vehicleType] || 0;
+
+  // Badges Logic (same as before)
+  const badgeLabels = {
+    ac: "AC",
+    allExclusive: "All Exclusive",
+    allInclusive: "All Inclusive",
+    carrier: "Carrier",
+    foodAllowed: "Food Allowed",
+    musicSystem: "Music System",
+    onlyDiesel: "Diesel Only",
   };
 
+  const req = requirement || {};
+  let badgesToShow = [];
+
+  if (req.allInclusive) {
+    badgesToShow = ["All Inclusive"];
+  } else {
+    badgesToShow = Object.keys(req)
+      .filter((key) => req[key] && key !== "allInclusive")
+      .map((key) => badgeLabels[key]);
+    if (badgesToShow.length === 0) badgesToShow = ["All Inclusive"];
+  }
+
+  const displayBadges =
+    badgesToShow.length > 3
+      ? [...badgesToShow.slice(0, 2), `+${badgesToShow.length - 2}`]
+      : badgesToShow;
+
   return (
-    <View style={styles.card}>
-      {/* TOP ROW */}
-   
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => navigation.navigate("DriverPostDetails", { rideId: _id })}
+      style={styles.card}
+    >
+      {/* Top Row */}
       <View style={styles.topRow}>
         <View style={styles.row}>
-          <View style={styles.vehicleIconBox}>
-            <Image source={vehicleImage} style={styles.vehicleIcon} />
-          </View>
+          <Image source={vehicleImage} style={styles.carImage} />
           <View>
             <Text style={styles.vehicleName}>{vehicleName}</Text>
-            <Text style={[styles.assignText, { color: assignedColor }]}>
-              {assignedStatus}
-            </Text>
+            <Text style={styles.capacityText}>Capacity {capacity} seats</Text>
           </View>
         </View>
 
-        <View>
+        <View style={styles.dateTime}>
           <Text style={styles.date}>{date}</Text>
           <Text style={styles.time}>{time}</Text>
         </View>
       </View>
 
-      {/* NEW: Status Badge */}
-      <View style={styles.statusWrapper}>
-        <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + "22" }]}>
-          <Icon name={statusInfo.icon} size={15} color={statusInfo.color} />
-          <Text style={[styles.statusText, { color: statusInfo.color }]}>
-            {statusInfo.label}
-          </Text>
-        </View>
-      </View>
+      {/* Badges */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.badgeScroll}
+        contentContainerStyle={styles.badgeContainer}
+      >
+        {displayBadges.map((badge, i) => (
+          <View key={i} style={styles.badge}>
+            <Text style={styles.badgeText}>{badge}</Text>
+          </View>
+        ))}
+      </ScrollView>
 
-      {/* AMOUNT SECTION */}
+      {/* Amounts */}
       <View style={styles.amountRow}>
         <View style={styles.amountBox}>
-          <Text style={styles.amountValue}>{totalAmount}</Text>
-          <Text style={styles.amountLabel}>Total Amount</Text>
+          <Text style={styles.totalAmount}>{totalAmount}</Text>
+          <Text style={styles.amountLabel}>Total</Text>
         </View>
-
         <View style={styles.amountBox}>
-          <Text style={styles.amountValue}>{commission}</Text>
+          <Text style={styles.commission}>{commission}</Text>
           <Text style={styles.amountLabel}>Commission</Text>
         </View>
-
         <View style={styles.amountBox}>
-          <Text style={styles.amountValue}>{driverEarning}</Text>
-          <Text style={styles.amountLabel}>Driver Earning</Text>
+          <Text style={styles.earning}>{driverEarning}</Text>
+          <Text style={styles.amountLabel}>You Earn</Text>
         </View>
       </View>
 
-      {/* ADDRESS BLOCK */}
+      {/* Address Box */}
       <View style={styles.addressBox}>
-        <View style={styles.row}>
-          <Icon name="navigate-outline" size={18} color="#444" />
-          <Text style={styles.address}>{pickup}</Text>
+        <View style={styles.addressRow}>
+          <Icon name="navigate-outline" size={15} color="#666" />
+          <Text style={styles.address} numberOfLines={1}>
+            {shortenAddress(pickup)}
+          </Text>
         </View>
 
-        <View style={styles.centerTag}>
+        <View style={styles.tripTagContainer}>
           <Text style={styles.tripTag}>{tripType}</Text>
         </View>
 
-        <View style={styles.row}>
-          <Icon name="location-outline" size={18} color="#444" />
-          <Text style={styles.address}>{drop}</Text>
+        <View style={styles.addressRow}>
+          <Icon name="location-outline" size={15} color="#666" />
+          <Text style={styles.address} numberOfLines={1}>
+             {shortenAddress(drop)}
+          </Text>
         </View>
       </View>
-
-      {/* CHAT BUTTON */}
-      <TouchableOpacity
-        style={styles.chatBtn}
-        onPress={() => navigation.navigate("DriverPostDetails", { rideId: _id })}
-      >
-        <Icon name="chatbubble-ellipses" size={20} color="#fff" />
-        <Text style={styles.chatBtnText}>
-          {assignedStatus === "driver-assigned" ? "View Details" : "Chat with Drivers"}
-        </Text>
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
-
-/* -------------------------------------------------------- */
-/*                           STYLES                          */
-/* -------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#fff",
-    padding: 18,
-    borderRadius: 22,
-    marginHorizontal: 6,
-    marginVertical: 0,
+    padding: 14, // 22 → 14
+    marginVertical: 6, // 10 → 6
+    marginHorizontal: 8,
+    borderRadius: 16,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
 
   row: { flexDirection: "row", alignItems: "center" },
@@ -155,138 +169,146 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 8, // कम किया
   },
 
-  vehicleIconBox: {
-    width: 50,
-    height: 50,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
-  },
-
-  vehicleIcon: {
-    width: 40,
-    height: 40,
-    resizeMode: "contain",
+  carImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    marginRight: 10, // 14 → 10
   },
 
   vehicleName: {
-    fontSize: 17,
+    fontSize: 15.5,
+        fontFamily: "SFProDisplay-Bold",
+
     fontWeight: "600",
-    color: "#222",
-  },
-
-  assignText: {
-    marginTop: 4,
-    textTransform: "capitalize",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-
-  date: {
-    fontSize: 14,
-    color: "#444",
-    textAlign: "right",
-  },
-
-  time: {
-    fontSize: 15,
-    fontWeight: "700",
+    textTransform:"capitalize",
     color: "#111",
-    textAlign: "right",
   },
 
-  // ONLY NEW STYLES: Status Badge
-  statusWrapper: {
-    marginBottom: 14,
-    alignItems: "flex-start",
+  capacityText: {
+    fontSize: 13,
+    color: "#666",
+        fontFamily: "SFProDisplay-Bold",
+
+    marginTop: 2,
   },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+
+  dateTime: {
+    alignItems: "flex-end",
+    
+  },
+  date: {
+    fontSize: 13,
+        fontFamily: "SFProDisplay-Bold",
+
+    color: "#444",
+  },
+  time: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#000",
+    marginTop: 1,
+        fontFamily: "SFProDisplay-Bold",
+
+  },
+
+  // Badges
+  badgeScroll: {
+    marginTop: 8,
+    position: "absolute",
+    zIndex: 99,
+    top: -20,
+    right: 0,
+    marginBottom: 6,
+  },
+  badgeContainer: {
     gap: 6,
   },
-  statusText: {
-    fontSize: 12.5,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+  badge: {
+    backgroundColor: "#FEF2F2",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  badgeText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "600",
+        fontFamily: "SFProDisplay-Bold",
+
   },
 
+  // Amounts
   amountRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 10,
-    marginBottom: 16,
+    marginVertical: 8, // कम किया
   },
-
   amountBox: {
     alignItems: "center",
     flex: 1,
   },
-
-  amountValue: {
-    fontSize: 18,
+  totalAmount: {
+    fontSize: 16,
     fontWeight: "700",
+        fontFamily: "SFProDisplay-Bold",
+
     color: "#d32f2f",
   },
+  commission: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#d32f2f",
+        fontFamily: "SFProDisplay-Bold",
 
+  },
+  earning: {
+    fontSize: 16,
+        fontFamily: "SFProDisplay-Bold",
+
+    fontWeight: "700",
+    color: "#388E3C",
+  },
   amountLabel: {
     fontSize: 12,
-    color: "#555",
-    marginTop: 4,
+    color: "#666",
+    marginTop: 3,
   },
 
+  // Address
   addressBox: {
-    backgroundColor: "#f2f2f2",
-    padding: 14,
-    borderRadius: 14,
+    backgroundColor: "#f8f8f8",
+    padding: 10, // 16 → 10
+    borderRadius: 12,
+    marginTop: 6,
   },
-
+  addressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 3,
+  },
   address: {
     flex: 1,
-    marginLeft: 8,
-    color: "#333",
-    fontSize: 14,
-    lineHeight: 18,
+    textAlign:'auto',
+    marginLeft: 6,
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 16,
   },
-
-  centerTag: {
+  tripTagContainer: {
     alignItems: "center",
-    marginVertical: 10,
+    marginVertical: 6,
   },
-
   tripTag: {
     backgroundColor: "#000",
     color: "#fff",
-    paddingVertical: 6,
-    textTransform: "capitalize",
-    paddingHorizontal: 54,
-    borderRadius: 14,
-    fontSize: 13,
-  },
-
-  chatBtn: {
-    backgroundColor: "#e53935",
-    paddingVertical: 14,
-    marginTop: 18,
-    borderRadius: 18,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  chatBtnText: {
-    color: "#fff",
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: "600",
-    marginLeft: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
 });

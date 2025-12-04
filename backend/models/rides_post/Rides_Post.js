@@ -8,7 +8,9 @@ const ridesPostSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-
+    contactType:{
+      type:String
+    },
     // Trip Details
     tripType: {
       type: String,
