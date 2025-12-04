@@ -1710,7 +1710,8 @@ exports.verifyAadhaarOtp = async (req, res) => {
 
       // ---------------- MATCH BY deviceId OR mobile ----------------
       const matchQuery = mobile
-        ? { $or: [{ device_id: deviceId }, { mobile }] }
+        ? { $or: [{ device_id: deviceId }, { 
+contact_number:mobile }] }
         : { device_id: deviceId };
 
       await AadharDetails.findOneAndUpdate(
@@ -1778,7 +1779,7 @@ exports.verifyAadhaarOtp = async (req, res) => {
     // ---------------------------------------------------
 
     const matchQuery = mobile
-      ? { $or: [{ device_id: deviceId }, { mobile }] }
+      ? { $or: [{ device_id: deviceId }, {contact_number: mobile }] }
       : { device_id: deviceId };
 
     const updatedRecord = await AadharDetails.findOneAndUpdate(
