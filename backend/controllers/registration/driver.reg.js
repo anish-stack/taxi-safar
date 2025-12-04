@@ -1824,7 +1824,7 @@ exports.verifyDrivingLicense = async (req, res) => {
       req.body;
 
     const settings = await AppSettings.findOne();
-    const ByPass = Boolean(settings?.ByPassApi);
+    const ByPass = settings?.ByPassApi
 
     console.log("⚙️ BYPASS MODE:", ByPass);
 

@@ -164,14 +164,13 @@ export default function RegisterScreen({ navigation }) {
         setDob(driver.dob ? new Date(driver.dob) : null);
         setGender(driver.gender || "");
         setAddress(driver.address || {});
-
         if (driver.profile_image) {
           setProfileImage(`data:image/jpeg;base64,${driver.profile_image}`);
         }
-
         setIsAadhaarVerified(true);
+        setMobileVerified(true);
+        setShowMobileOtpModal(false);
 
-        // ❌ Do NOT redirect on step-1
         return;
 
       case "step-2":
@@ -530,7 +529,7 @@ export default function RegisterScreen({ navigation }) {
         }
       }
     } catch (error) {
-      console.log("API Error:", error.response?.data);
+      // console.log("API Error:", error.response?.data);
 
       const errData = error.response?.data || {};
 
@@ -541,9 +540,10 @@ export default function RegisterScreen({ navigation }) {
           "Continue Registration",
           errData.message || "Please complete your profile",
           () => {
-            handleRedirect(errData.redirect, errData.message, errData.driver);
+            setAlertVisible(false);
           }
         );
+        handleRedirect(errData.redirect, errData.message, errData.driver);
       } else {
         showAlert(
           "error",
