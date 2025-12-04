@@ -606,7 +606,7 @@ exports.login = async (req, res) => {
     // ⭐ SPECIAL CONDITION → Default OTP for specific number
     // ------------------------------------------------------
     let otp;
-    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); 
+    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     if (number === "7217619794" || number === "7042129128") {
       otp = 123456;
@@ -1710,8 +1710,14 @@ exports.verifyAadhaarOtp = async (req, res) => {
 
       // ---------------- MATCH BY deviceId OR mobile ----------------
       const matchQuery = mobile
-        ? { $or: [{ device_id: deviceId }, { 
-contact_number:mobile }] }
+        ? {
+            $or: [
+              { device_id: deviceId },
+              {
+                contact_number: mobile,
+              },
+            ],
+          }
         : { device_id: deviceId };
 
       await AadharDetails.findOneAndUpdate(
@@ -1779,7 +1785,7 @@ contact_number:mobile }] }
     // ---------------------------------------------------
 
     const matchQuery = mobile
-      ? { $or: [{ device_id: deviceId }, {contact_number: mobile }] }
+      ? { $or: [{ device_id: deviceId }, { contact_number: mobile }] }
       : { device_id: deviceId };
 
     const updatedRecord = await AadharDetails.findOneAndUpdate(
@@ -1803,7 +1809,6 @@ contact_number:mobile }] }
       message: "Aadhaar verified successfully.",
       fromCache: false,
     });
-
   } catch (error) {
     console.error("❌ Aadhaar OTP Verification Error:", error);
 
@@ -1824,12 +1829,12 @@ exports.verifyDrivingLicense = async (req, res) => {
       req.body;
 
     const settings = await AppSettings.findOne();
-    const ByPass = settings?.ByPassApi
+    const ByPass = settings?.ByPassApi;
 
     console.log("⚙️ BYPASS MODE:", ByPass);
 
     // ------------------ VALIDATION ------------------
-    if (!licenseNumber || !dob || !aadhaarName || !deviceId || !aadhaarNumber) {
+    if (!licenseNumber || !dob || !aadhaarName || !deviceId) {
       console.log("❌ Missing required fields");
       return res.status(400).json({
         success: false,
@@ -1844,8 +1849,7 @@ exports.verifyDrivingLicense = async (req, res) => {
     const cached = await AadharDetails.findOne({ device_id: deviceId });
 
     const isCacheValid =
-      cached &&
-      cached.aadhar_verification_data?.aadhaar_number === aadhaarNumber;
+      cached && cached.aadhar_verification_data?.aadhaar_number;
 
     console.log("📌 Aadhaar Cache Found:", !!cached);
     console.log("📌 Aadhaar Cache Valid:", isCacheValid);
@@ -2083,7 +2087,7 @@ exports.verifyRcDetails = async (req, res) => {
 
 exports.sendOtp = async (req, res) => {
   try {
-    const { number ,device_id} = req.body;
+    const { number, device_id } = req.body;
 
     if (!number || !/^\d{10}$/.test(number)) {
       return res.status(400).json({
@@ -2106,7 +2110,7 @@ exports.sendOtp = async (req, res) => {
         return res.status(400).json({
           success: false,
           redirect: "step-1",
-          driver:aadharUser?.aadhar_verification_data || driver,
+          driver: aadharUser?.aadhar_verification_data || driver,
           message: "Please complete registration first.",
         });
       }
