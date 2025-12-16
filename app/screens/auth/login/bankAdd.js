@@ -19,6 +19,7 @@ import BackWithLogo from "../../common/back_with_logo";
 import { API_URL_APP } from "../../../constant/api";
 import { useRoute } from "@react-navigation/native";
 import { getData } from "../../../utils/storage";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AddBank({ navigation }) {
   const route = useRoute();
@@ -249,7 +250,7 @@ const handleSubmit = async () => {
   }
 
   return (
-    <>
+    <SafeAreaView style={{flex:1}}>
       <BackWithLogo />
       {renderProgressBar(4)}
       <ScrollView
@@ -260,7 +261,7 @@ const handleSubmit = async () => {
         <Text style={styles.subtitle}>Enter your bank account information</Text>
 
         {/* Bank Name Searchable */}
-        <Text style={styles.label}>Bank Name *</Text>
+        <Text style={styles.label}>Bank Name</Text>
         <TouchableOpacity
           style={styles.bankSelector}
           onPress={() => setSearchModalVisible(true)}
@@ -274,7 +275,7 @@ const handleSubmit = async () => {
         {renderError("bankName")}
 
         {/* Account Holder Name */}
-        <Text style={styles.label}>Account Holder Name *</Text>
+        <Text style={styles.label}>Account Holder Name</Text>
         <TextInput
           placeholder="Enter full name as per bank records"
           value={accountHolderName}
@@ -288,7 +289,7 @@ const handleSubmit = async () => {
         {renderError("accountHolderName")}
 
         {/* Account Number */}
-        <Text style={styles.label}>Account Number *</Text>
+        <Text style={styles.label}>Account Number</Text>
         <TextInput
           placeholder="Enter account number"
           value={accountNumber}
@@ -303,7 +304,7 @@ const handleSubmit = async () => {
         {renderError("accountNumber")}
 
         {/* Confirm Account Number */}
-        <Text style={styles.label}>Confirm Account Number *</Text>
+        <Text style={styles.label}>Confirm Account Number</Text>
         <TextInput
           placeholder="Re-enter account number"
           value={confirmAccountNumber}
@@ -318,7 +319,7 @@ const handleSubmit = async () => {
         {renderError("confirmAccountNumber")}
 
         {/* IFSC Code */}
-        <Text style={styles.label}>IFSC Code *</Text>
+        <Text style={styles.label}>IFSC Code</Text>
         <TextInput
           placeholder="e.g. SBIN0001234"
           value={ifscCode}
@@ -334,7 +335,7 @@ const handleSubmit = async () => {
         {renderError("ifscCode")}
 
         {/* Branch Name */}
-        <Text style={styles.label}>Branch Name *</Text>
+        <Text style={styles.label}>Branch Name</Text>
         <TextInput
           placeholder="Enter branch name"
           value={branchName}
@@ -428,7 +429,7 @@ const handleSubmit = async () => {
           </View>
         </View>
       </Modal>
-    </>
+    </SafeAreaView>
   );
 }
 

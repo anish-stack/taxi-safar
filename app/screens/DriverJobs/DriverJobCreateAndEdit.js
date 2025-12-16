@@ -34,6 +34,9 @@ const DRIVER_CATEGORIES = [
   { label: "Truck Driver", value: "truck_driver" },
   { label: "Bike/Courier", value: "bike_driver" },
   { label: "Bus Driver", value: "bus_driver" },
+  { label: "Mini Bus Driver", value: "mini_bus_driver" },
+  { label: "Others", value: "other" },
+
 ];
 
 export default function DriverJobCreateAndEdit() {
@@ -57,11 +60,8 @@ export default function DriverJobCreateAndEdit() {
     job_type: "full_time",
     driver_category: "car_driver",
     address: "",
-    skills: "",
-    valid_till: null, 
+    valid_till: null,
   });
-
-
 
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -73,9 +73,12 @@ export default function DriverJobCreateAndEdit() {
   const fetchJobDetails = async () => {
     try {
       setFetching(true);
-      const { data } = await axios.get(`${API_URL_APP}/api/v1/driver-jobs/${jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const { data } = await axios.get(
+        `${API_URL_APP}/api/v1/driver-jobs/${jobId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       const job = data.data;
       setForm({
@@ -87,7 +90,6 @@ export default function DriverJobCreateAndEdit() {
         job_type: job.job_type || "full_time",
         driver_category: job.driver_category || "car_driver",
         address: job.location?.address || "",
-        skills: job.skills?.join(", ") || "",
         valid_till: job.valid_till ? new Date(job.valid_till) : null,
       });
     } catch (error) {
@@ -114,12 +116,21 @@ export default function DriverJobCreateAndEdit() {
     if (!form.description.trim()) return "Job description is required";
     if (!form.company_name.trim()) return "Company name is required";
     if (!form.address.trim()) return "Work address is required";
-    if (!form.salary_min || isNaN(form.salary_min) || Number(form.salary_min) < 0)
+    if (
+      !form.salary_min ||
+      isNaN(form.salary_min) ||
+      Number(form.salary_min) < 0
+    )
       return "Valid minimum salary is required";
-    if (form.salary_max && (isNaN(form.salary_max) || Number(form.salary_max) < Number(form.salary_min)))
+    if (
+      form.salary_max &&
+      (isNaN(form.salary_max) ||
+        Number(form.salary_max) < Number(form.salary_min))
+    )
       return "Max salary must be ≥ min salary";
     if (!form.valid_till) return "Please select a valid until date";
-    if (form.valid_till <= new Date()) return "Valid until date must be in the future";
+    if (form.valid_till <= new Date())
+      return "Valid until date must be in the future";
 
     return null;
   };
@@ -150,12 +161,9 @@ export default function DriverJobCreateAndEdit() {
         job_type: form.job_type,
         driver_category: form.driver_category,
         location: { address: form.address.trim() },
-        skills: form.skills
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        valid_till: form.valid_till.toISOString().split("T")[0], // YYYY-MM-DD
-        driverId: driver._id, // CRITICAL: Send driver ID!
+        skills: ["Communication", "Teamwork", "Problem Solving"],
+        valid_till: form.valid_till.toISOString().split("T")[0],
+        driverId: driver._id,
       };
 
       if (isEditMode) {
@@ -168,11 +176,20 @@ export default function DriverJobCreateAndEdit() {
         });
       }
 
-      Alert.alert("Success", `Job ${isEditMode ? "updated" : "posted"} successfully!`, [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert(
+        "Success",
+        `Job ${isEditMode ? "updated" : "posted"} successfully!`,
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
     } catch (err) {
-      const msg = err.response?.data?.message || "Something went wrong";
+      const data = err.response?.data;
+
+      // 1️⃣ Prefer field-level error
+      const fieldError = data?.errors && Object.values(data.errors)[0];
+
+      // 2️⃣ Fallback to general message
+      const msg = fieldError || data?.message || "Something went wrong";
+
       Alert.alert("Failed", msg);
     } finally {
       setLoading(false);
@@ -183,6 +200,7 @@ export default function DriverJobCreateAndEdit() {
     <TouchableOpacity
       style={[styles.pickerItem, selected && styles.pickerItemSelected]}
       onPress={onPress}
+      activeOpacity={0.7}
     >
       <Text style={[styles.pickerText, selected && styles.pickerTextSelected]}>
         {label}
@@ -212,53 +230,59 @@ export default function DriverJobCreateAndEdit() {
         <ScrollView
           style={styles.container}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 50 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
         >
           {/* Job Title */}
-          <Text style={styles.label}>Job Title *</Text>
+          <Text style={styles.label}>Job Title</Text>
           <TextInput
             style={styles.input}
             value={form.title}
             onChangeText={(t) => updateField("title", t)}
-            placeholder="e.g. Full-Time Car Driver in Mumbai"
+            placeholderTextColor="#9CA3AF"
           />
 
           {/* Description */}
-          <Text style={styles.label}>Description *</Text>
+          <Text style={styles.label}>Description</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={form.description}
             onChangeText={(t) => updateField("description", t)}
             multiline
-            placeholder="Job duties, requirements, benefits..."
+            placeholderTextColor="#9CA3AF"
           />
 
           {/* Company Name */}
-          <Text style={styles.label}>Company Name *</Text>
+          <Text style={styles.label}>Company Name</Text>
           <TextInput
             style={styles.input}
             value={form.company_name}
             onChangeText={(t) => updateField("company_name", t)}
-            placeholder="ABC Transport Ltd"
+            placeholderTextColor="#9CA3AF"
           />
 
           {/* Salary Range */}
-          <Text style={styles.label}>Salary Range *</Text>
+          <Text style={styles.label}>Salary Range</Text>
           <View style={styles.row}>
             <TextInput
               style={[styles.input, styles.halfInput]}
               keyboardType="numeric"
-              placeholder="Min (e.g. 25000)"
+              placeholder="Min (₹)"
+              placeholderTextColor="#9CA3AF"
               value={form.salary_min}
-              onChangeText={(t) => updateField("salary_min", t.replace(/[^0-9]/g, ""))}
+              onChangeText={(t) =>
+                updateField("salary_min", t.replace(/[^0-9]/g, ""))
+              }
             />
             <Text style={styles.dash}>–</Text>
             <TextInput
               style={[styles.input, styles.halfInput]}
               keyboardType="numeric"
-              placeholder="Max (optional)"
+              placeholder="Max (₹)"
+              placeholderTextColor="#9CA3AF"
               value={form.salary_max}
-              onChangeText={(t) => updateField("salary_max", t.replace(/[^0-9]/g, ""))}
+              onChangeText={(t) =>
+                updateField("salary_max", t.replace(/[^0-9]/g, ""))
+              }
             />
           </View>
 
@@ -289,30 +313,28 @@ export default function DriverJobCreateAndEdit() {
           </View>
 
           {/* Address */}
-          <Text style={styles.label}>Work Location *</Text>
+          <Text style={styles.label}>Work Location</Text>
           <TextInput
             style={styles.input}
             value={form.address}
             onChangeText={(t) => updateField("address", t)}
-            placeholder="e.g. Andheri East, Mumbai"
-          />
-
-          {/* Skills */}
-          <Text style={styles.label}>Skills (comma separated)</Text>
-          <TextInput
-            style={styles.input}
-            value={form.skills}
-            onChangeText={(t) => updateField("skills", t)}
-            placeholder="Valid DL, Night shift, English..."
+            placeholder="e.g. Delhi, Mumbai"
+            placeholderTextColor="#9CA3AF"
           />
 
           {/* Valid Till Date */}
-          <Text style={styles.label}>Valid Until *</Text>
+          <Text style={styles.label}>Driver Job Post Expiry Date</Text>
           <TouchableOpacity
             style={styles.dateButton}
             onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.7}
           >
-            <Text style={styles.dateText}>
+            <Text
+              style={[
+                styles.dateText,
+                !form.valid_till && { color: "#9CA3AF" },
+              ]}
+            >
               {form.valid_till
                 ? form.valid_till.toLocaleDateString("en-IN")
                 : "Tap to select date"}
@@ -333,9 +355,10 @@ export default function DriverJobCreateAndEdit() {
             style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
             onPress={handleSubmit}
             disabled={loading}
+            activeOpacity={0.85}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text style={styles.saveBtnText}>
                 {isEditMode ? "Update Job" : "Post Job"}
@@ -350,8 +373,9 @@ export default function DriverJobCreateAndEdit() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 20,
-    marginTop: 10,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: "#fff",
   },
   loadingContainer: {
     flex: 1,
@@ -359,81 +383,100 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   label: {
-    marginTop: 18,
+    marginTop: 14,
     marginBottom: 6,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#333",
+    fontFamily: "SFProDisplay-Bold",
+    color: "#1F2937",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+    borderColor: "#E5E7EB",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Regular",
     backgroundColor: "#fff",
+    color: "#111827",
   },
   textArea: {
-    height: 120,
+    height: 100,
     textAlignVertical: "top",
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   halfInput: {
     flex: 1,
   },
   dash: {
-    fontSize: 20,
-    color: "#666",
+    fontSize: 18,
+    color: "#6B7280",
+    fontFamily: "SFProDisplay-Medium",
   },
   pickerContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 6,
   },
   pickerItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#f9f9f9",
+    borderColor: "#1F2937",
+    backgroundColor: "#fff",
   },
   pickerItemSelected: {
-    backgroundColor: "#EF4444",
-    borderColor: "#EF4444",
+    backgroundColor: "#1F2937",
+    borderColor: "#1F2937",
   },
   pickerText: {
-    fontSize: 14,
-    color: "#333",
+    fontSize: 13,
+    fontFamily: "SFProDisplay-Medium",
+    color: "#1F2937",
   },
   pickerTextSelected: {
     color: "#fff",
-    fontWeight: "600",
+    fontFamily: "SFProDisplay-Semibold",
+  },
+  dateButton: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+  },
+  dateText: {
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Regular",
+    color: "#111827",
   },
   saveBtn: {
     backgroundColor: "#EF4444",
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: "center",
-    marginTop: 30,
-    elevation: 3,
+    marginTop: 24,
+    elevation: 0.5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
   },
   saveBtnDisabled: {
-    backgroundColor: "#999",
+    backgroundColor: "#9CA3AF",
   },
   saveBtnText: {
     color: "#fff",
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "700",
+    fontFamily: "SFProDisplay-Bold",
   },
 });

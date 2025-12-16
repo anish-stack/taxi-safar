@@ -36,12 +36,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tab: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 25,
     backgroundColor: '#F8F8F8',
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    borderColor: '#000',
   },
   activeTab: {
     backgroundColor: '#000000',
@@ -49,8 +49,8 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#666666',
+    fontWeight: '700',
+    color: '#000',
   },
   activeTabText: {
     color: '#FFFFFF',

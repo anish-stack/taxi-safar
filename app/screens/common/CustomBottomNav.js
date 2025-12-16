@@ -1,18 +1,53 @@
 // components/common/CustomBottomNav.js
 import React from "react";
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  Platform,
+  Image,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
-
 const TABS = [
-  { name: "Home", icon: "home", iconOutline: "home-outline", label: "Home", screen: "Home" },
-  { name: "MyTrip", icon: "car-sport", iconOutline: "car-sport-outline", label: "Trips", screen: "MyTrip" },
+  {
+    name: "Home",
+    icon: "home",
+    iconOutline: "home-outline",
+    label: "Home",
+    screen: "Home",
+  },
+  {
+    name: "MyTrip",
+    icon: "car-sport",
+    iconOutline: "car-sport-outline",
+    label: "My Trips",
+    screen: "MyTrip",
+    isImage: true,
+    imagePath: require("./car.png"),
+  },
   { name: "Add", icon: "add-circle", label: "", isCenter: true, screen: "Add" },
-  { name: "Reserve", icon: "time", iconOutline: "time-outline", label: "Reserve", screen: "Reserve" },
-  { name: "Settings", icon: "person", iconOutline: "person-outline", label: "Account", screen: "Account" },
+  {
+    name: "Reserve",
+    icon: "time",
+    iconOutline: "time-outline",
+    isImage: true,
+    imagePath: require("./reserver.png"),
+
+    label: "Reserve",
+    screen: "Reserve",
+  },
+  {
+    name: "Settings",
+    icon: "settings-outline",
+    iconOutline: "settings-outline",
+    label: "Settings",
+    screen: "Account",
+  },
 ];
 
-const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहाँ लें
+const CustomBottomTabs = ({ state, bottomInset = 0 }) => {
   const navigation = useNavigation();
   const activeIndex = state?.index || 0;
 
@@ -21,9 +56,14 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहा�
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: bottomInset }]}>   {/* ← यहाँ apply */}
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>
       {/* Floating Center Button */}
-      <View style={styles.centerButtonWrapper}>
+      <View
+        style={[
+          styles.centerButtonWrapper,
+          { bottom: bottomInset + (Platform.OS === "ios" ? 25 : 10) },
+        ]}
+      >
         <TouchableOpacity
           style={styles.centerButton}
           onPress={() => handleTabPress(2, TABS[2].screen)}
@@ -36,9 +76,10 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहा�
       </View>
 
       {/* Bottom Tab Bar */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: bottomInset - 32 }]}>
         {TABS.map((tab, index) => {
-          if (tab.isCenter) return <View key={index} style={styles.centerSpace} />;
+          if (tab.isCenter)
+            return <View key={index} style={styles.centerSpace} />;
 
           const isActive = activeIndex === index;
 
@@ -50,14 +91,29 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहा�
               activeOpacity={0.7}
             >
               <View style={styles.tabContent}>
-                <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
-                  <Icon
-                    name={isActive ? tab.icon : tab.iconOutline}
-                    size={24}
-                    color={isActive ? "#000000" : "#9CA3AF"}
-                  />
+                <View style={[styles.iconContainer]}>
+                  {tab.isImage ? (
+                    <Image
+                      source={tab.imagePath}
+                      style={{
+                        width: 44,
+                        tintColor: "#000",
+                        height: 23,
+                        resizeMode: "contain", 
+                        borderRadius: 6, 
+                      }}
+                    />
+                  ) : (
+                    <Icon
+                      name={isActive ? tab.icon : tab.iconOutline}
+                      size={24}
+                      color={isActive ? "#010005" : "#7A7A7A"}
+                    />
+                  )}
                 </View>
-                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                <Text
+                  style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+                >
                   {tab.label}
                 </Text>
               </View>
@@ -71,7 +127,7 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {    // ← यहा�
 
 const styles = StyleSheet.create({
   container: {
-      backgroundColor: "#ffffff",
+    backgroundColor: "#ffffff",
 
     position: "absolute",
     bottom: 0,
@@ -81,7 +137,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#ffffff",
-    height: Platform.OS === "ios" ? 85 : 75,
+    height: Platform.OS === "ios" ? 85 : 65,
     paddingTop: 8,
     paddingHorizontal: 8,
     alignItems: "center",
@@ -96,19 +152,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
-  tabItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  tabItem: {
+    flex: 1,
+    position: "relative",
+    top: -10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   tabContent: { alignItems: "center" },
   iconContainer: {
     width: 44,
-    height: 44,
+    height: 23,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 2,
   },
-  iconContainerActive: { backgroundColor: "#F3F4F6" },
-  tabLabel: { fontSize: 11, fontWeight: "600", color: "#9CA3AF", marginTop: 2 },
-  tabLabelActive: { color: "#000000" },
+  // iconContainerActive: { backgroundColor: "#F3F4F6" },
+  tabLabel: { fontSize: 11, fontWeight: "600", color: "#000", marginTop: 2 },
+  tabLabelActive: { color: "#E5260F" },
 
   centerSpace: { width: 70 },
   centerButtonWrapper: {
@@ -119,16 +181,16 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   centerButton: {
-    width: 70,
-    height: 70,
+    width: 65,
+    height: 65,
     borderRadius: 35,
     backgroundColor: "#ffffff",
     justifyContent: "center",
     alignItems: "center",
   },
   centerButtonInner: {
-    width: 60,
-    height: 60,
+    width: 50,
+    height: 50,
     borderRadius: 30,
     backgroundColor: "#000000",
     justifyContent: "center",

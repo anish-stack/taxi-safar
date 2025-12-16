@@ -429,6 +429,8 @@ export default function HomeScreen({ route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+
+
   },
   centerContainer: {
     flex: 1,
@@ -443,18 +445,18 @@ const styles = StyleSheet.create({
   },
   contentArea: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor:"#F2F5F6",
   },
   filterContainer: {
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#F2F5F6",
   },
   listContent: {
     paddingHorizontal: 8,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 100,
   },
   emptySection: {

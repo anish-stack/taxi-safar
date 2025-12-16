@@ -81,6 +81,9 @@ import AllInsurance from "./screens/Insurance/AllInsurance";
 // Screens - Others
 import BuySellTaxi from "./screens/BuySellTaxi/BuySellTaxi";
 import MyTrips from "./screens/MyTrips/MyTrips";
+import AllCategories from "./screens/AllCategories/AllCategories";
+import AllVehicles from "./screens/pages/AllVehicles";
+import Preferences from "./screens/pages/Preferences";
 
 const Stack = createNativeStackNavigator();
 
@@ -98,10 +101,9 @@ export default function App() {
   const [fontsLoaded] = useFonts({
     "SFProDisplay-Regular": require("./assets/fonts/SF-Pro-Display-Regular.otf"),
     "SFProDisplay-Medium": require("./assets/fonts/SF-Pro-Display-Medium.otf"),
-    "SFProDisplay-Semibold": require("./assets/fonts/SF-Pro-Display-Semibold.otf"),
+    "SFProDisplay-Semibold": require("./assets/fonts/SF-Pro-Display-Bold.otf"),
     "SFProDisplay-Bold": require("./assets/fonts/SF-Pro-Display-Bold.otf"),
   });
-
 
   // Refs for cleanup
   const notificationIntervalRef = useRef(null);
@@ -142,9 +144,9 @@ export default function App() {
   const requestAllPermissions = async () => {
     try {
       console.log("🔐 Requesting all permissions...");
-        
+
       const granted = await requestAppPermissions();
-      
+
       if (granted) {
         console.log("✅ All permissions granted");
         setPermissionsGranted(true);
@@ -154,9 +156,7 @@ export default function App() {
         Alert.alert(
           "Permissions Required",
           "This app requires location and notification permissions to work properly. Please enable them in settings.",
-          [
-            { text: "OK" }
-          ]
+          [{ text: "OK" }]
         );
         return false;
       }
@@ -172,7 +172,7 @@ export default function App() {
   const initializeApp = async (authToken) => {
     try {
       console.log("📱 Initializing app...");
-      
+
       // Fetch driver details
       await fetchDriverDetails();
 
@@ -206,17 +206,19 @@ export default function App() {
       }
 
       if (!permissionsGranted) {
-        console.warn("⚠️ Cannot start location tracking - permissions not granted");
+        console.warn(
+          "⚠️ Cannot start location tracking - permissions not granted"
+        );
         return;
       }
 
       console.log("📍 Starting location tracking...");
 
       const apiUrl = `${API_URL_APP}/api/v1/update-driver-location`;
-      
+
       // Add delay to ensure permissions are fully processed
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       await locationService.startTracking(apiUrl, authToken);
 
       isLocationTrackingActiveRef.current = true;
@@ -282,8 +284,14 @@ export default function App() {
             console.warn("⚠️ Permissions revoked, stopping services");
             setPermissionsGranted(false);
             await stopLocationTracking();
-          } else if (!isLocationTrackingActiveRef.current && token && permissionsGranted) {
-            console.log("🔄 Permissions restored, restarting location tracking");
+          } else if (
+            !isLocationTrackingActiveRef.current &&
+            token &&
+            permissionsGranted
+          ) {
+            console.log(
+              "🔄 Permissions restored, restarting location tracking"
+            );
             await startLocationTracking(token);
           }
         }
@@ -339,9 +347,11 @@ export default function App() {
 
         // STEP 1: Request permissions FIRST
         const permissionsOk = await requestAllPermissions();
-        
+
         if (!permissionsOk) {
-          console.warn("⚠️ Permissions not granted, skipping service initialization");
+          console.warn(
+            "⚠️ Permissions not granted, skipping service initialization"
+          );
           setIsInitialized(true);
           return;
         }
@@ -434,7 +444,13 @@ export default function App() {
       isWidgetActive,
       hasOverlayPermission,
     });
-  }, [permissionsGranted, isDriverOnline, isPoolingActive, isWidgetActive, hasOverlayPermission]);
+  }, [
+    permissionsGranted,
+    isDriverOnline,
+    isPoolingActive,
+    isWidgetActive,
+    hasOverlayPermission,
+  ]);
 
   if (!fontsLoaded) {
     return (
@@ -447,14 +463,14 @@ export default function App() {
     <NavigationContainer>
       <View style={{ flex: 1 }}>
         {Platform.OS === "android" && (
-          <RNStatusBar backgroundColor="#FFF" barStyle="dark-content" />
+          <RNStatusBar backgroundColor="#F2F5F6" barStyle="dark-content" />
         )}
 
         <Stack.Navigator
           initialRouteName="splash"
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: "#fff" },
+            contentStyle: { backgroundColor: "#F2F5F6" },
             animation: "slide_from_right",
           }}
         >
@@ -468,6 +484,10 @@ export default function App() {
           <Stack.Screen name="AuthLogin" component={LoginScreen} />
           <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="addVehcile" component={AddVehicle} />
+          <Stack.Screen name="preferences" component={Preferences} />
+
+
+          {/* Preferences */}
           <Stack.Screen name="bankAdd" component={AddBank} />
           <Stack.Screen name="wait_screen" component={WaitScreen} />
 
@@ -496,13 +516,25 @@ export default function App() {
           {/* Driver Post & Reserve */}
           <Stack.Screen name="Add" component={Driver_Post} />
           <Stack.Screen name="Reserve" component={Reserve} />
-          <Stack.Screen name="DriverPostDetails" component={ReserveRideDetails} />
-          <Stack.Screen name="ReserveRideDetailsAssigned" component={ReserveRideDetailsAssigned} />
+          <Stack.Screen
+            name="DriverPostDetails"
+            component={ReserveRideDetails}
+          />
+          <Stack.Screen
+            name="ReserveRideDetailsAssigned"
+            component={ReserveRideDetailsAssigned}
+          />
 
           {/* Taxi Safari */}
           <Stack.Screen name="TaxiSafarView" component={TaxiSafarView} />
-          <Stack.Screen name="TaxiSafarTripDetailScreen" component={TaxiSafarTripDetailScreen} />
-          <Stack.Screen name="ProgressTaxiSafarRide" component={ProgressTaxiSafarRide} />
+          <Stack.Screen
+            name="TaxiSafarTripDetailScreen"
+            component={TaxiSafarTripDetailScreen}
+          />
+          <Stack.Screen
+            name="ProgressTaxiSafarRide"
+            component={ProgressTaxiSafarRide}
+          />
 
           {/* Chat */}
           <Stack.Screen name="chat" component={Chat} />
@@ -517,7 +549,10 @@ export default function App() {
 
           {/* Driver Jobs */}
           <Stack.Screen name="DriverJobs" component={DriverJobIntro} />
-          <Stack.Screen name="driver-job-create" component={DriverJobCreateAndEdit} />
+          <Stack.Screen
+            name="driver-job-create"
+            component={DriverJobCreateAndEdit}
+          />
           <Stack.Screen name="driver-job-list" component={MyJobsPosted} />
           <Stack.Screen name="job-posted-u" component={MyJobsPosted} />
 
@@ -526,6 +561,8 @@ export default function App() {
           <Stack.Screen name="CreateBorderTax" component={CreateBorderTax} />
           <Stack.Screen name="ViewBorderTax" component={AllBorderTax} />
 
+            {/* Vehciles */}
+            <Stack.Screen name="all-vehicle" component={AllVehicles} />
           {/* Insurance */}
           <Stack.Screen name="Insurance" component={InsurnaceIntro} />
           <Stack.Screen name="CreateInsurance" component={ApplyForInsurance} />
@@ -534,6 +571,9 @@ export default function App() {
           {/* Others */}
           <Stack.Screen name="BuySellTaxi" component={BuySellTaxi} />
           <Stack.Screen name="MyTrip" component={MyTrips} />
+
+          {/* AllCategories */}
+          <Stack.Screen name="AllCategories" component={AllCategories} />
         </Stack.Navigator>
       </View>
     </NavigationContainer>

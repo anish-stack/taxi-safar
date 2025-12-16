@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 
 import mini from "../../assets/mini.png";
-import sedan from "../../assets/sedan.jpeg";
+import sedan from "../../assets/sedan.png";
 import suv from "../../assets/suv.png";
 
 const STATUS_CONFIG = {
@@ -158,7 +158,7 @@ export default RideCard;
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: "#E5E7EB",
     padding: 14, // कम किया
     borderRadius: 16,
     marginVertical: 16, // कम किया (12 → 6)

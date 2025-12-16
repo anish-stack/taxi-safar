@@ -166,12 +166,12 @@ exports.postRide = async (req, res) => {
         const key = req.toLowerCase().replace(/_/g, ""); // "all_inclusive" → "allinclusive"
         if (key === "allinclusive") extraReqObj.allInclusive = true;
         if (key === "ac" || key.includes("aircondition")) extraReqObj.ac = true;
-        if (key.includes("music")) extraReqObj.musicSystem = true;
-        if (key.includes("carrier") || key.includes("roof"))
+        if (key.includes("musicsystem")) extraReqObj.musicSystem = true;
+        if (key.includes("withcarrier") || key.includes("roof"))
           extraReqObj.carrier = true;
-        if (key.includes("diesel")) extraReqObj.onlyDiesel = true;
-        if (key.includes("food")) extraReqObj.foodAllowed = true;
-        if (key.includes("exclusive")) extraReqObj.allExclusive = true;
+        if (key.includes("onlydiesel")) extraReqObj.onlyDiesel = true;
+        if (key.includes("foodallowed")) extraReqObj.foodAllowed = true;
+        if (key.includes("allexclusive")) extraReqObj.allExclusive = true;
       });
     }
 
@@ -375,24 +375,135 @@ exports.getRideById = async (req, res) => {
 exports.updateRide = async (req, res) => {
   try {
     const { rideId } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
 
     // Prevent updating certain fields
     delete updateData.driverPostId;
+    delete updateData._id;
     delete updateData.createdAt;
 
+    // Fetch existing ride
+    const ride = await RidesPost.findById(rideId);
+    if (!ride)
+      return res.status(404).json({ success: false, message: "Ride not found" });
+
+    // Check if logged-in driver owns this ride
+    if (ride.driverPostId.toString() !== req.user._id.toString())
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+
+    // --- Validate enums ---
+    const validTripTypes = ["one-way", "round-trip", "rental", "outstation", "hourly"];
+    const validVehicleTypes = ["hatchback", "sedan", "suv", "muv", "mini", "auto", "luxury", "van"];
+    const validBookingTypes = ["instant", "scheduled", "both"];
+
+    if (updateData.tripType && !validTripTypes.includes(updateData.tripType))
+      return res.status(400).json({ success: false, message: "Invalid tripType" });
+    if (updateData.vehicleType && !validVehicleTypes.includes(updateData.vehicleType))
+      return res.status(400).json({ success: false, message: "Invalid vehicleType" });
+    if (updateData.acceptBookingType && !validBookingTypes.includes(updateData.acceptBookingType))
+      return res.status(400).json({ success: false, message: "Invalid acceptBookingType" });
+
+    // --- Validate pickup/drop coordinates ---
+    const validateCoords = (loc, name) => {
+      if (
+        !loc ||
+        !loc.coordinates ||
+        !Array.isArray(loc.coordinates) ||
+        loc.coordinates.length !== 2
+      ) throw new Error(`Invalid ${name} coordinates`);
+      const [lng, lat] = loc.coordinates;
+      if (typeof lng !== "number" || typeof lat !== "number")
+        throw new Error(`${name} coordinates must be numbers`);
+      return [lng, lat];
+    };
+
+    let pickupLat, pickupLng, dropLat, dropLng;
+    if (updateData.pickupLocation) {
+      [pickupLng, pickupLat] = validateCoords(updateData.pickupLocation, "pickupLocation");
+    } else {
+      pickupLng = ride.pickupLocation.coordinates[0];
+      pickupLat = ride.pickupLocation.coordinates[1];
+    }
+
+    if (updateData.dropLocation) {
+      [dropLng, dropLat] = validateCoords(updateData.dropLocation, "dropLocation");
+    } else {
+      dropLng = ride.dropLocation.coordinates[0];
+      dropLat = ride.dropLocation.coordinates[1];
+    }
+
+    // --- Validate amounts & recalc driverEarning ---
+    const total = parseFloat(updateData.totalAmount ?? ride.totalAmount);
+    const commission = parseFloat(updateData.commissionAmount ?? ride.commissionAmount);
+    const driverEarning = total - commission;
+
+    if (total <= 0 || driverEarning <= 0 || driverEarning > total)
+      return res.status(400).json({ success: false, message: "Invalid totalAmount or driverEarning" });
+
+    updateData.driverEarning = driverEarning;
+
+    // --- Validate pickupDate + pickupTime ---
+    if (updateData.pickupDate && updateData.pickupTime) {
+      const pickupDateTime = new Date(`${updateData.pickupDate}T${updateData.pickupTime}:00`);
+      if (pickupDateTime <= new Date())
+        return res.status(400).json({ success: false, message: "Pickup time must be in the future" });
+    }
+
+    // --- Handle extraRequirements: only set true for the flags that exist in the array ---
+    if (Array.isArray(updateData.extraRequirements)) {
+      const reqObj = {
+        onlyDiesel: false,
+        musicSystem: false,
+        ac: false,
+        carrier: false,
+        allInclusive: false,
+        allExclusive: false,
+        foodAllowed: false,
+      };
+
+      updateData.extraRequirements.forEach((r) => {
+        const key = r.toLowerCase().replace(/_/g, "");
+        if (key === "allinclusive") reqObj.allInclusive = true;
+        else if (key === "ac") reqObj.ac = true;
+        else if (key === "musicsystem" || key.includes("music")) reqObj.musicSystem = true;
+        else if (key === "carrier" || key.includes("roof")) reqObj.carrier = true;
+        else if (key === "onlydiesel" || key.includes("diesel")) reqObj.onlyDiesel = true;
+        else if (key === "foodallowed" || key.includes("food")) reqObj.foodAllowed = true;
+        else if (key === "allexclusive" || key.includes("exclusive")) reqObj.allExclusive = true;
+      });
+
+      updateData.extraRequirements = reqObj;
+    }
+
+    // --- Optional: recalc route if pickup/drop changed ---
+    let distanceKm = ride.distanceKm;
+    let durationText = ride.durationText;
+    let routePolyline = ride.routePolyline;
+    if (updateData.pickupLocation || updateData.dropLocation) {
+      try {
+        const googleData = await getGoogleRouteData(
+          pickupLat,
+          pickupLng,
+          dropLat,
+          dropLng
+        );
+        distanceKm = googleData.distanceKm;
+        durationText = googleData.durationText;
+        routePolyline = googleData.polyline;
+        updateData.distanceKm = distanceKm;
+        updateData.durationText = durationText;
+        updateData.routePolyline = routePolyline;
+      } catch (err) {
+        console.warn("Google routing failed:", err.message);
+      }
+    }
+
+    // --- Update ride ---
     const updatedRide = await RidesPost.findByIdAndUpdate(
       rideId,
       { $set: updateData },
       { new: true, runValidators: true }
     );
-
-    if (!updatedRide) {
-      return res.status(404).json({
-        success: false,
-        message: "Ride not found",
-      });
-    }
 
     return res.status(200).json({
       success: true,
@@ -408,6 +519,8 @@ exports.updateRide = async (req, res) => {
     });
   }
 };
+
+
 
 // Delete ride
 exports.deleteRide = async (req, res) => {
@@ -878,3 +991,47 @@ exports.getMyRide = async (req, res) => {
     });
   }
 };
+
+
+exports.getMyRideAllPost = async (req, res) => {
+  try {
+    const driverId = req.user?._id;
+    if (!driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required. Please login to search rides.",
+      });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const filters = { driverPostId: driverId };
+
+    const totalRides = await RidesPost.countDocuments(filters);
+
+    const rides = await RidesPost.find(filters)
+      .populate("driverPostId", "driver_name driver_contact_number average_rating")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return res.status(200).json({
+      success: true,
+      page,
+      limit,
+      totalPages: Math.ceil(totalRides / limit),
+      totalRides,
+      data: rides,
+    });
+  } catch (error) {
+    console.error("Error in getMyRideAllPost:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching driver rides",
+      error: error.message,
+    });
+  }
+};
+

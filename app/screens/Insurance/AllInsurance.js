@@ -1,14 +1,19 @@
+// screens/AllInsurance.js
 import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
+  StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  StyleSheet,
+  TextInput,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+
 import BackWithLogo from "../common/back_with_logo";
 import loginStore from "../../store/auth.store";
 import axios from "axios";
@@ -18,86 +23,85 @@ export default function AllInsurance({ navigation }) {
   const { token } = loginStore();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
+  const [filteredData, setFilteredData] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchInsurance = async () => {
     try {
       const res = await axios.get(`${API_URL_APP}/api/v1/insurance/my`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-       console.log("Fetch Insurance Error:", res.data);
-      setData(res.data.data);
+      const items = res.data.data || [];
+      setData(items);
+      setFilteredData(items);
     } catch (error) {
-      console.log("Fetch Insurance Error:", error);
+      Alert.alert("Error", "Failed to load insurance requests");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchInsurance();
   }, []);
 
-  const deleteInsurance = async (id) => {
-    Alert.alert(
-      "Delete Insurance Request",
-      "This action cannot be undone. Are you sure?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.delete(`${API_URL_APP}/api/v1/insurance/${id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              fetchInsurance();
-              Alert.alert("Success", "Insurance request deleted successfully");
-            } catch (err) {
-              console.log(err.response.data)
-              Alert.alert("Error", "Failed to delete insurance request");
-            }
-          },
-        },
-      ]
+  // Search Filter
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredData(data);
+      return;
+    }
+
+    const lowerQuery = searchQuery.toLowerCase();
+    const filtered = data.filter(
+      (item) =>
+        item.full_name?.toLowerCase().includes(lowerQuery) ||
+        item.vehicle_number?.toLowerCase().includes(lowerQuery) ||
+        item.contact_number?.includes(lowerQuery)
     );
+    setFilteredData(filtered);
+  }, [searchQuery, data]);
+
+  const deleteInsurance = (id) => {
+    Alert.alert("Delete Request", "Are you sure you want to delete this request?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await axios.delete(`${API_URL_APP}/api/v1/insurance/${id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            fetchInsurance();
+          } catch (err) {
+            Alert.alert("Error", "Failed to delete");
+          }
+        },
+      },
+    ]);
   };
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      pending: {
-        bg: "#FFF4E6",
-        color: "#E65100",
-        icon: "⏳",
-        label: "Pending Review",
-      },
-      processing: {
-        bg: "#E3F2FD",
-        color: "#1565C0",
-        icon: "⚙️",
-        label: "Processing",
-      },
-      completed: {
-        bg: "#E8F5E9",
-        color: "#2E7D32",
-        icon: "✓",
-        label: "Completed",
-      },
-      rejected: {
-        bg: "#FFEBEE",
-        color: "#C62828",
-        icon: "✕",
-        label: "Rejected",
-      },
-    };
-    return configs[status] || configs.pending;
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case "completed":
+        return { bg: "#E8F5E9", color: "#2E7D32", label: "Completed" };
+      case "processing":
+        return { bg: "#E3F2FD", color: "#1565C0", label: "Processing" };
+      case "rejected":
+        return { bg: "#FFEBEE", color: "#C62828", label: "Rejected" };
+      default:
+        return { bg: "#FFF4E6", color: "#E65100", label: "Pending" };
+    }
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1565C0" />
-          <Text style={styles.loadingText}>Loading your requests...</Text>
+        <BackWithLogo />
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color="#000" />
+          <Text style={styles.loaderText}>Loading requests...</Text>
         </View>
       </SafeAreaView>
     );
@@ -107,132 +111,80 @@ export default function AllInsurance({ navigation }) {
     <SafeAreaView style={styles.container}>
       <BackWithLogo />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <View style={styles.header}>
+        <Text style={styles.title}>My Insurance Requests</Text>
+        <Text style={styles.count}>{filteredData.length} requests</Text>
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={18} color="#999" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, vehicle or phone..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#aaa"
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <Ionicons name="close-circle" size={18} color="#999" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+      // Updated card style in AllInsurance.js (replace the existing card JSX and styles)
+
+{filteredData.map((item) => {
+  const status = getStatusStyle(item.status || "pending");
+  return (
+    <View key={item._id} style={styles.cardWrapper}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => navigation.navigate("CreateInsurance", { id: item._id })}
+        activeOpacity={0.95}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>My Insurance Requests</Text>
-          <Text style={styles.subtitle}>
-            {data.length} {data.length === 1 ? "request" : "requests"} found
+        {/* Status */}
+        <View style={[styles.status, { backgroundColor: status.bg }]}>
+          <Text style={[styles.statusText, { color: status.color }]}>
+            {status.label}
           </Text>
         </View>
 
-        {data.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={styles.emptyTitle}>No Requests Yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Your insurance requests will appear here
-            </Text>
-            <TouchableOpacity
-              style={styles.createBtn}
-              onPress={() => navigation.navigate("CreateInsurance")}
-            >
-              <Text style={styles.createBtnText}>Create New Request</Text>
-            </TouchableOpacity>
+        {/* Details */}
+        <View style={styles.details}>
+          <Text style={styles.name}>{item.full_name}</Text>
+          <Text style={styles.vehicle}>{item.vehicle_number}</Text>
+          <View style={styles.row}>
+            <Text style={styles.small}>{item.contact_number}</Text>
+            <Text style={styles.small}>• {item.insurance_type.replace("_", " ").charAt(0).toUpperCase() + item.insurance_type.replace("_", " ").slice(1)}</Text>
           </View>
-        ) : (
-          data.map((item, index) => {
-            const statusConfig = getStatusConfig(item.status);
-            return (
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate("CreateInsurance", { id: item?._id })
-                }
-                key={index}
-                style={styles.card}
-                activeOpacity={0.9}
-              >
-                {/* Status Badge */}
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: statusConfig.bg },
-                  ]}
-                >
-                  <Text style={styles.statusIcon}>{statusConfig.icon}</Text>
-                  <Text
-                    style={[styles.statusLabel, { color: statusConfig.color }]}
-                  >
-                    {statusConfig.label}
-                  </Text>
-                </View>
+        </View>
 
-                {/* Main Content */}
-                <View style={styles.cardContent}>
-                  <View style={styles.infoRow}>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>Full Name</Text>
-                      <Text style={styles.infoValue}>{item.full_name}</Text>
-                    </View>
-                  </View>
+        {/* Actions */}
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => navigation.navigate("CreateInsurance", { id: item._id })}
+          >
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteInsurance(item._id)}>
+            <Text style={styles.deleteText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
 
-                  <View style={styles.divider} />
-
-                  <View style={styles.infoRow}>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>Vehicle Number</Text>
-                      <Text style={styles.infoValue}>
-                        {item.vehicle_number}
-                      </Text>
-                    </View>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>Contact</Text>
-                      <Text style={styles.infoValue}>
-                        {item.contact_number}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.divider} />
-
-                  <View style={styles.infoRow}>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>Insurance Type</Text>
-                      <Text style={styles.infoValue}>
-                        {item.insurance_type}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.budgetContainer}>
-                    <Text style={styles.budgetLabel}>Estimated Budget</Text>
-                    <Text style={styles.budgetValue}>
-                      {item.budget === 0
-                        ? "Calculating..."
-                        : `₹${item.budget.toLocaleString("en-IN")}`}
-                    </Text>
-                    {item.budget === 0 && (
-                      <Text style={styles.budgetNote}>
-                        Amount will be available within 10 minutes
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.actionBtnSecondary}
-                    onPress={() =>
-                      navigation.navigate("CreateInsurance", { id: item._id })
-                    }
-                  >
-                    <Text style={styles.actionBtnSecondaryText}>✏️ Edit</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionBtnDanger}
-                    onPress={() => deleteInsurance(item._id)}
-                  >
-                    <Text style={styles.actionBtnDangerText}>🗑️ Delete</Text>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
+      {/* Insurance Card Image - Positioned on the right */}
+      <Image
+        source={{ uri: "https://res.cloudinary.com/dqjoc7ajw/image/upload/v1765647726/images/rbfqaxupfvgqmwwmwbql.png" }}
+        style={styles.insuranceImage}
+        resizeMode="contain"
+      />
+    </View>
+  );
+})}
       </ScrollView>
     </SafeAreaView>
   );
@@ -241,191 +193,180 @@ export default function AllInsurance({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F7FA",
+    backgroundColor: "#fff",
   },
-  loadingContainer: {
+  loader: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingText: {
+  loaderText: {
     marginTop: 12,
-    fontSize: 16,
-    color: "#666",
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#1A1A1A",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: "#666",
-    fontWeight: "500",
+    fontSize: 14,
+    color: "#777",
   },
 
-  // Empty State
-  emptyState: {
+  header: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#000",
+  },
+  count: {
+    fontSize: 13,
+    color: "#777",
+    marginTop: 4,
+  },
+
+  searchContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
+    backgroundColor: "#f5f5f5",
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    color: "#000",
+  },
+cardWrapper: {
+    position: "relative",
+    marginBottom: 14,
+  },
+  card: {
+    borderRadius: 14,
+    padding: 16,
+ 
+    marginRight: 80, // Make space for the image on the right
+  },
+
+  insuranceImage: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 100,
+    height: 70,
+    borderRadius: 10,
+
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#eee",
+    overflow: "hidden",
+  },
+  status: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    alignSelf: "flex-start",
+    margin: 12,
+    marginBottom: 0,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  details: {
+    padding: 16,
+    paddingTop: 12,
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#000",
+  },
+  vehicle: {
+    fontSize: 15,
+    color: "#000",
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  row: {
+    flexDirection: "row",
+    marginTop: 6,
+  },
+  small: {
+    fontSize: 13,
+    color: "#666",
+  },
+
+  actions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    padding: 12,
+    paddingTop: 0,
+    gap: 16,
+  },
+  editBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+  },
+  editText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#000",
+  },
+  deleteBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#ffebee",
+    borderRadius: 8,
+  },
+  deleteText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#000",
+  },
+
+  empty: {
+    alignItems: "center",
+    marginTop: 60,
   },
   emptyIcon: {
-    fontSize: 64,
+    fontSize: 60,
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1A1A1A",
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 15,
-    color: "#666",
-    marginBottom: 24,
-  },
-  createBtn: {
-    backgroundColor: "#1565C0",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  createBtnText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  // Card Styles
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  statusIcon: {
-    fontSize: 16,
-  },
-  statusLabel: {
     fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    color: "#777",
+    textAlign: "center",
+    marginBottom: 24,
+    paddingHorizontal: 40,
   },
-
-  // Card Content
-  cardContent: {
-    padding: 16,
-  },
-  infoRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 12,
-  },
-  infoItem: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    fontWeight: "600",
-  },
-  infoValue: {
-    fontSize: 16,
-    color: "#1A1A1A",
-    fontWeight: "600",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#E0E0E0",
-    marginVertical: 12,
-  },
-
-  // Budget Section
-  budgetContainer: {
-    backgroundColor: "#F5F7FA",
-    padding: 16,
+  newBtn: {
+    backgroundColor: "#000",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 12,
-    marginTop: 8,
   },
-  budgetLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  newBtnText: {
+    color: "#fff",
+    fontSize: 15,
     fontWeight: "600",
-  },
-  budgetValue: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#1565C0",
-  },
-  budgetNote: {
-    fontSize: 12,
-    color: "#E65100",
-    marginTop: 6,
-    fontStyle: "italic",
-  },
-
-  // Action Buttons
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
-  },
-  actionBtnSecondary: {
-    flex: 1,
-    backgroundColor: "#F5F7FA",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  actionBtnSecondaryText: {
-    color: "#1A1A1A",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  actionBtnDanger: {
-    flex: 1,
-    backgroundColor: "#FFEBEE",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#FFCDD2",
-  },
-  actionBtnDangerText: {
-    color: "#C62828",
-    fontSize: 15,
-    fontWeight: "700",
   },
 });

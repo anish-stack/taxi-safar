@@ -25,6 +25,12 @@ const {
   sendOtp,
   verifyOtpMobile,
   getDriverDetailsOfDriverMobile,
+  VerifyGstNo,
+  changeDpOfProfile,
+  getAllVehcilesOfDriver,
+  changeActiveVehcile,
+  updatePrefrences,
+  getPreferencesViaVehicleCategory,
 } = require("../controllers/registration/driver.reg");
 
 const { refreshAccessToken: refreshToken } = require("../controllers/registration/refreshAccessToken");
@@ -51,6 +57,9 @@ const {
   getRideById,
   searchNearbyRides,
   getMyRide,
+  getMyRideAllPost,
+  deleteRide,
+  updateRide,
 } = require("../controllers/rides/driver_post_rides");
 
 // Controllers - Taxi Safar Rides
@@ -74,6 +83,8 @@ const {
   updateQuotation,
   deleteQuotation,
   getAllQuotations,
+  getQuotationById,
+  convertToInvoice,
 } = require("../controllers/extra/Quotation.controller");
 
 // Controllers - Jobs
@@ -121,7 +132,14 @@ router.post("/login", login);
 router.post("/verify-login-otp", verifyOtp);
 router.post("/resend-otp", resendOtp);
 router.post("/refresh-token", refreshToken);
+router.post("/change-dp-profile",protect,upload.single("dp"),changeDpOfProfile)
+router.get("/get-all-Vehciles",protect,getAllVehcilesOfDriver)
+router.patch("/change-active-vehicle/:id",protect,changeActiveVehcile)
+router.put("/update-prefrences",protect,updatePrefrences)
+router.get("/get-prefrences",protect,getPreferencesViaVehicleCategory)
 
+
+// 
 router.post("/send-mobile-otp",sendOtp)
 router.post("/verify-mobile-otp",verifyOtpMobile)
 router.get("/get-mobile-driver",getDriverDetailsOfDriverMobile)
@@ -135,7 +153,7 @@ router.post("/send-otp-on-aadhar", sendOtpOnAadharNumber);
 router.post("/verify-otp-on-aadhar",verifyAadhaarOtp)
 router.post("/verify-dl",verifyDrivingLicense)
 router.post('/rc-verify',verifyRcDetails)
-
+router.post("/gst-verify",VerifyGstNo)
 // ---------------------------------------------
 // 🔥 DRIVER DETAILS & PROFILE
 // ---------------------------------------------
@@ -181,6 +199,11 @@ router.get("/post-rides", getAllRides);
 router.get("/post-rides/:rideId", getRideById);
 router.get("/fetch-nearby-rides", protect, searchNearbyRides);
 router.get("/get-my-ride", protect, getMyRide);
+router.delete("/delete-post-ride/:rideId", protect, deleteRide);
+
+router.put("/update-post-ride/:rideId",protect, updateRide);
+
+router.get("/get-my-ride-all", protect, getMyRideAllPost);
 
 
 // ---------------------------------------------
@@ -213,9 +236,14 @@ router.get("/get-my-assigned-rides", protect, FetchMyAssignedRides);
 // 🔥 QUOTATION
 // ---------------------------------------------
 router.post("/create-quotation", protect, createQuotation);
-router.post("/update-quotation", protect, updateQuotation);
+router.put("/update-quotation/:id", protect, updateQuotation);
 router.delete("/delete-quotation/:id", protect, deleteQuotation);
 router.get("/get-quotation", protect, getAllQuotations);
+router.post("/convert-to-invoice/:id", protect, convertToInvoice);
+
+router.get("/get-quotation/:id",  getQuotationById);
+
+
 
 
 // ---------------------------------------------

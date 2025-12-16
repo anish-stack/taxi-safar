@@ -1,14 +1,23 @@
-import React from 'react';
-import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import logo from '../../assets/taxisafar-logo.png';
-import { Colors } from '../../constant/ui';
-import { useNavigation } from '@react-navigation/native';
+import React from "react";
+import { View, TouchableOpacity, Image, StyleSheet,Text } from "react-native";
+import Icon from "react-native-vector-icons/Ionicons";
+import logo from "../../assets/taxisafar-logo.png";
+import { Colors } from "../../constant/ui";
+import { useNavigation } from "@react-navigation/native";
 
-export default function BackWithLogo({isBackGround=true}) {
-    const navigation = useNavigation()
+export default function BackWithLogo({
+  isBackGround = true,
+  isLogo = true,
+  title,
+}) {
+  const navigation = useNavigation();
   return (
-    <View style={[styles.headerContainer,{backgroundColor:isBackGround ? Colors.white:'transparent'}]}>
+    <View
+      style={[
+        styles.headerContainer,
+        { backgroundColor: isBackGround ? Colors.white : "transparent" },
+      ]}
+    >
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => navigation.goBack()}
@@ -16,19 +25,21 @@ export default function BackWithLogo({isBackGround=true}) {
       >
         <Icon name="arrow-back" size={24} color={Colors.black} />
       </TouchableOpacity>
-
-      <Image source={logo} style={styles.logo} resizeMode="contain" />
-      <View style={{ width: 24 }} /> 
-      {/* Placeholder for balance alignment */}
+      {isLogo ? (
+        <Image source={logo} style={styles.logo} resizeMode="contain" />
+      ) : (
+        <Text style={styles.titleText}>{title}</Text>
+      )}
+      <View style={{ width: 24 }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 15,
     paddingVertical: 10,
     borderBottomWidth: 1,
@@ -37,6 +48,12 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 6,
     borderRadius: 50,
+  },
+   titleText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: Colors.black,
+    textAlign: "center",
   },
   logo: {
     width: 120,

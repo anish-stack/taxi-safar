@@ -1,130 +1,259 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Modal,
   FlatList,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
+import { API_URL_APP_CHAT } from "../../constant/api";
+import axios from "axios";
+import useDriverStore from "../../store/driver.store";
+import messaging from "@react-native-firebase/messaging";
+import { useNavigation } from "@react-navigation/native";
 
-const OPTIONS = ["All Available Rides", "Driver Post Rides", "Taxi Safar Rides"];
+const OPTIONS = ["All Rides", "Driver Post Rides ", "Taxi Safar Rides"];
 
-export default function RideFilterDropdown({ selectedOption = "All Available Rides", onSelect }) {
+export default function RideFilterDropdown({
+  selectedOption = "All Rides",
+  onSelect,
+}) {
+  const navigation = useNavigation();
+
+  const { driver, fetchDriverDetails } = useDriverStore();
+
   const [isOpen, setIsOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const handleSelect = (option) => {
     onSelect(option);
     setIsOpen(false);
   };
 
+  useEffect(() => {
+    fetchDriverDetails();
+  }, []);
+  const fetchUnreadMessages = async () => {
+    if (!driver?._id) return;
+
+    try {
+      const res = await axios.get(
+        `${API_URL_APP_CHAT}/api/chat/driver/${driver._id}`
+      );
+
+      const count = res?.data?.chats?.[0]?.unreadCount || 0;
+      setUnreadChatCount(count);
+    } catch (e) {
+      console.log("Unread chat fetch error:", e);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = messaging().onMessage(() => fetchUnreadMessages());
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (driver?._id) fetchUnreadMessages();
+  }, [driver]);
+
   return (
     <View style={styles.container}>
-      {/* Label and Dropdown Side by Side */}
-      <Text style={styles.label}>Available Rides</Text>
-
-      <TouchableOpacity
-        style={styles.dropdownButton}
-        onPress={() => setIsOpen(!isOpen)}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.selectedText}>{selectedOption}</Text>
-        <Icon name={isOpen ? "chevron-up" : "chevron-down"} size={20} color="#555" />
-      </TouchableOpacity>
-
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <View style={styles.dropdownMenu}>
-          <FlatList
-            data={OPTIONS}
-            keyExtractor={(item) => item}
-            renderItem={({ item }) => {
-              const isSelected = selectedOption === item;
-              return (
-                <TouchableOpacity
-                  style={[styles.menuItem, isSelected && styles.menuItemSelected]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text style={[styles.menuText, isSelected && styles.menuTextSelected]}>
-                    {item}
-                  </Text>
-                  {isSelected && <Icon name="checkmark" size={18} color="#DC2626" />}
-                </TouchableOpacity>
-              );
-            }}
+      {/* LEFT : Dropdown Pill */}
+      <View style={styles.wrapper}>
+        <TouchableOpacity
+          style={styles.pill}
+          activeOpacity={0.85}
+          onPress={() => setIsOpen(!isOpen)}
+        >
+          <Text style={styles.pillText} numberOfLines={1}>
+            {selectedOption}
+          </Text>
+          <Icon
+            name={isOpen ? "chevron-up" : "chevron-down"}
+            size={18}
+            style={{ marginRight: 12 }}
+            color="#000"
           />
-        </View>
-      )}
+        </TouchableOpacity>
+
+        {/* Dropdown */}
+        {isOpen && (
+          <View style={styles.dropdown}>
+            <FlatList
+              data={OPTIONS}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => {
+                const isSelected = item === selectedOption;
+                return (
+                  <TouchableOpacity
+                    style={[styles.item, isSelected && styles.itemActive]}
+                    onPress={() => handleSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.itemText,
+                        isSelected && styles.itemTextActive,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                    {isSelected && (
+                      <Icon name="checkmark" size={18} color="#DC2626" />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* RIGHT : Icons */}
+      <View style={styles.iconGroup}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.navigate("Reserve")}
+        >
+          <Icon name="search-outline" size={20} color="#000" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.navigate("chat")}
+        >
+          <Icon name="chatbubble-ellipses-outline" size={20} color="#000" />
+          {unreadChatCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadChatCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.navigate("notification")}
+        >
+          <Icon name="notifications-outline" size={20} color="#000" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 6,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent:"space-between"
-  },
-  label: {
-    fontSize: 16,
-    color: "#333",
-    marginRight: 12,
-    fontFamily: "SFProDisplay-Bold",
-  },
-  dropdownButton: {
-    flexDirection: "row",
-    alignItems: "center",
+     overflow: "visible",
     justifyContent: "space-between",
-    borderWidth: .41,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    paddingHorizontal: 0,
+  },
+
+  wrapper: {
+    position: "relative",
+  },
+
+  /* Black pill dropdown */
+  pill: {
+    flexDirection: "row",
+    overflow: "hidden",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    borderColor: "#000",
+    borderWidth: 2,
     paddingHorizontal: 12,
-    height: 44,
-    backgroundColor: "#fff",
-    minWidth: 50,
-  
+    height: 30,
+    width: 100,
   },
-  selectedText: {
-    fontSize: 15,
-    color: "#111",
+
+  pillText: {
+    color: "#000",
+    fontSize: 14,
     fontFamily: "SFProDisplay-Medium",
-    marginRight: 8,
+    marginRight: 10,
   },
-  dropdownMenu: {
+
+  /* Dropdown */
+  dropdown: {
     position: "absolute",
-    top: 50, 
-    right: 0, 
+    top: 50,
+    left: 0,
+    width: 220,
     backgroundColor: "#fff",
-    borderRadius: 10,
-    elevation: 1,
+    borderRadius: 14,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
-    shadowRadius: 10,
-    zIndex: 1000,
-    width: 180,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 999,
+    overflow: "hidden",
   },
-  menuItem: {
+
+  item: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 0.5,
     borderBottomColor: "#eee",
   },
-  menuItemSelected: {
-    backgroundColor: "#FEF2F2",
+
+  itemActive: {
+    backgroundColor: "#D3D3D3",
   },
-  menuText: {
-    fontSize: 15,
-    color: "#333",
+
+  itemText: {
+    fontSize: 14,
+    color: "#111",
     fontFamily: "SFProDisplay-Medium",
   },
-  menuTextSelected: {
+
+  itemTextActive: {
     color: "#DC2626",
     fontFamily: "SFProDisplay-Bold",
+  },
+
+  /* Right icons */
+  iconGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 0,
+  },
+
+  iconBtn: {
+    width: 27,
+    height: 27,
+    borderRadius: 19,
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  badge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    backgroundColor: "#FF3B30",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 10,
+    minWidth: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "bold",
   },
 });

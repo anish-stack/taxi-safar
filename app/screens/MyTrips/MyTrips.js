@@ -12,12 +12,20 @@ import {
   Pressable,
   PanResponder,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft, MessageCircle, Search, Filter, X } from "lucide-react-native";
+import {
+  ChevronLeft,
+  MessageCircle,
+  Search,
+  Filter,
+  X,
+  Edit2,
+  Trash2,
+} from "lucide-react-native";
 import axios from "axios";
 import loginStore from "../../store/auth.store";
-import useDriverStore from "../../store/driver.store";
 import { API_URL_APP } from "../../constant/api";
 import DriverPost from "../Reserve/DriverPost";
 import RideCard from "../Reserve/RideCard";
@@ -27,47 +35,61 @@ const SLIDER_WIDTH = 300;
 
 const tabs = [
   { id: "all", label: "All Trips" },
-  { id: "taxi_safari", label: "Taxi Safari" },
-  { id: "rides_post", label: "Driver Posts" },
+  // { id: "taxi_safari", label: "B2B Bookings" },
+  { id: "my_posts", label: "My Post Trip" },
+  { id: "driver_posts", label: "My Reserved Trip" },
 ];
 
 const TabSelector = ({ activeTab, tabs, onTabChange }) => {
   return (
-    <View style={styles.tabContainer}>
-      {tabs.map((tab) => (
-        <TouchableOpacity
-          key={tab.id}
-          style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-          onPress={() => onTabChange(tab.id)}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === tab.id && styles.tabTextActive,
-            ]}
+    <View
+      showsHorizontalScrollIndicator={false}
+      style={styles.tabScrollView}
+      contentContainerStyle={styles.tabContainer}
+    >
+      <ScrollView horizontal>
+        {tabs.map((tab) => (
+          <TouchableOpacity
+            key={tab.id}
+            style={[styles.tab, activeTab === tab.id && styles.tabActive]}
+            onPress={() => onTabChange(tab.id)}
+            activeOpacity={0.7}
           >
-            {tab.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === tab.id && styles.tabTextActive,
+              ]}
+            >
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 };
 
 export default function MyTrips({ navigation }) {
   const { token } = loginStore();
-  const { driver } = useDriverStore();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [ridesData, setRidesData] = useState(null);
-  
+  const [myPostRides, setMyPostRides] = useState([]);
+  const [myPostsPagination, setMyPostsPagination] = useState({
+    page: 1,
+    limit: 10,
+    totalPages: 1,
+    totalRides: 0,
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
+
   // UI States
   const [activeTab, setActiveTab] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [filterVisible, setFilterVisible] = useState(false);
-  
+
   // Filter States
   const [filters, setFilters] = useState({
     tripType: "all",
@@ -77,10 +99,10 @@ export default function MyTrips({ navigation }) {
   });
   const [tempFilters, setTempFilters] = useState(filters);
 
-  // Fetch trips data
+  // Fetch assigned trips data
   const fetchMyTrips = async (showLoader = true) => {
     if (showLoader) setLoading(true);
-    
+
     try {
       const res = await axios.get(
         `${API_URL_APP}/api/v1/get-my-assigend-rides`,
@@ -102,13 +124,95 @@ export default function MyTrips({ navigation }) {
     }
   };
 
+  // Fetch my posted rides with pagination
+  const fetchMyPostRides = async (page = 1, showLoader = true) => {
+    if (showLoader && page === 1) setLoading(true);
+    if (page > 1) setLoadingMore(true);
+
+    try {
+      const res = await axios.get(
+        `${API_URL_APP}/api/v1/get-my-ride-all?page=${page}&limit=${myPostsPagination.limit}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (res.data?.success) {
+        if (page === 1) {
+          setMyPostRides(res.data.data);
+        } else {
+          setMyPostRides((prev) => [...prev, ...res.data.data]);
+        }
+
+        setMyPostsPagination({
+          page: res.data.page,
+          limit: res.data.limit,
+          totalPages: res.data.totalPages,
+          totalRides: res.data.totalRides,
+        });
+      } else {
+        console.warn("No rides found");
+      }
+    } catch (error) {
+      console.log("❌ Fetch MyPostRides Error:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
+    }
+  };
+
+  // Delete post ride
+  const handleDeleteRide = async (rideId) => {
+    Alert.alert(
+      "Delete Ride",
+      "Are you sure you want to delete this ride post?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await axios.delete(
+                `${API_URL_APP}/api/v1/delete-post-ride/${rideId}`,
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+
+              if (res.data?.success) {
+                Alert.alert("Success", "Ride deleted successfully");
+                fetchMyPostRides(1, false);
+              }
+            } catch (error) {
+              console.log("❌ Delete Error:", error);
+              Alert.alert("Error", "Failed to delete ride");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
+    fetchMyPostRides();
     fetchMyTrips();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchMyTrips(false);
+    if (activeTab === "my_posts") {
+      fetchMyPostRides(1, false);
+    } else {
+      fetchMyTrips(false);
+    }
+  };
+
+  const loadMoreMyPosts = () => {
+    if (!loadingMore && myPostsPagination.page < myPostsPagination.totalPages) {
+      fetchMyPostRides(myPostsPagination.page + 1, false);
+    }
   };
 
   // Filter and search logic
@@ -140,9 +244,13 @@ export default function MyTrips({ navigation }) {
     if (filters.tripType !== "all") {
       filtered = filtered.filter((ride) => {
         if (type === "taxi_safari") {
-          return ride.original_tryipType?.toLowerCase().includes(filters.tripType);
+          return ride.original_tryipType
+            ?.toLowerCase()
+            .includes(filters.tripType);
         } else {
-          return ride.tripType?.toLowerCase().includes(filters.tripType === "oneWay" ? "one way" : "round");
+          return ride.tripType
+            ?.toLowerCase()
+            .includes(filters.tripType === "oneWay" ? "one" : "round");
         }
       });
     }
@@ -150,16 +258,18 @@ export default function MyTrips({ navigation }) {
     // Status filter
     if (filters.status !== "all") {
       filtered = filtered.filter((ride) => {
-        const status = type === "taxi_safari" ? ride.trip_status : ride.rideStatus;
+        const status =
+          type === "taxi_safari" ? ride.trip_status : ride.rideStatus;
         return status?.toLowerCase() === filters.status.toLowerCase();
       });
     }
 
     // Price range filter
     filtered = filtered.filter((ride) => {
-      const amount = type === "taxi_safari" 
-        ? parseFloat(ride.original_amount) 
-        : parseFloat(ride.totalAmount);
+      const amount =
+        type === "taxi_safari"
+          ? parseFloat(ride.original_amount)
+          : parseFloat(ride.totalAmount);
       return amount >= filters.priceRange[0] && amount <= filters.priceRange[1];
     });
 
@@ -168,14 +278,26 @@ export default function MyTrips({ navigation }) {
       filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     } else if (filters.sortBy === "priceLow") {
       filtered.sort((a, b) => {
-        const priceA = type === "taxi_safari" ? parseFloat(a.original_amount) : parseFloat(a.totalAmount);
-        const priceB = type === "taxi_safari" ? parseFloat(b.original_amount) : parseFloat(b.totalAmount);
+        const priceA =
+          type === "taxi_safari"
+            ? parseFloat(a.original_amount)
+            : parseFloat(a.totalAmount);
+        const priceB =
+          type === "taxi_safari"
+            ? parseFloat(b.original_amount)
+            : parseFloat(b.totalAmount);
         return priceA - priceB;
       });
     } else if (filters.sortBy === "priceHigh") {
       filtered.sort((a, b) => {
-        const priceA = type === "taxi_safari" ? parseFloat(a.original_amount) : parseFloat(a.totalAmount);
-        const priceB = type === "taxi_safari" ? parseFloat(b.original_amount) : parseFloat(b.totalAmount);
+        const priceA =
+          type === "taxi_safari"
+            ? parseFloat(a.original_amount)
+            : parseFloat(a.totalAmount);
+        const priceB =
+          type === "taxi_safari"
+            ? parseFloat(b.original_amount)
+            : parseFloat(b.totalAmount);
         return priceB - priceA;
       });
     }
@@ -185,6 +307,10 @@ export default function MyTrips({ navigation }) {
 
   // Get filtered rides based on active tab
   const getDisplayRides = () => {
+    if (activeTab === "my_posts") {
+      return filterRides(myPostRides, "rides_post");
+    }
+
     if (!ridesData) return [];
 
     const taxiSafariFiltered = filterRides(
@@ -197,8 +323,8 @@ export default function MyTrips({ navigation }) {
     );
 
     if (activeTab === "taxi_safari") return taxiSafariFiltered;
-    if (activeTab === "rides_post") return ridesPostFiltered;
-    
+    if (activeTab === "driver_posts") return ridesPostFiltered;
+
     // Combine both for "all" tab
     return [...taxiSafariFiltered, ...ridesPostFiltered].sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
@@ -213,10 +339,7 @@ export default function MyTrips({ navigation }) {
       onPanResponderMove: (_, gestureState) => {
         const newValue = Math.max(
           0,
-          Math.min(
-            MAX_PRICE,
-            (gestureState.moveX / SLIDER_WIDTH) * MAX_PRICE
-          )
+          Math.min(MAX_PRICE, (gestureState.moveX / SLIDER_WIDTH) * MAX_PRICE)
         );
 
         if (isMin) {
@@ -259,13 +382,74 @@ export default function MyTrips({ navigation }) {
         hour: "2-digit",
         minute: "2-digit",
       })}
-      tripType={item.trip_type}
+      // tripType={item.trip_type}
+            tripType={`${trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"} - ${"60"}Km`}
+
       status={item?.trip_status}
       pickup={item.pickup_address}
       drop={item.destination_address}
       distance={item.distance || "N/A"}
-      onPress={() => navigation.navigate("ProgressTaxiSafarRide", { rideId: item?._id, type: "taxi_safari",accpetd:true })}
+      onPress={() =>
+        navigation.navigate("ProgressTaxiSafarRide", {
+          rideId: item?._id,
+          type: "taxi_safari",
+          accpetd: true,
+        })
+      }
     />
+  );
+
+  const renderMyPostRide = ({ item }) => (
+    <View style={styles.myPostCard}>
+      <DriverPost
+        _id={item._id}
+        vehicleName={item.vehicleType || "Vehicle"}
+        assignedStatus={item.rideStatus}
+        vehicleType="mini"
+        status={item?.rideStatus}
+        totalAmount={`₹${item.totalAmount}`}
+        commission={`₹${item.commissionAmount}`}
+        driverEarning={`₹${item.driverEarning}`}
+        pickup={item.pickupAddress}
+        drop={item.dropAddress}
+        tripType={item.tripType}
+        date={new Date(item.createdAt).toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })}
+        time={new Date(item.createdAt).toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+        onPress={() =>
+          navigation.navigate("ReserveRideDetailsAssigned", {
+            rideId: item._id,
+            type: "my_posts",
+          })
+        }
+      />
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() =>
+            navigation.navigate("Add", { rideId: item._id })
+          }
+          activeOpacity={0.7}
+        >
+          <Edit2 size={16} color="#FFF" />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleDeleteRide(item._id)}
+          activeOpacity={0.7}
+        >
+          <Trash2 size={16} color="#FFF" />
+          <Text style={styles.actionButtonText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   const renderRidesPostRide = ({ item }) => (
@@ -274,15 +458,14 @@ export default function MyTrips({ navigation }) {
       vehicleName={item.vehicle_name || "Vehicle"}
       assignedStatus={item.rideStatus}
       vehicleType="mini"
-            status={item?.
-rideStatus}
-
+      status={item?.rideStatus}
       totalAmount={`₹${item.totalAmount}`}
       commission={`₹${item.commissionAmount}`}
       driverEarning={`₹${item.driverEarning}`}
       pickup={item.pickupAddress}
       drop={item.dropAddress}
-      tripType={item.tripType}
+      // tripType={item.tripType}
+      tripType={`${trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"} - ${"60"}Km`}
       date={new Date(item.createdAt).toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "short",
@@ -292,17 +475,35 @@ rideStatus}
         hour: "2-digit",
         minute: "2-digit",
       })}
-      onPress={() => navigation.navigate("ReserveRideDetailsAssigned", { rideId: item._id, type: "rides_post" })}
+      onPress={() =>
+        navigation.navigate("ReserveRideDetailsAssigned", {
+          rideId: item._id,
+          type: "rides_post",
+        })
+      }
     />
   );
 
   const renderRide = ({ item }) => {
-    // Determine ride type
+    if (activeTab === "my_posts") {
+      return renderMyPostRide({ item });
+    }
+
     if (item.trip_status !== undefined) {
       return renderTaxiSafariRide({ item });
     } else {
       return renderRidesPostRide({ item });
     }
+  };
+
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#000" />
+        <Text style={styles.footerLoaderText}>Loading more...</Text>
+      </View>
+    );
   };
 
   if (loading) {
@@ -316,22 +517,8 @@ rideStatus}
     );
   }
 
-  if (!ridesData) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>🚗</Text>
-          <Text style={styles.emptyTitle}>No Trips Found</Text>
-          <Text style={styles.emptySubtitle}>
-            Your assigned trips will appear here
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   const displayRides = getDisplayRides();
-  const { summary } = ridesData;
+  const summary = ridesData?.summary || {};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -341,14 +528,14 @@ rideStatus}
           activeOpacity={0.9}
           onPress={() => navigation.goBack()}
         >
-          <ChevronLeft size={24} color="#000" />
+          <ChevronLeft size={22} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Trips</Text>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={() => navigation.navigate("chat")}
         >
-          <MessageCircle size={24} color="#000" />
+          <MessageCircle size={22} color="#000" />
         </TouchableOpacity>
       </View>
 
@@ -356,25 +543,31 @@ rideStatus}
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{summary?.total_rides || 0}</Text>
-          <Text style={styles.statLabel}>Total Trips</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+         <View style={styles.statCard}>
+          <Text style={styles.statValue}>
+            {myPostsPagination.totalRides || 0}
+          </Text>
+          <Text style={styles.statLabel}>My Post Trip</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{summary?.taxi_safari_count || 0}</Text>
-          <Text style={styles.statLabel}>Taxi Safari</Text>
+          <Text style={styles.statValue}>
+            {summary?.taxi_safari_count || 0}
+          </Text>
+          <Text style={styles.statLabel}>My Reserved Trip</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{summary?.rides_post_count || 0}</Text>
-          <Text style={styles.statLabel}>Driver Posts</Text>
-        </View>
+     
+       
       </View>
 
       {/* Search & Filter */}
       <View style={styles.searchContainer}>
         <View style={styles.searchInputWrapper}>
-          <Search size={20} color="#999" style={{ marginRight: 12 }} />
+          <Search size={18} color="#999" style={{ marginRight: 10 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by location or name"
+            placeholder="Search by location"
             placeholderTextColor="#999"
             value={searchText}
             onChangeText={setSearchText}
@@ -387,7 +580,7 @@ rideStatus}
             setFilterVisible(true);
           }}
         >
-          <Filter size={20} color="#FFF" />
+          <Filter size={18} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -408,12 +601,17 @@ rideStatus}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        onEndReached={activeTab === "my_posts" ? loadMoreMyPosts : null}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={activeTab === "my_posts" ? renderFooter : null}
         ListEmptyComponent={
           <View style={styles.emptyList}>
             <Text style={styles.emptyListIcon}>📭</Text>
             <Text style={styles.emptyListText}>No trips found</Text>
             <Text style={styles.emptyListSubtext}>
-              Try adjusting your filters or search
+              {activeTab === "my_posts"
+                ? "You haven't posted any rides yet"
+                : "Try adjusting your filters or search"}
             </Text>
           </View>
         }
@@ -426,7 +624,7 @@ rideStatus}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Filters</Text>
               <TouchableOpacity onPress={() => setFilterVisible(false)}>
-                <X size={24} color="#000" />
+                <X size={22} color="#000" />
               </TouchableOpacity>
             </View>
 
@@ -464,27 +662,28 @@ rideStatus}
               {/* Status Filter */}
               <Text style={styles.filterLabel}>Status</Text>
               <View style={styles.chipContainer}>
-                {["all", "pending", "ongoing", "completed", "cancelled"].map((status) => (
-                  <Pressable
-                    key={status}
-                    style={[
-                      styles.chip,
-                      tempFilters.status === status && styles.chipActive,
-                    ]}
-                    onPress={() =>
-                      setTempFilters({ ...tempFilters, status })
-                    }
-                  >
-                    <Text
+                {["all", "pending", "ongoing", "completed", "cancelled"].map(
+                  (status) => (
+                    <Pressable
+                      key={status}
                       style={[
-                        styles.chipText,
-                        tempFilters.status === status && styles.chipTextActive,
+                        styles.chip,
+                        tempFilters.status === status && styles.chipActive,
                       ]}
+                      onPress={() => setTempFilters({ ...tempFilters, status })}
                     >
-                      {status.charAt(0).toUpperCase() + status.slice(1)}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.chipText,
+                          tempFilters.status === status &&
+                            styles.chipTextActive,
+                        ]}
+                      >
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
               </View>
 
               {/* Sort By */}
@@ -508,10 +707,10 @@ rideStatus}
                       ]}
                     >
                       {sort === "newest"
-                        ? "Newest First"
+                        ? "Newest"
                         : sort === "priceLow"
-                        ? "Price: Low → High"
-                        : "Price: High → Low"}
+                        ? "Low → High"
+                        : "High → Low"}
                     </Text>
                   </Pressable>
                 ))}
@@ -545,7 +744,6 @@ rideStatus}
                   ]}
                 />
 
-                {/* Min Thumb */}
                 <View
                   {...minPanResponder.panHandlers}
                   style={[
@@ -558,7 +756,6 @@ rideStatus}
                   ]}
                 />
 
-                {/* Max Thumb */}
                 <View
                   {...maxPanResponder.panHandlers}
                   style={[
@@ -595,7 +792,7 @@ rideStatus}
                   setFilterVisible(false);
                 }}
               >
-                <Text style={styles.applyText}>Apply Filters</Text>
+                <Text style={styles.applyText}>Apply</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -616,31 +813,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
+    marginTop: 10,
+    fontSize: 14,
     color: "#666",
-    fontWeight: "500",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 40,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1A1A1A",
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    color: "#666",
-    textAlign: "center",
+    fontFamily: "SFProDisplay-Medium",
   },
 
   // Header
@@ -648,93 +824,98 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     backgroundColor: "#FFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E0E0E0",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 18,
+    fontFamily: "SFProDisplay-Bold",
     color: "#1A1A1A",
   },
 
   // Stats
   statsContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
   },
   statCard: {
     flex: 1,
     backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 12,
+    padding: 12,
+    borderRadius: 10,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: "800",
+    fontSize: 20,
+    fontFamily: "SFProDisplay-Bold",
     color: "#000",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: "#666",
-    fontWeight: "600",
+    fontFamily: "SFProDisplay-Medium",
   },
 
   // Search & Filter
   searchContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
   },
   searchInputWrapper: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 48,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 44,
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: "#1A1A1A",
+    fontFamily: "SFProDisplay-Regular",
   },
   filterButton: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     backgroundColor: "#000",
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
 
   // Tabs
-  tabContainer: {
+  tabScrollView: {
+    padding: 12,
     flexDirection: "row",
-    paddingHorizontal: 20,
+    gap: 12,
+  },
+  tabContainer: {
+    paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 16,
   },
   tab: {
-    flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: "center",
-    borderRadius: 10,
+    borderRadius: 8,
+    marginHorizontal: 2,
     backgroundColor: "#FFF",
     borderWidth: 1,
     borderColor: "#E0E0E0",
@@ -744,8 +925,8 @@ const styles = StyleSheet.create({
     borderColor: "#000",
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 13,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#666",
   },
   tabTextActive: {
@@ -754,26 +935,78 @@ const styles = StyleSheet.create({
 
   // List
   listContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 20,
   },
   emptyList: {
     alignItems: "center",
-    paddingVertical: 60,
+    paddingVertical: 50,
   },
   emptyListIcon: {
-    fontSize: 48,
-    marginBottom: 12,
+    fontSize: 44,
+    marginBottom: 10,
   },
   emptyListText: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 16,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#1A1A1A",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   emptyListSubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#666",
+    fontFamily: "SFProDisplay-Regular",
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  footerLoader: {
+    paddingVertical: 16,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: 13,
+    color: "#666",
+    fontFamily: "SFProDisplay-Medium",
+  },
+
+  // My Post Card Actions
+  myPostCard: {
+    marginBottom: 12,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: -8,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4CAF50",
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F44336",
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontFamily: "SFProDisplay-Semibold",
   },
 
   // Filter Modal
@@ -784,42 +1017,42 @@ const styles = StyleSheet.create({
   },
   filterModal: {
     backgroundColor: "#FFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingBottom: 30,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 18,
+    paddingBottom: 26,
     maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    paddingHorizontal: 18,
+    marginBottom: 18,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 20,
+    fontFamily: "SFProDisplay-Bold",
     color: "#1A1A1A",
   },
   filterLabel: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#1A1A1A",
-    marginTop: 20,
-    marginBottom: 12,
-    paddingHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 10,
+    paddingHorizontal: 18,
   },
   chipContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
   },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
     backgroundColor: "#F5F7FA",
     borderWidth: 1,
     borderColor: "#E0E0E0",
@@ -829,8 +1062,8 @@ const styles = StyleSheet.create({
     borderColor: "#000",
   },
   chipText: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 12,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#666",
   },
   chipTextActive: {
@@ -839,75 +1072,75 @@ const styles = StyleSheet.create({
   priceDisplay: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: 18,
+    marginBottom: 10,
   },
   priceText: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Bold",
     color: "#000",
   },
   sliderContainer: {
     height: 40,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     justifyContent: "center",
   },
   track: {
-    height: 4,
+    height: 3,
     backgroundColor: "#E0E0E0",
     borderRadius: 2,
     width: SLIDER_WIDTH,
   },
   activeTrack: {
     position: "absolute",
-    height: 4,
+    height: 3,
     backgroundColor: "#000",
     borderRadius: 2,
   },
   thumb: {
     position: "absolute",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#000",
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: "#FFF",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 4,
   },
   modalActions: {
     flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 20,
-    marginTop: 24,
+    gap: 10,
+    paddingHorizontal: 18,
+    marginTop: 20,
   },
   resetBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     backgroundColor: "#F5F7FA",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
   resetText: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#666",
   },
   applyBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     backgroundColor: "#000",
     alignItems: "center",
   },
   applyText: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 14,
+    fontFamily: "SFProDisplay-Semibold",
     color: "#FFF",
   },
 });

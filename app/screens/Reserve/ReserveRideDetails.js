@@ -10,7 +10,10 @@ import {
   Alert,
   Linking,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   ArrowLeft,
   MapPin,
@@ -33,12 +36,28 @@ import useDriverStore from "../../store/driver.store";
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
+
+const formatTime12Hour = (time) => {
+  if (!time) return "07:00 PM";
+
+  // supports "HH:mm" or "HH:mm:ss"
+  const [hour, minute] = time.split(":");
+  const h = parseInt(hour, 10);
+
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 || 12;
+
+  return `${hour12}:${minute} ${period}`;
+};
+
+
+
 const ReserveRideDetailsRedesigned = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { rideId } = route.params;
   const { driver, fetchDriverDetails } = useDriverStore();
-  
+  const insets = useSafeAreaInsets();
   const [routeCoords, setRouteCoords] = useState([]);
   const [rideData, setRideData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +88,6 @@ const ReserveRideDetailsRedesigned = () => {
 
     await fetchGoogleRoute(pickupLat, pickupLng, dropLat, dropLng);
   };
-
 
   const fetchGoogleRoute = async (origLat, origLng, destLat, destLng) => {
     try {
@@ -182,7 +200,7 @@ const ReserveRideDetailsRedesigned = () => {
   const isRoundTrip = rideData.tripType === "round-trip";
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -191,13 +209,17 @@ const ReserveRideDetailsRedesigned = () => {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Trip Details</Text>
           <Text style={styles.headerSubtitle}>
-            {formatDate(rideData.pickupDate)} • {formatTime(rideData.pickupTime)}
+            {formatDate(rideData.pickupDate)} •{" "}
+            {formatTime(rideData.pickupTime)}
           </Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ paddingBottom: insets.bottom }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Map */}
         <View style={styles.mapContainer}>
           {mapRegion ? (
@@ -241,7 +263,7 @@ const ReserveRideDetailsRedesigned = () => {
         {/* Trip Posted By Card */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Trip Posted By</Text>
-          
+
           <View style={styles.driverRow}>
             <View style={styles.driverInfo}>
               {rideData?.driverPostId?.profile_image ? (
@@ -256,7 +278,7 @@ const ReserveRideDetailsRedesigned = () => {
                   </Text>
                 </View>
               )}
-              
+
               <View style={styles.driverDetails}>
                 <Text style={styles.driverName}>
                   {rideData?.driverPostId?.driver_name || "Driver"}
@@ -273,20 +295,26 @@ const ReserveRideDetailsRedesigned = () => {
 
             <View style={styles.contactButtons}>
               {rideData?.contactType === "call" ? (
-                <TouchableOpacity
-                  style={styles.phoneButton}
-                  onPress={() => {
-                    const phone = rideData?.driverPostId?.driver_contact_number;
-                    if (phone) Linking.openURL(`tel:${phone}`);
-                  }}
-                >
-                  <Phone size={18} color="#fff" />
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={styles.phoneButton}
+                    onPress={() => {
+                      const phone =
+                        rideData?.driverPostId?.driver_contact_number;
+                      if (phone) Linking.openURL(`tel:${phone}`);
+                    }}
+                  >
+                    <Phone size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.chatButton}
+                    onPress={initChat}
+                  >
+                    <MessageCircle size={18} color="#fff" />
+                  </TouchableOpacity>
+                </>
               ) : (
-                <TouchableOpacity
-                  style={styles.chatButton}
-                  onPress={initChat}
-                >
+                <TouchableOpacity style={styles.chatButton} onPress={initChat}>
                   <MessageCircle size={18} color="#fff" />
                 </TouchableOpacity>
               )}
@@ -321,7 +349,10 @@ const ReserveRideDetailsRedesigned = () => {
               <Text style={styles.dateValue}>
                 {formatDate(rideData.pickupDate)}
               </Text>
-              <Text style={styles.timeValue}>{rideData.pickupTime || "07:00 PM"}</Text>
+              <Text style={styles.timeValue}>
+                {formatTime12Hour(rideData.pickupTime)}
+                
+              </Text>
             </View>
 
             <View style={styles.dateDivider}>
@@ -333,23 +364,29 @@ const ReserveRideDetailsRedesigned = () => {
             {isRoundTrip ? (
               <View style={styles.dateItem}>
                 <Text style={styles.dateValue}>
-                  {rideData.returnDate ? formatDate(rideData.returnDate) : "TBD"}
+                  {rideData.returnDate
+                    ? formatDate(rideData.returnDate)
+                    : "TBD"}
                 </Text>
-                <Text style={styles.timeValue}>{rideData.returnTime || "TBD"}</Text>
+                <Text style={styles.timeValue}>
+                  {rideData.returnTime || "TBD"}
+                </Text>
               </View>
             ) : (
               <View style={styles.dateItem}>
                 <Text style={styles.dateValue}>
                   {formatDate(rideData.pickupDate)}
                 </Text>
-                <Text style={styles.timeValue}>{rideData.pickupTime || "07:00 PM"}</Text>
+                <Text style={styles.timeValue}>
+                                 {formatTime12Hour(rideData.pickupTime)}
+                </Text>
               </View>
             )}
           </View>
         </View>
 
         {/* Vehicle Info */}
-        <View style={styles.vehicleCard}>
+        {/* <View style={styles.vehicleCard}>
           <View style={styles.vehicleInfo}>
             <View>
               <Text style={styles.vehicleName}>
@@ -365,13 +402,9 @@ const ReserveRideDetailsRedesigned = () => {
               resizeMode="contain"
             />
           </View>
-          
-          <View style={styles.tripTypeBadge}>
-            <Text style={styles.tripTypeText}>
-              {isRoundTrip ? "Round Trip" : "One way Trip"} - {distance} km
-            </Text>
-          </View>
-        </View>
+
+         
+        </View> */}
 
         {/* Locations */}
         <View style={styles.card}>
@@ -379,7 +412,7 @@ const ReserveRideDetailsRedesigned = () => {
             <Navigation size={16} color="#4A90E2" />
             <Text style={styles.locationText}>{rideData.pickupAddress}</Text>
           </View>
-          
+
           {rideData.viaAddress && (
             <>
               <View style={styles.locationDivider} />
@@ -389,8 +422,12 @@ const ReserveRideDetailsRedesigned = () => {
               </View>
             </>
           )}
-          
-          <View style={styles.locationDivider} />
+ <View style={styles.tripTypeBadge}>
+            <Text style={styles.tripTypeText}>
+              {isRoundTrip ? "Round Trip" : "One way Trip"} - {distance} km
+            </Text>
+          </View>
+          {/* <View style={styles.locationDivider} /> */}
           <View style={styles.locationItem}>
             <MapPin size={16} color="#FF3B30" />
             <Text style={styles.locationText}>{rideData.dropAddress}</Text>
@@ -413,7 +450,9 @@ const ReserveRideDetailsRedesigned = () => {
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Extra Time Charges</Text>
-            <Text style={styles.infoValue}>₹{rideData.extraMinCharge} / minutes</Text>
+            <Text style={styles.infoValue}>
+              ₹{rideData.extraMinCharge} / minutes
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Tolls & Inter State Charges</Text>
@@ -446,7 +485,7 @@ const ReserveRideDetailsRedesigned = () => {
 
       {/* Bottom Button */}
       <View style={styles.bottomButton}>
-        <TouchableOpacity style={styles.acceptButton}>
+        <TouchableOpacity style={styles.acceptButton} activeOpacity={0.8} onPress={()=> initChat()} >
           <Text style={styles.acceptButtonText}>Accept Post Trip</Text>
         </TouchableOpacity>
       </View>
@@ -470,7 +509,7 @@ const styles = StyleSheet.create({
     color: "#FF3B30",
     fontFamily: "SFProDisplay-Medium",
   },
-  
+
   // Header
   header: {
     flexDirection: "row",
@@ -599,7 +638,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#007AFF",
+    backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -634,8 +673,9 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 11,
     fontFamily: "SFProDisplay-Regular",
-    color: "#8E8E93",
+    color: "#000",
     marginTop: 4,
+    fontWeight:"900",
   },
 
   // Dates
@@ -661,6 +701,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   dateDivider: {
+    flexDirection:"row",
     alignItems: "center",
     marginHorizontal: 16,
   },
@@ -671,8 +712,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#C7C7CC",
   },
   dividerLine: {
-    width: 1,
-    height: 24,
+
+    width: 74,
+    height: 1,
     backgroundColor: "#C7C7CC",
   },
 
@@ -691,7 +733,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   vehicleName: {
-        textTransform:"capitalize",
+    textTransform: "capitalize",
 
     fontSize: 15,
     fontFamily: "SFProDisplay-Bold",
@@ -797,7 +839,7 @@ const styles = StyleSheet.create({
   },
   bottomButton: {
     position: "absolute",
-    bottom: 0,
+    bottom: 30,
     left: 0,
     right: 0,
     backgroundColor: "#fff",
@@ -807,7 +849,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#E5E5EA",
   },
   acceptButton: {
-    backgroundColor: "#FF3B30",
+    backgroundColor: "#000",
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",

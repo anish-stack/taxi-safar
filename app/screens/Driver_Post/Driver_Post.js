@@ -32,13 +32,15 @@ import { API_URL_APP } from "../../constant/api";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import axios from "axios";
 import loginStore from "../../store/auth.store";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
 const DriverPost = () => {
   // Trip Details
+  const route = useRoute();
+  const { rideId } = route.params || {};
   const [tripType, setTripType] = useState("one-way");
   const [vehicle, setVehicle] = useState("");
   const [showVehicleModal, setShowVehicleModal] = useState(false);
@@ -83,6 +85,7 @@ const DriverPost = () => {
     allexclusive: false,
     foodallowed: false,
   });
+
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
 
@@ -123,6 +126,70 @@ const DriverPost = () => {
     }
   };
 
+const fetchRidePostedById = async () => {
+  try {
+    const response = await axios.get(`${API_URL_APP}/api/v1/post-rides/${rideId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (response.data.success) {
+      const ride = response.data.data;
+
+      // Trip Details
+      setTripType(ride.tripType || "one-way");
+      setVehicle(ride.vehicleType || "");
+      setAcceptMode(ride.acceptBookingType || "instant");
+      setContactType(ride.contactType || "");
+
+      // Date & Time
+      setPickupDate(new Date(ride.pickupDate));
+      const [hours, minutes] = ride.pickupTime?.split(":") || ["00", "00"];
+      const pickupTimeDate = new Date();
+      pickupTimeDate.setHours(parseInt(hours), parseInt(minutes));
+      setPickupTime(pickupTimeDate);
+
+      // Locations
+      setPickupLocation(ride.pickupAddress || "");
+      setPickupCoordinates(ride.pickupLocation || null);
+      setDropLocation(ride.dropAddress || "");
+      setDropCoordinates(ride.dropLocation || null);
+
+      // Pricing
+      setTotalAmount(ride.totalAmount?.toString() || "");
+      setCommission(ride.commissionAmount?.toString() || "");
+      setDriverEarning(ride.driverEarning || 0);
+      setExtraKm(ride.extraKmCharge?.toString() || "");
+      setExtraHour(ride.extraMinCharge?.toString() || "");
+
+      // Requirements
+      const reqs = ride.extraRequirements || {};
+      setRequirements({
+        onlydiesel: reqs.onlyDiesel || false,
+        withcarrier: reqs.carrier || false,
+        ac: reqs.ac || false,
+        musicsystem: reqs.musicSystem || false,
+        allinclusive: reqs.allInclusive || false,
+        allexclusive: reqs.allExclusive || false,
+        foodallowed: reqs.foodAllowed || false,
+      });
+
+      // Notes & Payment
+      setNotes(ride.notes || "");
+      setPaymentMethod(ride.paymentMethod || "cash");
+
+    } else {
+      Alert.alert("Error", "Failed to fetch ride details");
+    }
+  } catch (error) {
+    console.error("Fetch ride error:", error);
+    // Alert.alert("Error", "Something went wrong while fetching ride data");
+  }
+};
+
+  useEffect(() => {
+    fetchRidePostedById();
+  }, [rideId]);
+
   const onPickupChange = (text) => {
     setPickupLocation(text);
     if (pickupTimer.current) clearTimeout(pickupTimer.current);
@@ -146,7 +213,7 @@ const DriverPost = () => {
       // "All Inclusive" is selected → force ALL features to true
       setRequirements((prev) => ({
         ...prev,
-        onlydiesel: true,
+        onlydiesel: false,
         withcarrier: true,
         ac: true,
         musicsystem: true,
@@ -270,166 +337,119 @@ const DriverPost = () => {
     setShowContactModal(false);
     await postBooking();
   };
-  const postBooking = async () => {
-    if (!validateForm()) return;
 
-    setLoading(true);
+  const resetForm = () => {
+  // Trip Details
+  setTripType("one-way");
+  setVehicle("");
+  setAcceptMode("instant");
+  setContactType("");
 
-    try {
-      // === Smart Extra Requirements Logic ===
+  // Date & Time
+  setPickupDate(new Date());
+  setPickupTime(new Date());
+  setShowDatePicker(false);
+  setShowTimePicker(false);
 
-      let finalRequirements = { ...requirements }; // Start with current state
+  // Locations
+  setPickupLocation("");
+  setPickupCoordinates(null);
+  setDropLocation("");
+  setDropCoordinates(null);
+  setPickupSuggestions([]);
+  setDropSuggestions([]);
+  setPickupLoading(false);
+  setDropLoading(false);
 
-      // Rule 1: If "All Inclusive" is selected → force ALL to true
+  // Pricing
+  setTripDays("");
+  setTotalAmount("");
+  setCommission("");
+  setDriverEarning(0);
+  setExtraKm("");
+  setExtraHour("");
 
-      if (requirements.allinclusive) {
-        finalRequirements = {
-          onlydiesel: true,
+  // Preferences
+  setRequirements({
+    onlydiesel: false,
+    withcarrier: false,
+    ac: false,
+    musicsystem: false,
+    allinclusive: false,
+    allexclusive: false,
+    foodallowed: false,
+  });
 
-          withcarrier: true,
+  // Notes & Payment
+  setNotes("");
+  setPaymentMethod("cash");
 
-          ac: true,
+  // UI States
+  setShowSuccess(false);
+  setLoading(false);
+  setSuccessData(null);
+};
 
-          musicsystem: true,
+ const postBooking = async () => {
+  if (!validateForm()) return;
 
-          allinclusive: true,
+  setLoading(true);
+  try {
+    const requestData = {
+      tripType,
+      vehicleType: vehicle,
+      pickupDate: formatDateForBackend(pickupDate),
+      pickupTime: formatTimeForBackend(pickupTime),
+      pickupAddress: pickupLocation,
+      pickupLocation: pickupCoordinates,
+      dropAddress: dropLocation,
+      dropLocation: dropCoordinates,
+      totalAmount: parseFloat(totalAmount),
+      commissionAmount: parseFloat(commission) || 0,
+      driverEarning: parseFloat(driverEarning),
+      extraKmCharge: parseFloat(extraKm) || 0,
+      extraMinCharge: parseFloat(extraHour) || 0,
+      acceptBookingType: acceptMode,
+      extraRequirements: Object.entries(requirements)
+        .filter(([_, value]) => value)
+        .map(([key]) => key),
+      notes: notes.trim(),
+      paymentMethod,
+      contactType,
+    };
 
-          allexclusive: false, // All Exclusive must be false
+    let response;
+    if (rideId) {
+      // EDIT mode → PUT
+      response = await axios.put(`${API_URL_APP}/api/v1/update-post-ride/${rideId}`, requestData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    
 
-          foodallowed: true,
-        };
-      }
-
-      // Rule 2: If "All Exclusive" is selected → force ALL to false (except itself)
-      else if (requirements.allexclusive) {
-        finalRequirements = {
-          onlydiesel: false,
-
-          withcarrier: false,
-
-          ac: false,
-
-          musicsystem: false,
-
-          allinclusive: false, // All Inclusive must be false
-
-          allexclusive: true,
-
-          foodallowed: false,
-        };
-      }
-
-      // Otherwise: keep user selection as-is
-
-      // === Convert to array format for backend ===
-
-      const extraRequirementsList = [];
-
-      if (finalRequirements.onlydiesel)
-        extraRequirementsList.push("only_diesel");
-
-      if (finalRequirements.withcarrier)
-        extraRequirementsList.push("with_carrier");
-
-      if (finalRequirements.ac) extraRequirementsList.push("ac");
-
-      if (finalRequirements.musicsystem)
-        extraRequirementsList.push("music_system");
-
-      if (finalRequirements.allinclusive)
-        extraRequirementsList.push("all_inclusive");
-
-      if (finalRequirements.allexclusive)
-        extraRequirementsList.push("all_exclusive");
-
-      if (finalRequirements.foodallowed)
-        extraRequirementsList.push("food_allowed");
-
-      const requestData = {
-        tripType: tripType,
-
-        vehicleType: vehicle,
-
-        pickupDate: formatDateForBackend(pickupDate),
-
-        pickupTime: formatTimeForBackend(pickupTime),
-
-        pickupAddress: pickupLocation,
-        contactType,
-        pickupLocation: pickupCoordinates,
-
-        dropAddress: dropLocation,
-
-        dropLocation: dropCoordinates,
-
-        totalAmount: parseFloat(totalAmount),
-
-        commissionAmount: parseFloat(commission) || 0,
-
-        driverEarning: parseFloat(driverEarning),
-
-        extraKmCharge: parseFloat(extraKm) || 0,
-
-        extraMinCharge: parseFloat(extraHour) || 0,
-
-        acceptBookingType: acceptMode,
-
-        extraRequirements: extraRequirementsList,
-
-        notes: notes.trim(),
-
-        paymentMethod: paymentMethod,
-      };
-
-      if (tripType === "round-trip") {
-        if (tripDays) requestData.tripDays = parseInt(tripDays);
-
-        if (returnDate)
-          requestData.returnDate = formatDateForBackend(returnDate);
-
-        if (returnTime)
-          requestData.returnTime = formatTimeForBackend(returnTime);
-      }
-
-      console.log("Final Request →", requestData);
-
-      const response = await axios.post(
-        `${API_URL_APP}/api/v1/post-ride`,
-
-        requestData,
-
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.data.success) {
-        setSuccessData(response.data.data);
-        setShowSuccess(true); // resetForm();
-      } else {
-        Alert.alert("Error", response.data.message || "Failed to post ride");
-      }
-    } catch (error) {
-      console.error("Post ride error:", error);
-
-      if (error.response?.data?.missingFields) {
-        Alert.alert(
-          "Missing Fields",
-          error.response.data.missingFields.join(", ")
-        );
-      } else if (error.response) {
-        Alert.alert("Error", error.response.data?.message || "Server error");
-      } else {
-        Alert.alert("No Internet", "Please check your connection");
-      }
-    } finally {
-      setLoading(false);
+    } else {
+      // CREATE mode → POST
+      response = await axios.post(`${API_URL_APP}/api/v1/post-ride`, requestData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+              resetForm()
     }
-  };
+
+    if (response.data.success) {
+      setSuccessData(response.data.data);
+      setShowSuccess(true);
+    } else {
+      Alert.alert("Error", response.data.message || "Failed to submit ride");
+    }
+
+  } catch (error) {
+    console.error("Ride submit error:", error);
+    Alert.alert("Error", "Something went wrong while submitting ride");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   // Success Screen
   if (showSuccess) {
@@ -463,7 +483,8 @@ const DriverPost = () => {
               style={styles.doneButton}
               onPress={() => {
                 setShowSuccess(false);
-                // Reset form or navigate back
+                
+                navigation.navigate("MyTrip")
               }}
             >
               <Text style={styles.doneButtonText}>Done</Text>
@@ -528,7 +549,7 @@ const DriverPost = () => {
 
           {/* Vehicle Selection */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Vehicle Type *</Text>
+            <Text style={styles.sectionTitle}>Vehicle Type</Text>
             <TouchableOpacity
               style={styles.selector}
               onPress={() => setShowVehicleModal(true)}
@@ -550,7 +571,7 @@ const DriverPost = () => {
           {/* Date & Time */}
           <View style={styles.rowContainer}>
             <View style={styles.halfSection}>
-              <Text style={styles.sectionTitle}>Pickup Date *</Text>
+              <Text style={styles.sectionTitle}>Pickup Date</Text>
               <TouchableOpacity
                 onPress={() => setShowDatePicker(true)}
                 style={styles.dateTimeButton}
@@ -563,7 +584,7 @@ const DriverPost = () => {
             </View>
 
             <View style={styles.halfSection}>
-              <Text style={styles.sectionTitle}>Pickup Time *</Text>
+              <Text style={styles.sectionTitle}>Pickup Time</Text>
               <TouchableOpacity
                 onPress={() => setShowTimePicker(true)}
                 style={styles.dateTimeButton}
@@ -578,7 +599,7 @@ const DriverPost = () => {
 
           {/* Locations */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pickup Location *</Text>
+            <Text style={styles.sectionTitle}>Pickup Location</Text>
             <View style={styles.locationContainer}>
               <View style={styles.locationInputContainer}>
                 <MapPin size={20} color="#EF4444" />
@@ -628,7 +649,7 @@ const DriverPost = () => {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Drop Location *</Text>
+            <Text style={styles.sectionTitle}>Drop Location</Text>
             <View style={styles.locationContainer}>
               <View style={styles.locationInputContainer}>
                 <MapPin size={20} color="#10B981" />
@@ -678,7 +699,7 @@ const DriverPost = () => {
           {/* Round Trip Days */}
           {tripType === "round-trip" && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Number of Days *</Text>
+              <Text style={styles.sectionTitle}>Number of Days</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. 5"
@@ -693,9 +714,8 @@ const DriverPost = () => {
           {/* Pricing */}
           <View style={styles.rowContainer}>
             <View style={styles.halfSection}>
-              <Text style={styles.sectionTitle}>Total Amount *</Text>
+              <Text style={styles.sectionTitle}>Total Amount</Text>
               <View style={styles.amountContainer}>
-                <DollarSign size={18} color="#6B7280" />
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
@@ -711,7 +731,6 @@ const DriverPost = () => {
             <View style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Commission</Text>
               <View style={styles.amountContainer}>
-                <DollarSign size={18} color="#6B7280" />
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
@@ -743,7 +762,6 @@ const DriverPost = () => {
             <View style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Extra KM Charge</Text>
               <View style={styles.amountContainer}>
-                <DollarSign size={18} color="#6B7280" />
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
@@ -759,7 +777,6 @@ const DriverPost = () => {
             <View style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Extra Hour Charge</Text>
               <View style={styles.amountContainer}>
-                <DollarSign size={18} color="#6B7280" />
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
@@ -968,22 +985,76 @@ const DriverPost = () => {
                   ]}
                   onPress={() => setContactType("call")}
                 >
-                  <View style={styles.contactIcon}>
-                    <Phone
-                      size={28}
-                      color={contactType === "call" ? "#FFF" : "#DC2626"}
-                    />
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    {/* Call Icon */}
+                    <View
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: 25,
+                        backgroundColor:
+                          contactType === "call" ? "#DC2626" : "#F3F4F6",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        position: "relative",
+                      }}
+                    >
+                      <Phone
+                        size={28}
+                        color={contactType === "call" ? "#FFF" : "#DC2626"}
+                      />
+                    </View>
+                    <View
+                      style={{
+                        width: 15,
+                        height: 15,
+                        borderRadius: 25,
+
+                        justifyContent: "center",
+                        alignItems: "center",
+                        position: "relative",
+                      }}
+                    >
+                      <Plus
+                        size={10}
+                        color={contactType === "call" ? "#000" : "#000"}
+                      />
+                    </View>
+                    {/* Chat Icon */}
+                    <View
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: 25,
+                        backgroundColor:
+                          contactType === "call" ? "#10B981" : "#F3F4F6",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <MessageCircle
+                        size={28}
+                        color={contactType === "call" ? "#FFF" : "#10B981"}
+                      />
+                    </View>
                   </View>
+
                   <Text
                     style={[
                       styles.contactOptionText,
                       contactType === "call" && styles.contactOptionTextActive,
                     ]}
                   >
-                    Phone Call
+                  Call + Chat
                   </Text>
                   <Text style={styles.contactDesc}>
-                    Riders can call you directly
+                    Riders can Chat & call you directly
                   </Text>
                 </TouchableOpacity>
 
@@ -997,7 +1068,7 @@ const DriverPost = () => {
                   <View style={styles.contactIcon}>
                     <MessageCircle
                       size={28}
-                      color={contactType === "chat" ? "#FFF" : "#10B981"}
+                      color={contactType === "chat" ? "#000" : "#10B981"}
                     />
                   </View>
                   <Text
@@ -1441,101 +1512,101 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   // Contact Modal Styles
-contactModal: {
-  backgroundColor: "#FFFFFF",
-  marginHorizontal: 24,
-  borderRadius: 20,
-  padding: 24,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 10 },
-  shadowOpacity: 0.25,
-  shadowRadius: 20,
-  elevation: 20,
-},
-contactTitle: {
-  fontSize: 20,
-  fontWeight: "700",
-  color: "#1F2937",
-  textAlign: "center",
-  marginBottom: 8,
-},
-contactSubtitle: {
-  fontSize: 14,
-  color: "#6B7280",
-  textAlign: "center",
-  marginBottom: 24,
-},
-contactOptions: {
-  gap: 16,
-  marginBottom: 24,
-},
-contactOption: {
-  backgroundColor: "#F9FAFB",
-  borderRadius: 16,
-  padding: 20,
-  borderWidth: 2,
-  borderColor: "transparent",
-  alignItems: "center",
-},
-contactOptionActive: {
-  borderColor: "#000",
-  backgroundColor: "#00000005",
-},
-contactIcon: {
-  width: 64,
-  height: 64,
-  borderRadius: 32,
-  backgroundColor: "#F3F4F6",
-  justifyContent: "center",
-  alignItems: "center",
-  marginBottom: 12,
-},
-contactOptionText: {
-  fontSize: 16,
-  fontWeight: "600",
-  color: "#374151",
-  marginBottom: 4,
-},
-contactOptionTextActive: {
-  color: "#000",
-  fontWeight: "700",
-},
-contactDesc: {
-  fontSize: 13,
-  color: "#6B7280",
-  textAlign: "center",
-},
-contactButtons: {
-  flexDirection: "row",
-  gap: 12,
-},
-cancelBtn: {
-  flex: 1,
-  padding: 16,
-  borderRadius: 12,
-  backgroundColor: "#F3F4F6",
-  alignItems: "center",
-},
-cancelText: {
-  fontSize: 15,
-  fontWeight: "600",
-  color: "#374151",
-},
-submitContactBtn: {
-  flex: 2,
-  padding: 16,
-  borderRadius: 12,
-  backgroundColor: "#000",
-  alignItems: "center",
-},
-submitContactBtnDisabled: {
-  backgroundColor: "#9CA3AF",
-},
-submitContactText: {
-  color: "#FFFFFF",
-  fontSize: 15,
-  fontWeight: "600",
-},
+  contactModal: {
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 24,
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  contactTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1F2937",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  contactSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  contactOptions: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  contactOption: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: "transparent",
+    alignItems: "center",
+  },
+  contactOptionActive: {
+    borderColor: "#000",
+    backgroundColor: "#00000005",
+  },
+  contactIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  contactOptionText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+  },
+  contactOptionTextActive: {
+    color: "#000",
+    fontWeight: "700",
+  },
+  contactDesc: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  contactButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+  },
+  cancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  submitContactBtn: {
+    flex: 2,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#000",
+    alignItems: "center",
+  },
+  submitContactBtnDisabled: {
+    backgroundColor: "#9CA3AF",
+  },
+  submitContactText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });
 
 export default DriverPost;

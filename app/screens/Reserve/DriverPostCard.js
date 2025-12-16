@@ -19,8 +19,8 @@ export default function DriverPostCard({ trip }) {
       pickup={trip?.pickupAddress || ""}
       drop={trip?.dropAddress || ""}
       tripType={`${
-        trip.tripType === "one-way" ? "One Way" : "Round Trip"
-      } ${"60"}Km`}
+        trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+      } - ${"60"}Km`}
       date={formatDate(trip?.pickupDate) || ""}
       time={formatTime(trip?.pickupTime) || ""}
       onChatPress={() => console.log("Chat clicked")}

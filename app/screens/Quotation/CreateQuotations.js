@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -6,36 +6,50 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
-  StatusBar,
   Image,
+  KeyboardAvoidingView,
   Switch,
+  Platform,
 } from "react-native";
-import {
-  MaterialCommunityIcons,
-  Ionicons,
-  FontAwesome5,
-} from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
-import { useNavigation } from "@react-navigation/native";
-import { UniversalAlert } from "../common/UniversalAlert";
 import { API_URL_APP } from "../../constant/api";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import loginStore from "../../store/auth.store";
 import useDriverStore from "../../store/driver.store";
+import { UniversalAlert } from "../common/UniversalAlert";
+import { CommonActions } from "@react-navigation/native";
 
-export default function CreateQuotations() {
-  const navigation = useNavigation();
+const GST_RATE = 5;
+
+export default function CreateQuotationForm({ navigation, route }) {
   const { token } = loginStore();
   const { driver } = useDriverStore();
+  const { id } = route.params || {};
+  const scrollViewRef = useRef(null);
+  const scrollToInput = (reactNode) => {
+    scrollViewRef.current?.scrollToFocusedInput(reactNode);
+  };
 
-  // Loading & Data States
+  const customerNameRef = useRef(null);
+  const customerContactRef = useRef(null);
+  const customerAddressRef = useRef(null);
+  const vehicleTypeRef = useRef(null);
+  const pickupPlaceRef = useRef(null);
+  const dropPlaceRef = useRef(null);
+  const termsConditionsRef = useRef(null);
+  // console.log(id)
+  const [documentType, setDocumentType] = useState("quotation");
+  const [multiStop, setMultiStop] = useState(false);
+  const [stops, setStops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [company, setCompany] = useState(null);
+  const [hasGST, setHasGST] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(true);
 
-  // Alert State
+  // Alert
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
     type: "success",
@@ -45,59 +59,54 @@ export default function CreateQuotations() {
     onPrimaryPress: () => setAlertVisible(false),
   });
 
-  // Form State - Invoice
-  const [invoiceDate, setInvoiceDate] = useState(new Date());
-  const [showInvoiceDatePicker, setShowInvoiceDatePicker] = useState(false);
+  // Form States
+  const [tripType, setTripType] = useState("one_way");
+  const [pricingMode, setPricingMode] = useState("km_wise"); // km_wise or day_wise
 
-  // Form State - Customer Details
+  // Customer
   const [customerName, setCustomerName] = useState("");
   const [customerContact, setCustomerContact] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
 
-  // Form State - Trip Type
-  const [tripType, setTripType] = useState("one_way"); // 'one_way' or 'round_trip'
-
-  // Form State - Pricing Mode
-  const [pricingMode, setPricingMode] = useState("detailed"); // 'detailed' or 'simplified'
-
-  // Form State - Trip Details
+  // Trip
+  const [vehicleType, setVehicleType] = useState("");
   const [pickupPlace, setPickupPlace] = useState("");
   const [dropPlace, setDropPlace] = useState("");
-  const [vehicleType, setVehicleType] = useState("");
   const [pickupDate, setPickupDate] = useState(new Date());
-  const [pickupTime, setPickupTime] = useState("");
+  const [pickupTime, setPickupTime] = useState(new Date());
   const [returnDate, setReturnDate] = useState(new Date());
-  const [returnTime, setReturnTime] = useState("");
+  const [returnTime, setReturnTime] = useState(new Date());
 
-  // Detailed Pricing Fields
-  const [totalDays, setTotalDays] = useState("1");
+  // Km Wise
+  const [totalKm, setTotalKm] = useState("");
+  const [perKmRate, setPerKmRate] = useState("");
+
+  // Day Wise
   const [perDayCharges, setPerDayCharges] = useState("");
-  const [tollTax, setTollTax] = useState("0");
+  const [totalDays, setTotalDays] = useState("1");
+  const [tollTax, setTollTax] = useState("");
 
-  // Simplified Pricing Field
-  const [totalAmount, setTotalAmount] = useState("");
+  // Discount & Additional
+  const [discount, setDiscount] = useState("");
+  const [additionalCharges, setAdditionalCharges] = useState([]); // { title, amount }
 
-  // Extra Charges
-  const [extraCharges, setExtraCharges] = useState([]);
+  // Fixed Charges
+  const [stateTax, setStateTax] = useState("");
+  const [driverCharge, setDriverCharge] = useState("");
+  const [parkingCharge, setParkingCharge] = useState("");
 
-  // Form State - Additional Charges (Summary)
-  const [stateTax, setStateTax] = useState("0");
-  const [driverCharge, setDriverCharge] = useState("0");
-  const [parkingCharge, setParkingCharge] = useState("0");
-
-  // Form State - Bank Details
+  // Bank
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [ifscCode, setIfscCode] = useState("");
   const [accountHolderName, setAccountHolderName] = useState("");
-  const [termsConditions, setTermsConditions] = useState(
-    "Thank you for doing business with us."
-  );
+  const [termsConditions, setTermsConditions] = useState("");
 
-  // Date Picker Visibility
-  const [showPickupDatePicker, setShowPickupDatePicker] = useState(false);
-  const [showPickupTimePicker, setShowPickupTimePicker] = useState(false);
-  const [showReturnDatePicker, setShowReturnDatePicker] = useState(false);
-  const [showReturnTimePicker, setShowReturnTimePicker] = useState(false);
+  // Date Picker
+  const [showPickupDate, setShowPickupDate] = useState(false);
+  const [showPickupTime, setShowPickupTime] = useState(false);
+  const [showReturnDate, setShowReturnDate] = useState(false);
+  const [showReturnTime, setShowReturnTime] = useState(false);
 
   const showAlert = (type, title, message, onClose = null) => {
     setAlertConfig({
@@ -110,43 +119,33 @@ export default function CreateQuotations() {
     setAlertVisible(true);
   };
 
-  // Fetch Company Details
   const fetchCompany = async () => {
     try {
       setLoading(true);
       const res = await axios.get(`${API_URL_APP}/api/v1/my-company`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
       const data = res.data?.data;
-
-      if (!data || Object.keys(data).length === 0) {
-        setCompany(null);
+      if (data && Object.keys(data).length > 0) {
+        setCompany(data);
+        setHasGST(data.has_gst || false);
+        setAccountHolderName(data.company_name || "");
+        if (driver?.BankDetails) {
+          setBankName(driver.BankDetails.bank_name || "");
+          setAccountNumber(driver.BankDetails.account_number || "");
+          setIfscCode(driver.BankDetails.ifsc_code || "");
+        }
+      } else {
         showAlert(
           "warning",
-          "Company Details Required",
-          "Please add your company details to create quotations.",
+          "Company Required",
+          "Please add company details first.",
           () => {
-            setAlertVisible(false);
             navigation.navigate("company-details");
           }
         );
-      } else {
-        setCompany(data);
-
-        // Pre-fill bank details
-        const bankDetails = driver?.BankDetails;
-        if (bankDetails) {
-          setBankName(bankDetails.bank_name || "");
-          setAccountNumber(bankDetails.account_number || "");
-          setIfscCode(bankDetails.ifsc_code || "");
-          setAccountHolderName(
-            bankDetails.account_holder_name || data.company_name || ""
-          );
-        }
       }
     } catch (err) {
-      console.error("Fetch company error:", err);
       showAlert("error", "Error", "Failed to load company details");
     } finally {
       setLoading(false);
@@ -157,830 +156,1185 @@ export default function CreateQuotations() {
     fetchCompany();
   }, []);
 
-  // Auto-calculate total days for round trip
+  // Auto calculate days for round trip
   useEffect(() => {
     if (tripType === "round_trip" && pickupDate && returnDate) {
-      const diffTime = Math.abs(returnDate - pickupDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      setTotalDays(diffDays > 0 ? diffDays.toString() : "1");
+      const diff = Math.abs(returnDate - pickupDate);
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1; // inclusive
+      setTotalDays(days > 1 ? days.toString() : "1");
     }
   }, [pickupDate, returnDate, tripType]);
 
-  // Form Validation
-  const validateForm = () => {
-    const validations = [
-      { value: customerName.trim(), message: "Customer name is required" },
-      { value: customerContact.trim(), message: "Customer contact is required" },
-      { value: pickupPlace.trim(), message: "Pickup place is required" },
-      { value: dropPlace.trim(), message: "Drop place is required" },
-      { value: vehicleType.trim(), message: "Vehicle type is required" },
-      { value: pickupTime.trim(), message: "Pickup time is required" },
-      { value: bankName.trim(), message: "Bank name is required" },
-      { value: accountNumber.trim(), message: "Account number is required" },
-      { value: ifscCode.trim(), message: "IFSC code is required" },
-      { value: accountHolderName.trim(), message: "Account holder name is required" },
-    ];
+  const formatDate = (date) =>
+    date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
 
-    // Round trip validations
-    if (tripType === "round_trip") {
-      validations.push(
-        { value: returnTime.trim(), message: "Return time is required" }
+  const formatTime = (date) =>
+    date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+  const addStop = () => {
+    setStops([...stops, { location: "" }]);
+  };
+
+  // Update stop at index
+  const updateStop = (index, value) => {
+    const updated = [...stops];
+    updated[index].location = value;
+    setStops(updated);
+  };
+
+  // Remove stop at index
+  const removeStop = (index) => {
+    setStops(stops.filter((_, i) => i !== index));
+  };
+
+  const fetchQuotationDetail = async () => {
+    try {
+      setLoading(true);
+
+      const response = await axios.get(
+        `${API_URL_APP}/api/v1/get-quotation/${id}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
+
+      const data = response.data?.data;
+      if (!data) return;
+
+      /* -----------------------------
+       CUSTOMER
+    ----------------------------- */
+      setCustomerName(data.bill_to?.customer_name || "");
+      setCustomerContact(data.bill_to?.contact_number || "");
+      setCustomerAddress(data.bill_to?.address || "");
+
+      /* -----------------------------
+       TRIP
+    ----------------------------- */
+      setTripType(data.trip_type || "one_way");
+
+      const trip = data.trip_details?.[0] || {};
+      const place = trip.pickup_drop_place || "";
+
+      if (place.includes("to")) {
+        const [pickup, drop] = place.split(/\s+to\s+/i); // 👈 safe split
+
+        setPickupPlace(pickup?.trim() || "");
+        setDropPlace(drop?.trim() || "");
+      } else {
+        setPickupPlace(place);
+        setDropPlace("");
+      }
+
+      if (data.document_type) {
+        setDocumentType(data.document_type);
+      }
+      setVehicleType(trip.vehicle_type || "");
+
+      if (trip.pickup_date) setPickupDate(new Date(trip.pickup_date));
+      if (trip.pickup_time)
+        setPickupTime(new Date(`1970-01-01T${trip.pickup_time}`));
+
+      if (trip.return_date) setReturnDate(new Date(trip.return_date));
+      if (trip.return_time)
+        setReturnTime(new Date(`1970-01-01T${trip.return_time}`));
+
+      /* -----------------------------
+       PRICING
+    ----------------------------- */
+      if (trip.pricing_mode === "day_wise") {
+        setPricingMode("day_wise");
+        setPerDayCharges(trip.per_day_charge?.toString() || "");
+        setTotalDays(trip.total_days?.toString() || "1");
+        setTollTax(trip.toll_tax?.toString() || "");
+      } else {
+        setPricingMode("km_wise");
+        setTotalKm(trip.total_km?.toString() || "");
+        setPerKmRate(trip.per_km_rate?.toString() || "");
+      }
+
+      if (data.multi_stops) {
+        setMultiStop(true);
+
+        const stops = data.stops || [];
+
+        setStops(
+          stops.map((stop) => ({
+            location: typeof stop === "string" ? stop : stop.place || "",
+          }))
+        );
+      } else {
+        setMultiStop(false);
+        setStops([]); // clear stops
+      }
+
+      /* -----------------------------
+       SUMMARY / CHARGES
+    ----------------------------- */
+      const summary = data.summary || {};
+
+      setDiscount(summary.discount?.toString() || "");
+      setStateTax(summary.state_tax?.toString() || "");
+      setDriverCharge(summary.driver_charge?.toString() || "");
+      setParkingCharge(summary.parking_charge?.toString() || "");
+
+      setAdditionalCharges(
+        summary.additional_charges?.map((item) => ({
+          title: item.title || "",
+          amount: item.amount?.toString() || "",
+        })) || []
+      );
+
+      /* -----------------------------
+       BANK DETAILS
+    ----------------------------- */
+      const bank = data.bank_details || {};
+      setBankName(bank.bank_name || "");
+      setAccountNumber(bank.account_number || "");
+      setIfscCode(bank.ifsc_code || "");
+      setAccountHolderName(bank.account_holder_name || "");
+
+      /* -----------------------------
+       TERMS
+    ----------------------------- */
+
+      setTermsConditions(data.description || "");
+    } catch (error) {
+      console.log("❌ fetchQuotationDetail error:", error?.response?.data);
+      // showAlert("error", "Error", "Failed to load quotation details");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Pricing mode validations
-    if (pricingMode === "detailed") {
-      validations.push(
-        { value: perDayCharges && parseFloat(perDayCharges) > 0, message: "Valid per day charges are required" }
-      );
+  useEffect(() => {
+    if (id) {
+      fetchQuotationDetail();
+    }
+  }, [id]);
+
+  // Calculate Fare (only base fare before additions)
+  const fare = React.useMemo(() => {
+    if (pricingMode === "km_wise") {
+      return (parseFloat(totalKm) || 0) * (parseFloat(perKmRate) || 0);
     } else {
-      validations.push(
-        { value: totalAmount && parseFloat(totalAmount) > 0, message: "Valid total amount is required" }
-      );
+      const days = parseInt(totalDays) || 1;
+      const perDay = parseFloat(perDayCharges) || 0;
+      const toll = parseFloat(tollTax) || 0;
+      return perDay * days + toll;
+    }
+  }, [pricingMode, totalKm, perKmRate, perDayCharges, totalDays, tollTax]);
+
+  const subtotal = fare;
+
+  // Additional fixed charges sum
+  const fixedAdditions =
+    (parseFloat(stateTax) || 0) +
+    (parseFloat(driverCharge) || 0) +
+    (parseFloat(parkingCharge) || 0) +
+    additionalCharges.reduce(
+      (sum, item) => sum + (parseFloat(item.amount) || 0),
+      0
+    );
+
+  // Apply discount & GST only on fare
+  const discountAmount = parseFloat(discount) || 0;
+  const afterDiscount = subtotal - discountAmount;
+  const gstAmount = hasGST ? (afterDiscount * GST_RATE) / 100 : 0;
+
+  // Grand Total
+  const total = afterDiscount + gstAmount + fixedAdditions;
+
+  const addCustomCharge = () => {
+    setAdditionalCharges([...additionalCharges, { title: "", amount: "" }]);
+  };
+
+  const updateCustomCharge = (index, field, value) => {
+    const updated = [...additionalCharges];
+    updated[index][field] = value;
+    setAdditionalCharges(updated);
+  };
+
+  const removeCustomCharge = (index) => {
+    setAdditionalCharges(additionalCharges.filter((_, i) => i !== index));
+  };
+
+  const handleCreateQuotation = async () => {
+    // Validation (unchanged)
+    if (
+      !customerName.trim() ||
+      !customerContact.trim() ||
+      !customerAddress.trim() ||
+      !pickupPlace.trim() ||
+      !dropPlace.trim() ||
+      !vehicleType.trim()
+    ) {
+      showAlert("error", "Validation", "Please fill all required fields");
+      return;
     }
 
-    for (const validation of validations) {
-      if (!validation.value) {
-        showAlert("error", "Validation Error", validation.message);
-        return false;
+    if (pricingMode === "km_wise") {
+      if (!totalKm || !perKmRate || fare <= 0) {
+        showAlert("error", "Invalid Fare", "Please enter valid Km and Rate");
+        return;
+      }
+    } else {
+      if (!perDayCharges || parseFloat(perDayCharges) <= 0 || !totalDays) {
+        showAlert(
+          "error",
+          "Invalid Fare",
+          "Please enter valid day charges and days"
+        );
+        return;
       }
     }
 
-    return true;
-  };
-
-  // Handle Create Quotation
-  const handleCreateQuotation = async () => {
-    if (!validateForm()) return;
+    if (
+      showBankDetails &&
+      (!bankName.trim() || !accountNumber.trim() || !ifscCode.trim())
+    ) {
+      showAlert("error", "Bank Details", "Please fill all bank details");
+      return;
+    }
 
     try {
       setSaving(true);
 
-      // Build trip details based on pricing mode
-      const tripDetail = {
-        pickup_drop_place: `${pickupPlace.trim()} To ${dropPlace.trim()}`,
-        vehicle_type: vehicleType.trim(),
-        pickup_date: pickupDate.toISOString().split("T")[0],
-        pickup_time: pickupTime.trim(),
-        extra_charges: extraCharges.filter(ec => ec.description && ec.amount),
-      };
+      // Build the pickup_drop_place string (with multi-stop support)
+      // const pickupDropPlace = multiStop
+      //   ? `${pickupPlace} → ${stops
+      //       .map((s) => s.location.trim())
+      //       .filter(Boolean)
+      //       .join(" → ")} → ${dropPlace}`
+      //   : `${pickupPlace} to ${dropPlace}`;
 
-      // Add return details for round trip
-      if (tripType === "round_trip") {
-        tripDetail.return_date = returnDate.toISOString().split("T")[0];
-        tripDetail.return_time = returnTime.trim();
-      }
 
-      // Add pricing based on mode
-      if (pricingMode === "simplified") {
-        tripDetail.TotalAmountOftrip = parseFloat(totalAmount);
-      } else {
-        tripDetail.total_days = parseInt(totalDays);
-        tripDetail.per_day_cab_charges = parseFloat(perDayCharges);
-        tripDetail.toll_tax_amount = parseFloat(tollTax) || 0;
-      }
+         const pickupDropPlace =`${pickupPlace} to ${dropPlace}`;
 
-      const quotationData = {
-        invoice_date: invoiceDate.toISOString().split("T")[0],
+      const payload = {
+        // Customer
         bill_to: {
           customer_name: customerName.trim(),
           contact_number: customerContact.trim(),
+          address: customerAddress.trim(),
         },
+
+        // Trip Details
         trip_type: tripType,
-        trip_details: [tripDetail],
+        vehicle_type: vehicleType.trim(),
+
+        pickup_place: pickupPlace.trim(),
+        drop_place: dropPlace.trim(),
+        pickup_drop_place: pickupDropPlace,
+
+        pickup_date: pickupDate.toISOString().split("T")[0],
+        pickup_time: formatTime(pickupTime),
+
+        ...(tripType === "round_trip" && {
+          return_date: returnDate.toISOString().split("T")[0],
+          return_time: formatTime(returnTime),
+        }),
+
+        // Multi-stop
+        ...(multiStop && {
+          multi_stop: true,
+          stops: stops
+            .map((s) => s.location.trim())
+            .filter((location) => location !== ""),
+        }),
+
+        // Pricing
+        pricing_mode: pricingMode,
+
+        ...(pricingMode === "km_wise"
+          ? {
+              total_km: parseFloat(totalKm),
+              per_km_rate: parseFloat(perKmRate),
+            }
+          : {
+              per_day_charges: parseFloat(perDayCharges),
+              total_days: parseInt(totalDays),
+              toll_tax: parseFloat(tollTax) || 0,
+            }),
+
+        // Document Type (Quotation or Invoice)
+        document_type: documentType,
+
+        // Summary
         summary: {
+          subtotal: parseFloat(subtotal.toFixed(2)),
+          discount: parseFloat(discount) || 0,
+          gst_applied: hasGST,
+          gst_amount: parseFloat(gstAmount.toFixed(2)),
           state_tax: parseFloat(stateTax) || 0,
           driver_charge: parseFloat(driverCharge) || 0,
           parking_charge: parseFloat(parkingCharge) || 0,
+
+          additional_charges: additionalCharges
+            .filter((c) => c.title.trim() && parseFloat(c.amount) > 0)
+            .map((c) => ({
+              title: c.title.trim(),
+              amount: parseFloat(c.amount),
+            })),
+
+          total: parseFloat(total.toFixed(2)),
         },
-        payment_mode: "bank_transfer",
-        bank_details: {
-          bank_name: bankName.trim(),
-          account_number: accountNumber.trim(),
-          ifsc_code: ifscCode.trim(),
-          account_holder_name: accountHolderName.trim(),
-        },
+
+        // Bank Details
+        show_bank_details: showBankDetails,
+        bank_details: showBankDetails
+          ? {
+              bank_name: bankName.trim(),
+              account_number: accountNumber.trim(),
+              ifsc_code: ifscCode.trim(),
+              account_holder_name: accountHolderName.trim(),
+            }
+          : null,
+
+        // Terms
         terms_and_conditions: termsConditions.trim(),
       };
 
-      const response = await axios.post(
-        `${API_URL_APP}/api/v1/create-quotation`,
-        quotationData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      let response;
+      if (id) {
+        // EDIT MODE - Update existing quotation/invoice
+        response = await axios.put(
+          `${API_URL_APP}/api/v1/update-quotation/${id}`,
+          payload,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
 
-      if (response.data.success) {
         showAlert(
           "success",
-          "Success",
-          "Quotation created successfully!",
+          "Updated!",
+          `${
+            documentType === "invoice" ? "Tax Invoice" : "Quotation"
+          } updated successfully!`,
           () => {
-            setAlertVisible(false);
-            navigation.goBack();
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: "see-quotation" }],
+              })
+            );
+          }
+        );
+      } else {
+        // CREATE MODE - New quotation/invoice
+        response = await axios.post(
+          `${API_URL_APP}/api/v1/create-quotation`,
+          payload,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        showAlert(
+          "success",
+          "Success!",
+          `${
+            documentType === "invoice" ? "Tax Invoice" : "Quotation"
+          } created successfully!`,
+          () => {
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: "see-quotation" }],
+              })
+            );
           }
         );
       }
+
+      console.log("API Response:", response.data);
     } catch (error) {
-      console.error("Create quotation error:", error);
-      const errorMessage =
-        error.response?.data?.message || "Failed to create quotation";
-      showAlert("error", "Error", errorMessage);
+      console.error("API Error:", error.response?.data || error.message);
+
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        (id
+          ? "Failed to update document"
+          : `Failed to create ${
+              documentType === "invoice" ? "invoice" : "quotation"
+            }`);
+
+      showAlert("error", "Error", message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Format time from Date object
-  const formatTime = (date) => {
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const formattedHours = hours % 12 || 12;
-    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-    return `${formattedHours}:${formattedMinutes} ${ampm}`;
-  };
-
-  // Add Extra Charge
-  const addExtraCharge = () => {
-    setExtraCharges([...extraCharges, { description: "", amount: "" }]);
-  };
-
-  // Remove Extra Charge
-  const removeExtraCharge = (index) => {
-    const updated = extraCharges.filter((_, i) => i !== index);
-    setExtraCharges(updated);
-  };
-
-  // Update Extra Charge
-  const updateExtraCharge = (index, field, value) => {
-    const updated = [...extraCharges];
-    updated[index][field] = value;
-    setExtraCharges(updated);
-  };
-
-  // Loading Screen
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#FF1744" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF1744" />
-          <Text style={styles.loadingText}>Loading company details...</Text>
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Main Render
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Create Quotation</Text>
-          {company && (
-            <Text style={styles.headerSubtitle}>{company.company_name}</Text>
-          )}
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 50}
       >
-        {/* Company Info Card */}
-        {company && (
-          <View style={styles.companyCard}>
-            <View style={styles.companyIconContainer}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            {id ? "Edit " : "Create "}
+            {documentType === "quotation" ? "Quotation" : "Tax Invoice"}
+          </Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {company && (
+            <View style={styles.profileCard}>
+              {/* Left: Avatar */}
               <Image
-                source={{ uri: company?.logo?.url }}
-                style={{ width: 40, height: 40 }}
-                resizeMode="cover"
+                source={{
+                  uri: company.logo?.url || "https://via.placeholder.com/100",
+                }}
+                style={styles.profileImage}
               />
-            </View>
-            <View style={styles.companyInfo}>
-              <Text style={styles.companyName}>{company.company_name}</Text>
-              {company.email && (
-                <Text style={styles.companyDetail}>
-                  <Ionicons name="mail" size={12} color="#666" />{" "}
-                  {company.email}
+
+              {/* Middle: Info */}
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName} numberOfLines={1}>
+                  {company.company_name}
                 </Text>
-              )}
-              {company.phone && (
-                <Text style={styles.companyDetail}>
-                  <Ionicons name="call" size={12} color="#666" />{" "}
-                  {company.phone}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
 
-        {/* Invoice Date Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons
-              name="calendar-clock"
-              size={20}
-              color="#FF1744"
-            />
-            <Text style={styles.sectionTitle}>Invoice Date</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.dateButton}
-            onPress={() => setShowInvoiceDatePicker(true)}
-          >
-            <View style={styles.dateButtonContent}>
-              <Ionicons name="calendar-outline" size={20} color="#FF1744" />
-              <Text style={styles.dateButtonText}>
-                {invoiceDate.toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </Text>
-            </View>
-            <Ionicons name="chevron-down" size={20} color="#999" />
-          </TouchableOpacity>
-          {showInvoiceDatePicker && (
-            <DateTimePicker
-              value={invoiceDate}
-              mode="date"
-              display="default"
-              onChange={(event, selectedDate) => {
-                setShowInvoiceDatePicker(false);
-                if (selectedDate) setInvoiceDate(selectedDate);
-              }}
-            />
-          )}
-        </View>
-
-        {/* Customer Details Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="person" size={20} color="#FF1744" />
-            <Text style={styles.sectionTitle}>Customer Details</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Customer Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter customer name"
-              placeholderTextColor="#999"
-              value={customerName}
-              onChangeText={setCustomerName}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Contact Number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter 10-digit mobile number"
-              placeholderTextColor="#999"
-              value={customerContact}
-              onChangeText={setCustomerContact}
-              keyboardType="phone-pad"
-              maxLength={10}
-            />
-          </View>
-        </View>
-
-        {/* Trip Type Selection */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons
-              name="swap-horizontal"
-              size={20}
-              color="#FF1744"
-            />
-            <Text style={styles.sectionTitle}>Trip Type</Text>
-          </View>
-
-          <View style={styles.tripTypeContainer}>
-            <TouchableOpacity
-              style={[
-                styles.tripTypeButton,
-                tripType === "one_way" && styles.tripTypeButtonActive,
-              ]}
-              onPress={() => setTripType("one_way")}
-            >
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={20}
-                color={tripType === "one_way" ? "#fff" : "#FF1744"}
-              />
-              <Text
-                style={[
-                  styles.tripTypeText,
-                  tripType === "one_way" && styles.tripTypeTextActive,
-                ]}
-              >
-                One Way
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.tripTypeButton,
-                tripType === "round_trip" && styles.tripTypeButtonActive,
-              ]}
-              onPress={() => setTripType("round_trip")}
-            >
-              <MaterialCommunityIcons
-                name="arrow-left-right"
-                size={20}
-                color={tripType === "round_trip" ? "#fff" : "#FF1744"}
-              />
-              <Text
-                style={[
-                  styles.tripTypeText,
-                  tripType === "round_trip" && styles.tripTypeTextActive,
-                ]}
-              >
-                Round Trip
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Pricing Mode Selection */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons
-              name="cash-multiple"
-              size={20}
-              color="#FF1744"
-            />
-            <Text style={styles.sectionTitle}>Pricing Mode</Text>
-          </View>
-
-          <View style={styles.pricingModeContainer}>
-            <TouchableOpacity
-              style={[
-                styles.pricingModeButton,
-                pricingMode === "detailed" && styles.pricingModeButtonActive,
-              ]}
-              onPress={() => setPricingMode("detailed")}
-            >
-              <Text
-                style={[
-                  styles.pricingModeText,
-                  pricingMode === "detailed" && styles.pricingModeTextActive,
-                ]}
-              >
-                Detailed (Per Day)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.pricingModeButton,
-                pricingMode === "simplified" &&
-                  styles.pricingModeButtonActive,
-              ]}
-              onPress={() => setPricingMode("simplified")}
-            >
-              <Text
-                style={[
-                  styles.pricingModeText,
-                  pricingMode === "simplified" &&
-                    styles.pricingModeTextActive,
-                ]}
-              >
-                Simplified (Total)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Trip Details Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="car" size={20} color="#FF1744" />
-            <Text style={styles.sectionTitle}>Trip Details</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pickup Place *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter pickup location"
-              placeholderTextColor="#999"
-              value={pickupPlace}
-              onChangeText={setPickupPlace}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Drop Place *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter drop location"
-              placeholderTextColor="#999"
-              value={dropPlace}
-              onChangeText={setDropPlace}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Vehicle Type *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Ertiga SUV, Innova Crysta"
-              placeholderTextColor="#999"
-              value={vehicleType}
-              onChangeText={setVehicleType}
-            />
-          </View>
-
-          {/* Pickup Date & Time Row */}
-          <View style={styles.row}>
-            <View style={styles.halfWidth}>
-              <Text style={styles.label}>Pickup Date *</Text>
-              <TouchableOpacity
-                style={styles.dateInputSmall}
-                onPress={() => setShowPickupDatePicker(true)}
-              >
-                <Text style={styles.dateTextSmall}>
-                  {pickupDate.toLocaleDateString("en-IN")}
-                </Text>
-                <Ionicons name="calendar" size={16} color="#666" />
-              </TouchableOpacity>
-              {showPickupDatePicker && (
-                <DateTimePicker
-                  value={pickupDate}
-                  mode="date"
-                  display="default"
-                  onChange={(event, selectedDate) => {
-                    setShowPickupDatePicker(false);
-                    if (selectedDate) setPickupDate(selectedDate);
-                  }}
-                />
-              )}
-            </View>
-
-            <View style={styles.halfWidth}>
-              <Text style={styles.label}>Pickup Time *</Text>
-              <TouchableOpacity
-                style={styles.dateInputSmall}
-                onPress={() => setShowPickupTimePicker(true)}
-              >
-                <Text style={styles.dateTextSmall}>
-                  {pickupTime || "Select"}
-                </Text>
-                <Ionicons name="time" size={16} color="#666" />
-              </TouchableOpacity>
-              {showPickupTimePicker && (
-                <DateTimePicker
-                  value={pickupDate}
-                  mode="time"
-                  display="default"
-                  onChange={(event, selectedTime) => {
-                    setShowPickupTimePicker(false);
-                    if (selectedTime) {
-                      setPickupTime(formatTime(selectedTime));
-                    }
-                  }}
-                />
-              )}
-            </View>
-          </View>
-
-          {/* Return Date & Time (Only for Round Trip) */}
-          {tripType === "round_trip" && (
-            <View style={styles.row}>
-              <View style={styles.halfWidth}>
-                <Text style={styles.label}>Return Date *</Text>
-                <TouchableOpacity
-                  style={styles.dateInputSmall}
-                  onPress={() => setShowReturnDatePicker(true)}
-                >
-                  <Text style={styles.dateTextSmall}>
-                    {returnDate.toLocaleDateString("en-IN")}
-                  </Text>
-                  <Ionicons name="calendar" size={16} color="#666" />
-                </TouchableOpacity>
-                {showReturnDatePicker && (
-                  <DateTimePicker
-                    value={returnDate}
-                    mode="date"
-                    display="default"
-                    minimumDate={pickupDate}
-                    onChange={(event, selectedDate) => {
-                      setShowReturnDatePicker(false);
-                      if (selectedDate) setReturnDate(selectedDate);
-                    }}
-                  />
-                )}
-              </View>
-
-              <View style={styles.halfWidth}>
-                <Text style={styles.label}>Return Time *</Text>
-                <TouchableOpacity
-                  style={styles.dateInputSmall}
-                  onPress={() => setShowReturnTimePicker(true)}
-                >
-                  <Text style={styles.dateTextSmall}>
-                    {returnTime || "Select"}
-                  </Text>
-                  <Ionicons name="time" size={16} color="#666" />
-                </TouchableOpacity>
-                {showReturnTimePicker && (
-                  <DateTimePicker
-                    value={returnDate}
-                    mode="time"
-                    display="default"
-                    onChange={(event, selectedTime) => {
-                      setShowReturnTimePicker(false);
-                      if (selectedTime) {
-                        setReturnTime(formatTime(selectedTime));
-                      }
-                    }}
-                  />
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Pricing Fields Based on Mode */}
-          {pricingMode === "detailed" ? (
-            <>
-              <View style={styles.row}>
-                <View style={styles.halfWidth}>
-                  <Text style={styles.label}>Total Days *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Days"
-                    placeholderTextColor="#999"
-                    value={totalDays}
-                    onChangeText={setTotalDays}
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <View style={styles.halfWidth}>
-                  <Text style={styles.label}>Per Day Charges *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="₹ 0"
-                    placeholderTextColor="#999"
-                    value={perDayCharges}
-                    onChangeText={setPerDayCharges}
-                    keyboardType="numeric"
-                  />
+                <View style={styles.profileMeta}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="call" size={14} color="#6B7280" />
+                    <Text style={styles.profileText} numberOfLines={1}>
+                      {company.phone || "website.com"}
+                    </Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Ionicons
+                      name="location-outline"
+                      size={14}
+                      color="#6B7280"
+                    />
+                    <Text style={styles.profileText} numberOfLines={1}>
+                      {company.address || "Location"}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Toll Tax Amount</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="₹ 0"
-                  placeholderTextColor="#999"
-                  value={tollTax}
-                  onChangeText={setTollTax}
-                  keyboardType="numeric"
-                />
-              </View>
-            </>
-          ) : (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Total Trip Amount *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="₹ 0"
-                placeholderTextColor="#999"
-                value={totalAmount}
-                onChangeText={setTotalAmount}
-                keyboardType="numeric"
-              />
-              <Text style={styles.helperText}>
-                Enter the total fare (all charges included)
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Extra Charges Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons
-              name="plus-circle"
-              size={20}
-              color="#FF1744"
-            />
-            <Text style={styles.sectionTitle}>Extra Charges (Optional)</Text>
-          </View>
-
-          {extraCharges.map((charge, index) => (
-            <View key={index} style={styles.extraChargeItem}>
-              <View style={styles.extraChargeInputs}>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginRight: 8 }]}
-                  placeholder="Description (e.g., Night halt)"
-                  placeholderTextColor="#999"
-                  value={charge.description}
-                  onChangeText={(text) =>
-                    updateExtraCharge(index, "description", text)
-                  }
-                />
-                <TextInput
-                  style={[styles.input, { width: 100 }]}
-                  placeholder="₹ Amount"
-                  placeholderTextColor="#999"
-                  value={charge.amount}
-                  onChangeText={(text) =>
-                    updateExtraCharge(index, "amount", text)
-                  }
-                  keyboardType="numeric"
-                />
-              </View>
+              {/* Right: Button */}
               <TouchableOpacity
-                onPress={() => removeExtraCharge(index)}
-                style={styles.removeChargeButton}
+                activeOpacity={0.85}
+                style={styles.viewProfileBtn}
+                onPress={() => navigation.navigate("company-details")}
               >
-                <Ionicons name="trash" size={20} color="#FF1744" />
+                <Text style={styles.viewProfileText}>VIEW PROFILE</Text>
               </TouchableOpacity>
             </View>
-          ))}
+          )}
 
-          <TouchableOpacity
-            style={styles.addChargeButton}
-            onPress={addExtraCharge}
-          >
-            <Ionicons name="add-circle-outline" size={20} color="#FF1744" />
-            <Text style={styles.addChargeText}>Add Extra Charge</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Additional Charges Section (Only for Detailed Mode) */}
-        {pricingMode === "detailed" && (
+          {/* Document Type Selector */}
+          <View style={styles.documentTypeSection}>
+            <Text style={styles.sectionTitle}>Document Type</Text>
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  documentType === "quotation" && styles.activeToggle,
+                ]}
+                onPress={() => setDocumentType("quotation")}
+                // disabled={!!id && documentType === "invoice"} // Prevent changing invoice back
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    documentType === "quotation" && styles.activeText,
+                  ]}
+                >
+                  Quotation
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  documentType === "invoice" && styles.activeToggle,
+                ]}
+                onPress={() => setDocumentType("invoice")}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    documentType === "invoice" && styles.activeText,
+                  ]}
+                >
+                  Tax Invoice
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {/* Trip Type */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons
-                name="cash-plus"
-                size={20}
-                color="#FF1744"
+            <Text style={styles.sectionTitle}>Trip Type</Text>
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  tripType === "one_way" && styles.activeToggle,
+                ]}
+                onPress={() => setTripType("one_way")}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    tripType === "one_way" && styles.activeText,
+                  ]}
+                >
+                  One Way
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  tripType === "round_trip" && styles.activeToggle,
+                ]}
+                onPress={() => setTripType("round_trip")}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    tripType === "round_trip" && styles.activeText,
+                  ]}
+                >
+                  Round Trip
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Customer Details */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Ionicons name="person" size={14} color="#000" /> Customer Details
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Customer Name </Text>
+              <TextInput
+                onFocus={(e) => {
+                  const node = e.target;
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToFocusedInput(node);
+                  }, 300);
+                }}
+                ref={customerNameRef}
+                onSubmitEditing={() => customerContactRef.current?.focus()} // Go to next
+                blurOnSubmit={false}
+                returnKeyType="next"
+                style={styles.input}
+                placeholder="Enter customer name"
+                placeholderTextColor="#999"
+                value={customerName}
+                onChangeText={setCustomerName}
               />
-              <Text style={styles.sectionTitle}>Additional Charges</Text>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>State Tax</Text>
+              <Text style={styles.inputLabel}>Contact Number </Text>
               <TextInput
                 style={styles.input}
-                placeholder="₹ 0"
+                ref={customerContactRef}
+                placeholder="Enter contact number"
                 placeholderTextColor="#999"
+                value={customerContact}
+                returnKeyType="next"
+                onFocus={(e) => {
+                  const node = e.target;
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToFocusedInput(node);
+                  }, 300);
+                }}
+                onChangeText={setCustomerContact}
+                keyboardType="phone-pad"
+                onSubmitEditing={() => customerAddressRef.current?.focus()}
+                blurOnSubmit={false}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Address </Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Enter customer address"
+                ref={customerAddressRef}
+                returnKeyType="next"
+                onSubmitEditing={() => vehicleTypeRef.current?.focus()}
+                blurOnSubmit={false}
+                placeholderTextColor="#999"
+                value={customerAddress}
+                onChangeText={setCustomerAddress}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          </View>
+
+          {/* Trip Details */}
+          {/* Trip Details */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Ionicons name="location" size={14} color="#000" /> Trip Details
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Vehicle Name </Text>
+              <TextInput
+                ref={vehicleTypeRef}
+                style={styles.input}
+                returnKeyType="next"
+                onSubmitEditing={() => pickupPlaceRef.current?.focus()}
+                blurOnSubmit={false}
+                placeholder="e.g., Sedan, SUV, Tempo Traveller"
+                placeholderTextColor="#999"
+                value={vehicleType}
+                onChangeText={setVehicleType}
+              />
+            </View>
+
+            {/* Multi-Stop Toggle */}
+            <View style={styles.gstRow}>
+              <Text style={styles.gstLabel}>Multi-Stop Trip?</Text>
+              <Switch value={multiStop} onValueChange={setMultiStop} />
+            </View>
+
+            {/* Pickup Location */}
+            <View style={[styles.inputGroup, { marginTop: 8 }]}>
+              <Text style={styles.inputLabel}>Pickup Location </Text>
+              <TextInput
+                ref={pickupPlaceRef}
+                style={styles.input}
+                placeholder="Starting point"
+                returnKeyType="next"
+                onSubmitEditing={() => {
+                  if (multiStop && stops.length > 0) {
+                    dropPlaceRef.current?.focus();
+                  } else {
+                    dropPlaceRef.current?.focus();
+                  }
+                }}
+                placeholderTextColor="#999"
+                value={pickupPlace}
+                onChangeText={setPickupPlace}
+              />
+            </View>
+
+            {/* Multi Stops */}
+            {multiStop && (
+              <>
+                {stops.map((stop, index) => (
+                  <View key={index} style={styles.multiStopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Stop {index + 1}</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder={`Enter stop location ${index + 1}`}
+                        placeholderTextColor="#999"
+                        value={stop.location}
+                        onChangeText={(val) => updateStop(index, val)}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeStopBtn}
+                      onPress={() => removeStop(index)}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#e74c3c" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                <TouchableOpacity style={styles.addStopBtn} onPress={addStop}>
+                  <Ionicons name="add-circle-outline" size={20} color="#000" />
+                  <Text style={styles.addStopText}>Add Another Stop</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Drop Location */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Final Drop Location </Text>
+              <TextInput
+                ref={dropPlaceRef}
+                style={styles.input}
+                returnKeyType="done"
+                placeholder="Destination"
+                placeholderTextColor="#999"
+                value={dropPlace}
+                onChangeText={setDropPlace}
+              />
+            </View>
+
+            {/* Date & Time Pickers */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Pickup Date & Time</Text>
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={[styles.dateButton, { flex: 1 }]}
+                  onPress={() => setShowPickupDate(true)}
+                >
+                  <Ionicons name="calendar" size={16} color="#000" />
+                  <Text style={styles.dateText}>{formatDate(pickupDate)}</Text>
+                </TouchableOpacity>
+                <View style={{ width: 10 }} />
+                <TouchableOpacity
+                  style={[styles.dateButton, { flex: 1 }]}
+                  onPress={() => setShowPickupTime(true)}
+                >
+                  <Ionicons name="time" size={16} color="#000" />
+                  <Text style={styles.dateText}>{formatTime(pickupTime)}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {tripType === "round_trip" && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Return Date & Time</Text>
+                <View style={styles.row}>
+                  <TouchableOpacity
+                    style={[styles.dateButton, { flex: 1 }]}
+                    onPress={() => setShowReturnDate(true)}
+                  >
+                    <Ionicons name="calendar" size={16} color="#000" />
+                    <Text style={styles.dateText}>
+                      {formatDate(returnDate)}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ width: 10 }} />
+                  <TouchableOpacity
+                    style={[styles.dateButton, { flex: 1 }]}
+                    onPress={() => setShowReturnTime(true)}
+                  >
+                    <Ionicons name="time" size={16} color="#000" />
+                    <Text style={styles.dateText}>
+                      {formatTime(returnTime)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Pricing Mode */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Pricing Mode</Text>
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  pricingMode === "km_wise" && styles.activeToggle,
+                ]}
+                onPress={() => setPricingMode("km_wise")}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    pricingMode === "km_wise" && styles.activeText,
+                  ]}
+                >
+                  Km Wise
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleBtn,
+                  pricingMode === "day_wise" && styles.activeToggle,
+                ]}
+                onPress={() => setPricingMode("day_wise")}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    pricingMode === "day_wise" && styles.activeText,
+                  ]}
+                >
+                  Day Wise
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {pricingMode === "km_wise" ? (
+              <>
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Total Km</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholderTextColor="#999"
+                      value={totalKm}
+                      onChangeText={setTotalKm}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <View style={{ width: 10 }} />
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Per Km Rate (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholderTextColor="#999"
+                      value={perKmRate}
+                      onChangeText={setPerKmRate}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+                <View style={[styles.inputGroup]}>
+                  <Text style={styles.inputLabel}>Fare </Text>
+                  <Text style={styles.fareDisplay}>₹{fare.toFixed(2)}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Per Day Charges (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={perDayCharges}
+                      onChangeText={setPerDayCharges}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <View style={{ width: 12 }} />
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Number of Days</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={totalDays}
+                      onChangeText={setTotalDays}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={styles.inputLabel}>Fare (Auto Calculated)</Text>
+                  <Text style={styles.fareDisplay}>₹{fare.toFixed(2)}</Text>
+                </View>
+              </>
+            )}
+
+            {/* Discount & GST on Fare only */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Discount on Fare (₹)</Text>
+              <TextInput
+                style={styles.input}
+                value={discount}
+                onChangeText={setDiscount}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <View style={styles.gstRow}>
+              <Text style={styles.gstLabel}>
+                Apply GST ({GST_RATE}%) on Fare
+              </Text>
+              <Switch value={hasGST} onValueChange={setHasGST} />
+            </View>
+          </View>
+
+          {/* Additional Charges */}
+          <View style={styles.section}>
+            <View
+              style={[
+                styles.sectionHeader,
+                {
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Additional Charges</Text>
+              <TouchableOpacity onPress={addCustomCharge} style={styles.addBtn}>
+                <Ionicons name="add-circle" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.chargeItem}>
+              <Text style={styles.chargeLabel}>Toll Tax (₹)</Text>
+              <TextInput
+                style={styles.chargeInput}
+                value={tollTax}
+                placeholder="0"
+                onChangeText={setTollTax}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.chargeItem}>
+              <Text style={styles.chargeLabel}>State Tax</Text>
+              <TextInput
+                style={styles.chargeInput}
                 value={stateTax}
                 onChangeText={setStateTax}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                placeholder="0"
               />
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Driver Charge</Text>
+            <View style={styles.chargeItem}>
+              <Text style={styles.chargeLabel}>Driver Charge</Text>
               <TextInput
-                style={styles.input}
-                placeholder="₹ 0"
-                placeholderTextColor="#999"
+                style={styles.chargeInput}
                 value={driverCharge}
                 onChangeText={setDriverCharge}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                placeholder="0"
               />
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Parking Charge</Text>
+            <View style={styles.chargeItem}>
+              <Text style={styles.chargeLabel}>Parking Charge</Text>
               <TextInput
-                style={styles.input}
-                placeholder="₹ 0"
-                placeholderTextColor="#999"
+                style={styles.chargeInput}
                 value={parkingCharge}
                 onChangeText={setParkingCharge}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                placeholder="0"
+              />
+            </View>
+
+            {additionalCharges.map((charge, index) => (
+              <View key={index} style={styles.customChargeRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Charge Title"
+                  value={charge.title}
+                  onChangeText={(val) =>
+                    updateCustomCharge(index, "title", val)
+                  }
+                />
+                <View style={{ width: 8 }} />
+                <TextInput
+                  style={styles.chargeInput}
+                  placeholder="0"
+                  value={charge.amount}
+                  onChangeText={(val) =>
+                    updateCustomCharge(index, "amount", val)
+                  }
+                  keyboardType="decimal-pad"
+                />
+                <TouchableOpacity onPress={() => removeCustomCharge(index)}>
+                  <Ionicons name="trash" size={20} color="#000" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+
+          {/* Bank Details Toggle */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Bank Details on Quotation</Text>
+            <View style={styles.gstRow}>
+              <Text style={styles.gstLabel}>Show Bank Details?</Text>
+              <Switch
+                value={showBankDetails}
+                onValueChange={setShowBankDetails}
               />
             </View>
           </View>
-        )}
 
-        {/* Bank Details Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="bank" size={20} color="#FF1744" />
-            <Text style={styles.sectionTitle}>Bank Details</Text>
+          {/* Terms & Conditions */}
+          {/* Terms & Conditions - Only show for Quotation */}
+          {documentType === "quotation" && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>
+                <Ionicons name="document" size={14} color="#000" /> Description
+              </Text>
+              <View style={styles.inputGroup}>
+                <TextInput
+                  ref={termsConditionsRef} // Optional: add ref if you want keyboard navigation here
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Enter terms & conditions, notes, or special instructions..."
+                  placeholderTextColor="#999"
+                  value={termsConditions}
+                  onChangeText={setTermsConditions}
+                  multiline
+                  numberOfLines={6}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    // Optional: blur on done
+                    // Keyboard.dismiss();
+                  }}
+                  blurOnSubmit={true}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Summary Card */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>
+              <Ionicons name="receipt" size={16} color="#000" />
+              {documentType === "quotation" ? "Quotation" : "Tax Invoice"}{" "}
+              Summary
+            </Text>
+
+            <View style={styles.summaryDivider} />
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
+            </View>
+
+            {discountAmount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Discount</Text>
+                <Text style={[styles.summaryValue, styles.discountText]}>
+                  -₹{discountAmount.toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            {parseFloat(stateTax) > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>State Tax</Text>
+                <Text style={styles.summaryValue}>
+                  ₹{parseFloat(stateTax).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            {parseFloat(driverCharge) > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Driver Charge</Text>
+                <Text style={styles.summaryValue}>
+                  ₹{parseFloat(driverCharge).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            {parseFloat(parkingCharge) > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Parking Charge</Text>
+                <Text style={styles.summaryValue}>
+                  ₹{parseFloat(parkingCharge).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            {hasGST && gstAmount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>GST ({GST_RATE}%)</Text>
+                <Text style={styles.summaryValue}>₹{gstAmount.toFixed(2)}</Text>
+              </View>
+            )}
+
+            <View style={styles.summaryDivider} />
+
+            <View style={styles.totalRow}>
+              <View>
+                <Text style={styles.totalLabel}>Total Amount</Text>
+                {/* <Text style={styles.totalSubtext}>All charges included</Text> */}
+              </View>
+              <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
+            </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Bank Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter bank name"
-              placeholderTextColor="#999"
-              value={bankName}
-              onChangeText={setBankName}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Account Number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter account number"
-              placeholderTextColor="#999"
-              value={accountNumber}
-              onChangeText={setAccountNumber}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>IFSC Code *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter IFSC code"
-              placeholderTextColor="#999"
-              value={ifscCode}
-              onChangeText={setIfscCode}
-              autoCapitalize="characters"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Account Holder Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter account holder name"
-              placeholderTextColor="#999"
-              value={accountHolderName}
-              onChangeText={setAccountHolderName}
-            />
-          </View>
-        </View>
-
-        {/* Terms & Conditions Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons
-              name="file-document"
-              size={20}
-              color="#FF1744"
-            />
-            <Text style={styles.sectionTitle}>Terms & Conditions</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Enter terms and conditions"
-              placeholderTextColor="#999"
-              value={termsConditions}
-              onChangeText={setTermsConditions}
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-        </View>
-
-        {/* Create Button */}
+          {/* Action Buttons */}
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <View style={styles.buttonRow}>
         <TouchableOpacity
-          style={[styles.createButton, saving && styles.createButtonDisabled]}
+          style={styles.cancelBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.submitBtn, saving && { opacity: 0.7 }]}
           onPress={handleCreateQuotation}
           disabled={saving}
-          activeOpacity={0.8}
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="send" size={20} color="#fff" />
-              <Text style={styles.createButtonText}>Create Quotation</Text>
-            </>
-          )}
+          <Text style={styles.submitText}>
+            {saving
+              ? "Creating..."
+              : id
+              ? "Update Document"
+              : `Create ${
+                  documentType === "quotation" ? "Quotation" : "Tax Invoice"
+                }`}
+          </Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
 
+      {/* Date/Time Pickers */}
+      {showPickupDate && (
+        <DateTimePicker
+          value={pickupDate}
+          mode="date"
+          display="spinner"
+          onChange={(e, date) => {
+            setShowPickupDate(false);
+            if (date) setPickupDate(date);
+          }}
+        />
+      )}
+      {showPickupTime && (
+        <DateTimePicker
+          value={pickupTime}
+          mode="time"
+          display="spinner"
+          onChange={(e, time) => {
+            setShowPickupTime(false);
+            if (time) setPickupTime(time);
+          }}
+        />
+      )}
+      {showReturnDate && (
+        <DateTimePicker
+          value={returnDate}
+          mode="date"
+          minimumDate={pickupDate}
+          display="spinner"
+          onChange={(e, date) => {
+            setShowReturnDate(false);
+            if (date) setReturnDate(date);
+          }}
+        />
+      )}
+      {showReturnTime && (
+        <DateTimePicker
+          value={returnTime}
+          mode="time"
+          display="spinner"
+          onChange={(e, time) => {
+            setShowReturnTime(false);
+            if (time) setReturnTime(time);
+          }}
+        />
+      )}
+
+      {/* Universal Alert */}
       <UniversalAlert
         visible={alertVisible}
+        onClose={() => setAlertVisible(false)}
         type={alertConfig.type}
         title={alertConfig.title}
         message={alertConfig.message}
         primaryButton={alertConfig.primaryButton}
         onPrimaryPress={alertConfig.onPrimaryPress}
-        onClose={() => setAlertVisible(false)}
       />
     </SafeAreaView>
   );
@@ -991,283 +1345,466 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f5f5f5",
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#000",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  headerButton: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontWeight: "700",
+    fontSize: 18,
+    color: "#fff",
+    letterSpacing: 0.5,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: "#666",
-  },
-  header: {
-    backgroundColor: "#FF1744",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  backButton: {
-    marginRight: 16,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  headerSubtitle: {
     fontSize: 14,
-    color: "#fff",
-    opacity: 0.9,
-    marginTop: 2,
-  },
-  scrollView: {
-    flex: 1,
+    color: "#666",
+    fontWeight: "500",
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 100,
   },
   companyCard: {
     backgroundColor: "#fff",
-    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 16,
     padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  companyHeader: {
     flexDirection: "row",
     alignItems: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  companyIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#FFE5E9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-    overflow: "hidden",
-  },
-  companyInfo: {
-    flex: 1,
+    marginBottom: 8,
   },
   companyName: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 4,
+    fontWeight: "700",
+    color: "#000",
+    marginLeft: 8,
   },
-  companyDetail: {
+  companyDetails: {
     fontSize: 12,
     color: "#666",
-    marginTop: 2,
+    marginTop: 4,
+  },
+  companyAddress: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 4,
   },
   section: {
     backgroundColor: "#fff",
-    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
     padding: 16,
-    marginBottom: 16,
-    elevation: 2,
+    borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
+    elevation: 2,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-    marginLeft: 8,
+    fontWeight: "700",
+    fontSize: 14,
+    color: "#000",
+    marginBottom: 16,
+    letterSpacing: 0.3,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  label: {
-    fontSize: 14,
+  inputLabel: {
+    fontSize: 12,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   input: {
     backgroundColor: "#f9f9f9",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
     borderWidth: 1,
     borderColor: "#e0e0e0",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: "#000",
   },
   textArea: {
     height: 80,
     textAlignVertical: "top",
   },
-  helperText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-    fontStyle: "italic",
-  },
   row: {
     flexDirection: "row",
-    justifyContent: "space-between",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    gap: 10,
     marginBottom: 16,
   },
-  halfWidth: {
+  toggleBtn: {
     flex: 1,
-    marginRight: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f9f9f9",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  toggleActive: {
+    backgroundColor: "#000",
+    borderColor: "#000",
+  },
+  toggleText: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "600",
+  },
+  toggleTextActive: {
+    color: "#fff",
   },
   dateButton: {
-    backgroundColor: "#f9f9f9",
-    borderRadius: 8,
-    padding: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "#f9f9f9",
     borderWidth: 1,
     borderColor: "#e0e0e0",
-  },
-  dateButtonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  dateButtonText: {
-    fontSize: 14,
-    color: "#333",
-    marginLeft: 8,
-  },
-  dateInputSmall: {
-    backgroundColor: "#f9f9f9",
     borderRadius: 8,
-    padding: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
   },
-  dateTextSmall: {
-    fontSize: 14,
+  dateText: {
+    fontSize: 12,
     color: "#333",
+    fontWeight: "500",
   },
-  tripTypeContainer: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  tripTypeButton: {
+  paymentBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: "#f9f9f9",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#FF1744",
-    backgroundColor: "#fff",
+    paddingVertical: 10,
+    gap: 4,
   },
-  tripTypeButtonActive: {
-    backgroundColor: "#FF1744",
+  paymentActive: {
+    backgroundColor: "#000",
+    borderColor: "#000",
   },
-  tripTypeText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FF1744",
-    marginLeft: 6,
-  },
-  tripTypeTextActive: {
-    color: "#fff",
-  },
-  pricingModeContainer: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  pricingModeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#FF1744",
-    backgroundColor: "#fff",
-    alignItems: "center",
-  },
-  pricingModeButtonActive: {
-    backgroundColor: "#FF1744",
-  },
-  pricingModeText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FF1744",
-  },
-  pricingModeTextActive: {
-    color: "#fff",
-  },
-  extraChargeItem: {
+  gstToggle: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-  },
-  extraChargeInputs: {
-    flex: 1,
-    flexDirection: "row",
-  },
-  removeChargeButton: {
-    marginLeft: 8,
-    padding: 8,
-  },
-  addChargeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f9f9f9",
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#FF1744",
-    borderStyle: "dashed",
+    borderColor: "#e0e0e0",
   },
-  addChargeText: {
-    fontSize: 14,
+  gstLabel: {
+    fontSize: 13,
+    color: "#333",
     fontWeight: "600",
-    color: "#FF1744",
-    marginLeft: 6,
   },
-  createButton: {
-    backgroundColor: "#FF1744",
-    borderRadius: 12,
+  gstAmount: {
+    fontSize: 11,
+    color: "#000",
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  chargeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  chargeInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  chargeLabel: {
+    fontSize: 12,
+    color: "#333",
+    fontWeight: "500",
+  },
+  chargeInput: {
+    width: 100,
+    backgroundColor: "#f9f9f9",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: "#000",
+    textAlign: "right",
+  },
+  summaryCard: {
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    marginTop: 12,
     padding: 16,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
+    borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
+    elevation: 3,
   },
-  createButtonDisabled: {
-    backgroundColor: "#FF6B7A",
+  summaryTitle: {
+    fontWeight: "700",
+    fontSize: 14,
+    color: "#000",
+    marginBottom: 8,
   },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: "bold",
+  summaryDivider: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+    marginVertical: 12,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "500",
+  },
+  summaryValue: {
+    fontSize: 13,
+    color: "#000",
+    fontWeight: "600",
+  },
+  discountText: {
+    color: "#000",
+  },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#000",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  totalLabel: {
+    fontSize: 14,
     color: "#fff",
-    marginLeft: 8,
+    fontWeight: "700",
+  },
+  totalSubtext: {
+    fontSize: 10,
+    color: "#ccc",
+    marginTop: 2,
+  },
+  totalValue: {
+    fontSize: 18,
+    color: "#fff",
+    fontWeight: "800",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    marginTop: 16,
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#666",
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 6,
+  },
+  cancelText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  submitBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#000",
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 6,
+  },
+  submitBtnDisabled: {
+    opacity: 0.6,
+  },
+  submitText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  fareDisplay: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#02BF4C",
+    padding: 12,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    textAlign: "center",
+  },
+  addBtn: {
+    padding: 4,
+  },
+  customChargeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  gstRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  activeToggle: {
+    backgroundColor: "#000",
+  },
+  activeText: {
+    color: "#fff",
+  },
+  profileCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 6,
+    padding: 16,
+    marginVertical: 2,
+
+    // subtle shadow
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+
+  profileImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginRight: 14,
+    backgroundColor: "#E5E7EB",
+  },
+
+  profileInfo: {
+    flex: 1,
+  },
+
+  profileName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 6,
+  },
+
+  profileMeta: {
+    // flexDirection: "row",
+    // alignItems: "center",
+    // gap: 14,
+  },
+
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: 140,
+  },
+
+  profileText: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+
+  viewProfileBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "#000",
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+
+  viewProfileText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  multiStopRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 12,
+    gap: 10,
+  },
+  removeStopBtn: {
+    paddingTop: 28, // align with input label
+  },
+  addStopBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 6,
+  },
+  addStopText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#000",
+  },
+  documentTypeSection: {
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });

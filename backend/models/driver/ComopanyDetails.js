@@ -9,6 +9,13 @@ const companyDetailsSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    gst_no:{
+    type: String,
+    },
+    driverPub:{
+            type: String,
+
+    },
     address: {
         type: String,
         required: true

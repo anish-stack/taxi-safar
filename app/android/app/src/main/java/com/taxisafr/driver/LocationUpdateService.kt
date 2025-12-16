@@ -43,7 +43,8 @@ class LocationUpdateService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 101
         private const val CHANNEL_ID = "taxisafar_location_channel"
-        private const val LOCATION_UPDATE_INTERVAL = 5000L
+       private const val LOCATION_UPDATE_INTERVAL = 60000L
+
         
         var isServiceRunning = false
             private set

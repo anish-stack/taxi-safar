@@ -134,7 +134,7 @@ export default function RechargeScreen() {
         amount: order.amount * 100,
         name: "TaxiSafar Driver",
         order_id: order.orderId,
-        theme: { color: "#DC2626" },
+        theme: { color: "#000" },
         modal: {
           ondismiss: () => {
             // user closed Razorpay popup
@@ -309,17 +309,20 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 20, fontWeight: "bold", color: "#111827" },
   balanceCard: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#fff",
     margin: 16,
+    borderColor:"#000",
+    borderWidth:1,
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
   },
-  balanceLabel: { color: "#FFF", fontSize: 16, opacity: 0.9 },
+  balanceLabel: { color: "#000",    fontWeight: "800",
+ fontSize: 16, opacity: 0.9 },
   balanceAmount: {
-    color: "#FFF",
+    color: "#000",
     fontSize: 40,
-    fontWeight: "bold",
+    fontWeight: "800",
     marginTop: 8,
   },
   sectionTitle: {
@@ -347,8 +350,8 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   amountBtnSelected: {
-    backgroundColor: "#DC2626",
-    borderColor: "#DC2626",
+    backgroundColor: "#000",
+    borderColor: "#000",
   },
   amountText: { fontSize: 18, fontWeight: "bold", color: "#374151" },
   amountTextSelected: { color: "#FFF" },
@@ -366,7 +369,7 @@ const styles = StyleSheet.create({
   rupee: { fontSize: 28, fontWeight: "bold", color: "#374151" },
   input: { flex: 1, fontSize: 20, marginLeft: 8, color: "#000" },
   payButton: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     margin: 16,
     paddingVertical: 18,
     borderRadius: 16,

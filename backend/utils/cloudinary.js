@@ -6,16 +6,23 @@ const streamifier = require("streamifier");
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
-  api_secret: process.env.CLOUD_API_SECRET
+  api_secret: process.env.CLOUD_API_SECRET,
 });
 
-const MAX_FILE_SIZE = 50000000; 
+const MAX_FILE_SIZE = 50000000;
 
-const uploadSingleImage = async (fileInput, folder = "images") => {
+const uploadSingleImage = async (fileInput, folder = "files") => {
   try {
-    // ---------- CASE 1: Buffer (PDF buffer from puppeteer, or image buffer) ----------
+    console.log("📤 Upload started");
+    console.log("📁 Target folder:", folder);
+
+    // ---------- CASE 1: Buffer ----------
     if (Buffer.isBuffer(fileInput)) {
+      console.log("🧾 Detected Buffer input");
+      console.log("📏 Buffer size:", fileInput.length, "bytes");
+
       if (fileInput.length > MAX_FILE_SIZE) {
+        console.error("❌ Buffer exceeds MAX_FILE_SIZE");
         throw new Error(`File too large: ${fileInput.length} bytes`);
       }
 
@@ -23,41 +30,75 @@ const uploadSingleImage = async (fileInput, folder = "images") => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder,
-            resource_type: "raw",           // "raw" for PDF, "image" also works but raw is safer
-            format: folder.includes("quotation") ? "pdf" : undefined,
+            format:
+              folder.includes("invoices") || folder.includes("quotations")
+                ? "pdf"
+                : undefined,
+            resource_type: "raw", // BEST for PDFs
           },
           (error, result) => {
-            if (error) return reject(error);
-            resolve({ image: result.secure_url, public_id: result.public_id });
+            if (error) {
+              console.error("❌ Cloudinary stream upload failed:", error);
+              return reject(error);
+            }
+
+            console.log("✅ Cloudinary upload success (Buffer)");
+            console.log("🔗 URL:", result.secure_url);
+            console.log("🆔 Public ID:", result.public_id);
+
+            resolve({
+              url: result.secure_url,
+              public_id: result.public_id,
+            });
           }
         );
 
+        console.log("⏫ Streaming buffer to Cloudinary...");
         streamifier.createReadStream(fileInput).pipe(uploadStream);
       });
     }
 
-    // ---------- CASE 2: Local file path (string) ----------
+    // ---------- CASE 2: Local file path ----------
     if (typeof fileInput === "string") {
-      await fs.access(fileInput); // throws if file does not exist
+      console.log("📄 Detected file path input:", fileInput);
+
+      await fs.access(fileInput);
+      console.log("✅ File exists");
 
       const stats = await fs.stat(fileInput);
+      console.log("📏 File size:", stats.size, "bytes");
+
       if (stats.size > MAX_FILE_SIZE) {
+        console.error("❌ File exceeds MAX_FILE_SIZE");
         throw new Error(`File too large: ${stats.size} bytes`);
       }
 
+      const isPDF = fileInput.toLowerCase().endsWith(".pdf");
+      console.log("📘 Is PDF:", isPDF);
+
       const result = await cloudinary.uploader.upload(fileInput, {
         folder,
-        resource_type: "auto",
+        resource_type: isPDF ? "raw" : "image",
       });
 
-      // delete local file after successful upload (optional)
-      await fs.unlink(fileInput).catch(() => {});
-      return { image: result.secure_url, public_id: result.public_id };
+      console.log("✅ Cloudinary upload success (File)");
+      console.log("🔗 URL:", result.secure_url);
+      console.log("🆔 Public ID:", result.public_id);
+
+      await fs.unlink(fileInput).catch(() => {
+        console.warn("⚠️ Failed to delete local file:", fileInput);
+      });
+
+      return {
+        image: result.secure_url,
+        public_id: result.public_id,
+      };
     }
 
+    console.error("❌ Invalid file input type");
     throw new Error("Invalid file input. Must be Buffer or file path string.");
   } catch (err) {
-    console.error("Cloudinary upload error:", err.message);
+    console.error("🔥 Cloudinary upload error:", err.message || err);
     throw new Error("Failed to upload file to Cloudinary");
   }
 };

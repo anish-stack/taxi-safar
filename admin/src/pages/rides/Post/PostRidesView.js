@@ -20,7 +20,6 @@ const PostRidesView = () => {
   const [error, setError] = useState(null);
   const [openChatIndex, setOpenChatIndex] = useState(null); // For manual accordion
   const [distance, setDistance] = useState(0);
-  const [eta, setEta] = useState(null);
 
   useEffect(() => {
     const fetchRideDetails = async () => {

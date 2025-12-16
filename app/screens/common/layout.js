@@ -50,7 +50,7 @@ const Layout = ({
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar
         barStyle="dark-content"
-        backgroundColor="#ffffff"
+        backgroundColor="#F2F5F6"
         translucent={false}
       />
 
@@ -93,6 +93,7 @@ const Layout = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+
   },
   scrollView: {
     backgroundColor: "#FFFBF1",

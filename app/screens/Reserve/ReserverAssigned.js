@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   View,
   Text,
@@ -15,8 +15,28 @@ import {
   Dimensions,
   RefreshControl,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowLeft, MapPin, Clock, Car, MessageCircle, MoveVertical as MoreVertical, Navigation, Star, Phone, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Shield, Headphones, X, RefreshCw, DollarSign } from "lucide-react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import {
+  ArrowLeft,
+  MapPin,
+  Clock,
+  Car,
+  MessageCircle,
+  MoveVertical as MoreVertical,
+  Navigation,
+  Star,
+  Phone,
+  CircleCheck as CheckCircle,
+  CircleAlert as AlertCircle,
+  Shield,
+  Headphones,
+  X,
+  RefreshCw,
+  DollarSign,
+} from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { API_URL_APP, API_URL_APP_CHAT } from "../../constant/api";
@@ -29,9 +49,9 @@ import {
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { LinearGradient } from "expo-linear-gradient";
 import useDriverStore from "../../store/driver.store";
-import * as Location from 'expo-location';
+import * as Location from "expo-location";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
 const ReserveRideDetailsAssigned = () => {
@@ -39,7 +59,8 @@ const ReserveRideDetailsAssigned = () => {
   const navigation = useNavigation();
   const { rideId } = route.params;
   const { driver, fetchDriverDetails } = useDriverStore();
-
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useContext(BottomTabBarHeightContext) || 0;
   // State Management
   const [routeCoords, setRouteCoords] = useState([]);
   const [rideData, setRideData] = useState(null);
@@ -57,21 +78,22 @@ const ReserveRideDetailsAssigned = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Form States
-  const [otp, setOtp] = useState('');
-  const [collectedAmount, setCollectedAmount] = useState('');
-  const [otpType, setOtpType] = useState(''); // 'pickup' or 'drop'
+  const [otp, setOtp] = useState("");
+  const [collectedAmount, setCollectedAmount] = useState("");
+  const [otpType, setOtpType] = useState(""); // 'pickup' or 'drop'
 
   // Check if this is my ride
   const isMyRide = rideData?.assignedDriverId?._id === driver?._id;
 
-  const estimateDuration = (distanceKm) => parseFloat((distanceKm / 50).toFixed(2));
+  const estimateDuration = (distanceKm) =>
+    parseFloat((distanceKm / 50).toFixed(2));
 
   // Get current location
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission denied', 'Location permission is required');
+      if (status !== "granted") {
+        Alert.alert("Permission denied", "Location permission is required");
         return;
       }
 
@@ -81,7 +103,7 @@ const ReserveRideDetailsAssigned = () => {
         longitude: location.coords.longitude,
       });
     } catch (error) {
-      console.error('Error getting location:', error);
+      console.error("Error getting location:", error);
     }
   };
 
@@ -127,11 +149,13 @@ const ReserveRideDetailsAssigned = () => {
       setRefreshing(!showLoader);
 
       await fetchDriverDetails();
-      const { data } = await axios.get(`${API_URL_APP}/api/v1/post-rides/${rideId}`);
+      const { data } = await axios.get(
+        `${API_URL_APP}/api/v1/post-rides/${rideId}`
+      );
 
       if (data.success) {
         const ride = data.data;
-        console.log("contactType", ride?.contactType)
+        console.log("contactType", ride?.contactType);
 
         setRideData(ride);
 
@@ -187,9 +211,9 @@ const ReserveRideDetailsAssigned = () => {
   // Driver Actions
   const handleReachedPickup = () => {
     if (isNearLocation(rideData.pickupLocation)) {
-      updateRideStatus('reached-pickup');
+      updateRideStatus("reached-pickup");
     } else {
-      setOtpType('pickup');
+      setOtpType("pickup");
       setShowOtpModal(true);
     }
   };
@@ -198,11 +222,10 @@ const ReserveRideDetailsAssigned = () => {
     if (isNearLocation(rideData.dropLocation)) {
       setShowCollectionModal(true);
     } else {
-      setOtpType('drop');
+      setOtpType("drop");
       setShowOtpModal(true);
     }
   };
-
 
   const updateRideStatus = async (status) => {
     try {
@@ -212,19 +235,19 @@ const ReserveRideDetailsAssigned = () => {
       );
 
       if (data.success) {
-        setRideData(prev => ({ ...prev, rideStatus: status }));
-        if (status === 'completed') {
+        setRideData((prev) => ({ ...prev, rideStatus: status }));
+        if (status === "completed") {
           setShowSuccessModal(true);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to update ride status');
+      Alert.alert("Error", "Failed to update ride status");
     }
   };
 
   const verifyOtp = async () => {
     if (otp.length !== 4) {
-      Alert.alert('Error', 'Please enter a valid 4-digit OTP');
+      Alert.alert("Error", "Please enter a valid 4-digit OTP");
       return;
     }
 
@@ -236,24 +259,24 @@ const ReserveRideDetailsAssigned = () => {
 
       if (data.success) {
         setShowOtpModal(false);
-        setOtp('');
+        setOtp("");
 
-        if (otpType === 'pickup') {
-          updateRideStatus('reached-pickup');
+        if (otpType === "pickup") {
+          updateRideStatus("reached-pickup");
         } else {
           setShowCollectionModal(true);
         }
       } else {
-        Alert.alert('Error', 'Invalid OTP');
+        Alert.alert("Error", "Invalid OTP");
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to verify OTP');
+      Alert.alert("Error", "Failed to verify OTP");
     }
   };
 
   const completeRide = async () => {
     if (!collectedAmount || parseFloat(collectedAmount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid collection amount');
+      Alert.alert("Error", "Please enter a valid collection amount");
       return;
     }
 
@@ -265,10 +288,10 @@ const ReserveRideDetailsAssigned = () => {
 
       if (data.success) {
         setShowCollectionModal(false);
-        updateRideStatus('completed');
+        updateRideStatus("completed");
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to complete ride');
+      Alert.alert("Error", "Failed to complete ride");
     }
   };
 
@@ -277,39 +300,38 @@ const ReserveRideDetailsAssigned = () => {
       const response = await axios.post(`${API_URL_APP_CHAT}/api/chat/init`, {
         init_driver_id: driver?._id,
         ride_post_id: rideId,
-        other_driver_id: rideData?.driverPostId?._id
+        other_driver_id: rideData?.driverPostId?._id,
       });
 
       if (response.data?.success) {
-        navigation.navigate('chat');
+        navigation.navigate("chat");
       }
     } catch (error) {
       console.log("Chat Init Error:", error);
     }
   };
 
-
   const handleMoreOptions = (option) => {
     setShowMoreOptions(false);
 
     switch (option) {
-      case 'police':
-        Linking.openURL('tel:100');
+      case "police":
+        Linking.openURL("tel:100");
         break;
-      case 'support':
-        Linking.openURL('tel:+911234567890'); // Replace with actual support number
+      case "support":
+        Linking.openURL("tel:+911234567890"); // Replace with actual support number
         break;
-      case 'cancel':
+      case "cancel":
         Alert.alert(
-          'Cancel Ride',
-          'Are you sure you want to cancel this ride?',
+          "Cancel Ride",
+          "Are you sure you want to cancel this ride?",
           [
-            { text: 'No', style: 'cancel' },
-            { text: 'Yes', onPress: () => updateRideStatus('cancelled') }
+            { text: "No", style: "cancel" },
+            { text: "Yes", onPress: () => updateRideStatus("cancelled") },
           ]
         );
         break;
-      case 'refresh':
+      case "refresh":
         fetchRideDetails(false);
         break;
     }
@@ -328,22 +350,22 @@ const ReserveRideDetailsAssigned = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      'driver-assigned': '#DC2626',
-      'reached-pickup': '#D97706',
-      'in-progress': '#059669',
-      'completed': '#10B981',
-      'cancelled': '#6B7280'
+      "driver-assigned": "#DC2626",
+      "reached-pickup": "#D97706",
+      "in-progress": "#059669",
+      completed: "#10B981",
+      cancelled: "#6B7280",
     };
-    return colors[status] || '#6B7280';
+    return colors[status] || "#6B7280";
   };
 
   const getStatusText = (status) => {
     const texts = {
-      'driver-assigned': 'Driver Assigned',
-      'reached-pickup': 'Reached Pickup',
-      'in-progress': 'In Progress',
-      'completed': 'Completed',
-      'cancelled': 'Cancelled'
+      "driver-assigned": "Driver Assigned",
+      "reached-pickup": "Reached Pickup",
+      "in-progress": "In Progress",
+      completed: "Completed",
+      cancelled: "Cancelled",
     };
     return texts[status] || status;
   };
@@ -370,7 +392,7 @@ const ReserveRideDetailsAssigned = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -382,7 +404,8 @@ const ReserveRideDetailsAssigned = () => {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Trip Details</Text>
           <Text style={styles.headerSubtitle}>
-            {formatDate(rideData.pickupDate)} • {formatTime(rideData.pickupTime)}
+            {formatDate(rideData.pickupDate)} •{" "}
+            {formatTime(rideData.pickupTime)}
           </Text>
         </View>
         <TouchableOpacity
@@ -394,22 +417,30 @@ const ReserveRideDetailsAssigned = () => {
       </View>
 
       <ScrollView
+        style={{ paddingBottom: insets.bottom +20 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => fetchRideDetails(false)}
-            colors={['#DC2626']}
+            colors={["#DC2626"]}
             tintColor="#DC2626"
           />
         }
       >
         {/* Status Card */}
         <View style={styles.statusCard}>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(rideData.rideStatus) }]}>
-            <Text style={styles.statusText}>{getStatusText(rideData.rideStatus)}</Text>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(rideData.rideStatus) },
+            ]}
+          >
+            <Text style={styles.statusText}>
+              {getStatusText(rideData.rideStatus)}
+            </Text>
           </View>
-          {rideData.paymentStatus === 'completed' && (
+          {rideData.paymentStatus === "completed" && (
             <View style={styles.paidBadge}>
               <CheckCircle size={16} color="#10B981" />
               <Text style={styles.paidText}>Payment Completed</Text>
@@ -478,7 +509,9 @@ const ReserveRideDetailsAssigned = () => {
                     style={styles.avatar}
                   >
                     <Text style={styles.avatarText}>
-                      {(rideData?.assignedDriverId?.driver_name || "D").charAt(0)}
+                      {(rideData?.assignedDriverId?.driver_name || "D").charAt(
+                        0
+                      )}
                     </Text>
                   </LinearGradient>
                 )}
@@ -504,7 +537,8 @@ const ReserveRideDetailsAssigned = () => {
               <TouchableOpacity
                 style={styles.phoneButton}
                 onPress={() => {
-                  const phone = rideData?.assignedDriverId?.driver_contact_number;
+                  const phone =
+                    rideData?.assignedDriverId?.driver_contact_number;
                   if (phone) Linking.openURL(`tel:${phone}`);
                 }}
               >
@@ -551,7 +585,8 @@ const ReserveRideDetailsAssigned = () => {
               <Car size={20} color="#6B7280" />
               <Text style={styles.tripInfoLabel}>Vehicle</Text>
               <Text style={styles.tripInfoValue}>
-                {rideData.vehicleType?.charAt(0).toUpperCase() + rideData.vehicleType?.slice(1)}
+                {rideData.vehicleType?.charAt(0).toUpperCase() +
+                  rideData.vehicleType?.slice(1)}
               </Text>
             </View>
             <View style={styles.tripInfoItem}>
@@ -616,14 +651,20 @@ const ReserveRideDetailsAssigned = () => {
       {/* Action Buttons - Only show for my rides */}
       {isMyRide && (
         <View style={styles.actionContainer}>
-          {rideData.rideStatus === 'driver-assigned' && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleReachedPickup}>
+          {rideData.rideStatus === "driver-assigned" && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleReachedPickup}
+            >
               <Text style={styles.actionButtonText}>I Reached at Pickup</Text>
             </TouchableOpacity>
           )}
 
-          {rideData.rideStatus === 'reached-pickup' && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleReachedDrop}>
+          {rideData.rideStatus === "reached-pickup" && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleReachedDrop}
+            >
               <Text style={styles.actionButtonText}>I Reached at Drop</Text>
             </TouchableOpacity>
           )}
@@ -651,7 +692,7 @@ const ReserveRideDetailsAssigned = () => {
           <View style={styles.moreOptionsModal}>
             <TouchableOpacity
               style={styles.moreOption}
-              onPress={() => handleMoreOptions('refresh')}
+              onPress={() => handleMoreOptions("refresh")}
             >
               <RefreshCw size={20} color="#6B7280" />
               <Text style={styles.moreOptionText}>Refresh Ride</Text>
@@ -659,7 +700,7 @@ const ReserveRideDetailsAssigned = () => {
 
             <TouchableOpacity
               style={styles.moreOption}
-              onPress={() => handleMoreOptions('police')}
+              onPress={() => handleMoreOptions("police")}
             >
               <Shield size={20} color="#DC2626" />
               <Text style={styles.moreOptionText}>Call Police</Text>
@@ -667,7 +708,7 @@ const ReserveRideDetailsAssigned = () => {
 
             <TouchableOpacity
               style={styles.moreOption}
-              onPress={() => handleMoreOptions('support')}
+              onPress={() => handleMoreOptions("support")}
             >
               <Headphones size={20} color="#059669" />
               <Text style={styles.moreOptionText}>TaxiSafar Support</Text>
@@ -675,10 +716,12 @@ const ReserveRideDetailsAssigned = () => {
 
             <TouchableOpacity
               style={[styles.moreOption, styles.cancelOption]}
-              onPress={() => handleMoreOptions('cancel')}
+              onPress={() => handleMoreOptions("cancel")}
             >
               <X size={20} color="#DC2626" />
-              <Text style={[styles.moreOptionText, styles.cancelText]}>Cancel Ride</Text>
+              <Text style={[styles.moreOptionText, styles.cancelText]}>
+                Cancel Ride
+              </Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -801,23 +844,23 @@ const ReserveRideDetailsAssigned = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF"
+    backgroundColor: "#FFFFFF",
   },
   center: {
     flex: 1,
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: "#6B7280",
-    fontWeight: "500"
+    fontWeight: "500",
   },
   errorText: {
     fontSize: 16,
     color: "#DC2626",
-    fontWeight: "500"
+    fontWeight: "500",
   },
 
   // Header
@@ -852,18 +895,18 @@ const styles = StyleSheet.create({
   },
   headerCenter: {
     flex: 1,
-    alignItems: "center"
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1F2937"
+    color: "#1F2937",
   },
   headerSubtitle: {
     fontSize: 14,
     color: "#6B7280",
     marginTop: 2,
-    fontWeight: "500"
+    fontWeight: "500",
   },
   moreButton: {
     width: 40,
@@ -924,7 +967,7 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
   },
   map: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFillObject,
   },
   mapPlaceholder: {
     flex: 1,
@@ -936,7 +979,7 @@ const styles = StyleSheet.create({
   mapText: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#6B7280"
+    color: "#6B7280",
   },
 
   pickupMarker: {
@@ -984,7 +1027,7 @@ const styles = StyleSheet.create({
   driverInfo: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1
+    flex: 1,
   },
   avatarContainer: {
     marginRight: 16,
@@ -1005,10 +1048,10 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#FFFFFF"
+    color: "#FFFFFF",
   },
   driverDetails: {
-    flex: 1
+    flex: 1,
   },
   driverName: {
     fontSize: 18,
@@ -1035,7 +1078,7 @@ const styles = StyleSheet.create({
 
   contactButtons: {
     flexDirection: "row",
-    gap: 8
+    gap: 8,
   },
   phoneButton: {
     width: 44,
@@ -1061,7 +1104,7 @@ const styles = StyleSheet.create({
   },
   earningItem: {
     flex: 1,
-    alignItems: "center"
+    alignItems: "center",
   },
   earningAmount: {
     fontSize: 18,
@@ -1407,7 +1450,7 @@ const styles = StyleSheet.create({
   },
 
   bottomSpacing: {
-    height: 20
+    height: 20,
   },
 });
 

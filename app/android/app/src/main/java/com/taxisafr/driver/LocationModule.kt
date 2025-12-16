@@ -61,7 +61,7 @@ class LocationModule(private val reactContext: ReactApplicationContext) : ReactC
 
         locationManager.requestLocationUpdates(
             LocationManager.GPS_PROVIDER,
-            5000L, // every 5 seconds
+            60000L, // every 5 seconds
             10f,   // 10 meters
             locationListener as LocationListener
         )

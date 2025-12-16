@@ -1,7 +1,13 @@
+// screens/BorderTaxIntro.js
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import BackWithLogo from "../common/back_with_logo";
 
@@ -9,45 +15,51 @@ export default function BorderTaxIntro() {
   const navigation = useNavigation();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+    <SafeAreaView style={styles.container}>
       <BackWithLogo />
 
-      <View style={styles.container}>
-
-        {/* Header Section */}
-        <View style={styles.headerSection}>
-          <Ionicons name="car-sport" size={42} color="#E30022" />
-          <Text style={styles.mainTitle}>Border Tax Service</Text>
-          <Text style={styles.subText}>
-            Fast, Secure & Hassle-Free Border Tax Payments for Taxi Safar Drivers
-          </Text>
-        </View>
-
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Ionicons name="shield-checkmark" size={26} color="#E30022" />
-          <Text style={styles.infoText}>
-            Taxi Safar ensures your border tax submissions are 100% safe and verified.
+      <View style={styles.content}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="car-sport-outline" size={40} color="#fff" />
+          </View>
+          <Text style={styles.title}>Border Tax</Text>
+          <Text style={styles.subtitle}>
+            Easy border tax payments for Taxi Safar drivers
           </Text>
         </View>
 
         {/* Action Cards */}
-        <TouchableOpacity
-          style={[styles.card, styles.postCard]}
-          onPress={() => navigation.navigate("CreateBorderTax")}
-        >
-          <MaterialCommunityIcons name="file-upload" size={34} color="#fff" />
-          <Text style={styles.cardText}>Post Border Tax</Text>
-        </TouchableOpacity>
+        <View style={styles.cards}>
+          {/* Post Border Tax */}
+          <TouchableOpacity
+            style={[styles.card, styles.redCard]}
+            onPress={() => navigation.navigate("CreateBorderTax")}
+            activeOpacity={0.9}
+          >
+            <MaterialCommunityIcons name="file-upload-outline" size={28} color="#fff" />
+            <Text style={styles.cardText}>Post Border Tax</Text>
+            <Ionicons name="arrow-forward" size={22} color="#fff" />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.card, styles.viewCard]}
-          onPress={() => navigation.navigate("ViewBorderTax")}
-        >
-          <MaterialCommunityIcons name="file-document" size={34} color="#fff" />
-          <Text style={styles.cardText}>View Border Taxes</Text>
-        </TouchableOpacity>
+          {/* View Border Taxes */}
+          <TouchableOpacity
+            style={[styles.card, styles.blackCard]}
+            onPress={() => navigation.navigate("ViewBorderTax")}
+            activeOpacity={0.9}
+          >
+            <MaterialCommunityIcons name="file-document-outline" size={28} color="#fff" />
+            <Text style={styles.cardText}>View All Taxes</Text>
+            <Ionicons name="arrow-forward" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
+        {/* Trust Badge */}
+        <View style={styles.trust}>
+          <Ionicons name="shield-checkmark" size={18} color="#E52710" />
+          <Text style={styles.trustText}>Secure • Fast • Verified by Taxi Safar</Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -57,76 +69,81 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
   },
-
-  // Header Section
-  headerSection: {
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#000",
-    marginTop: 8,
-  },
-  subText: {
-    fontSize: 14,
-    color: "#555",
-    marginTop: 6,
-    width: "85%",
-    textAlign: "center",
-  },
-
-  // Info Box
-  infoBox: {
-    width: "100%",
-    backgroundColor: "#FFE9EB",
-    borderRadius: 14,
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 35,
-    borderLeftWidth: 5,
-    borderLeftColor: "#E30022",
-  },
-  infoText: {
+  content: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#333",
+    paddingHorizontal: 20,
+    paddingTop: 30,
   },
 
-  // Action Cards
-  card: {
-    width: "100%",
-    paddingVertical: 20,
-    borderRadius: 14,
-    flexDirection: "row",
+  header: {
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#E52710",
     justifyContent: "center",
     alignItems: "center",
-    gap: 14,
-    marginBottom: 18,
-    elevation: 6,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: "bold",
+    color: "#000",
+    fontFamily: "SFProDisplay-Bold",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginTop: 8,
+    fontFamily: "SFProDisplay-Medium",
+  },
+
+  cards: {
+    gap: 16,
+    marginBottom: 40,
+  },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderRadius: 16,
+    elevation: 4,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
     shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
   },
-  postCard: {
-    backgroundColor: "#E30022", // RED
+  redCard: {
+    backgroundColor: "#E52710",
   },
-  viewCard: {
-    backgroundColor: "#000", // BLACK
+  blackCard: {
+    backgroundColor: "#000",
   },
   cardText: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "600",
     color: "#fff",
+    fontFamily: "SFProDisplay-Semibold",
+    flex: 1,
+    marginLeft: 16,
+  },
+
+  trust: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  trustText: {
+    fontSize: 13,
+    color: "#777",
+    fontFamily: "SFProDisplay-Medium",
   },
 });

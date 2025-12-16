@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
-  StatusBar,
   ScrollView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -15,119 +14,68 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import BackWithLogo from "../common/back_with_logo";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 export default function InsuranceIntro() {
   const navigation = useNavigation();
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={styles.container}>
       <BackWithLogo />
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.container}>
-          {/* Header Section */}
-          <View style={styles.header}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="shield-checkmark" size={70} color="#10B981" />
-            </View>
-
-            <Text style={styles.title}>Insurance Manager</Text>
-            <Text style={styles.subtitle}>
-              Track Insurance, PUC, Fitness Certificate & National Permit{"\n"}
-              Get timely reminders • Renew on time • Drive legally
-            </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="shield-checkmark" size={48} color="#fff" />
           </View>
+          <Text style={styles.title}>Insurance Manager</Text>
+          <Text style={styles.subtitle}>
+            Track Insurance, PUC, Fitness & Permits with timely reminders
+          </Text>
+        </View>
 
-          {/* Main Action Cards */}
-          <View style={styles.cardsContainer}>
-            {/* Add New Document */}
-            <TouchableOpacity
-              style={styles.cardWrapper}
-              onPress={() => navigation.navigate("CreateInsurance")}
-              activeOpacity={0.92}
-            >
-              <LinearGradient
-                colors={["#10B981", "#059669"]}
-                style={styles.gradientCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.cardIcon}>
-                  <Ionicons name="add-circle" size={44} color="#fff" />
-                </View>
-                <Text style={styles.cardTitle}>Apply For New Insurance</Text>
+        {/* Action Cards */}
+        <View style={styles.cards}>
+          {/* Apply New */}
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => navigation.navigate("CreateInsurance")}
+            activeOpacity={0.9}
+          >
+            <LinearGradient colors={["#000000", "#333333"]} style={styles.gradient}>
+              <Ionicons name="add-circle" size={28} color="#fff" />
+              <Text style={styles.cardTitle}>Apply For New Insurance</Text>
+              <Ionicons name="chevron-forward" size={24} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
 
-                <Ionicons
-                  name="chevron-forward"
-                  size={26}
-                  color="#fff"
-                  style={styles.arrow}
-                />
-              </LinearGradient>
-            </TouchableOpacity>
+          {/* View All */}
+          {/* <TouchableOpacity
+            style={styles.card}
+            onPress={() => navigation.navigate("AllInsurance")}
+            activeOpacity={0.9}
+          >
+            <LinearGradient colors={["#E52710", "#C41E0A"]} style={styles.gradient}>
+              <Ionicons name="documents" size={28} color="#fff" />
+              <Text style={styles.cardTitle}>View All Insurance Records</Text>
+              <Ionicons name="chevron-forward" size={24} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity> */}
+        </View>
 
-            {/* View All Records */}
-            <TouchableOpacity
-              style={styles.cardWrapper}
-              onPress={() => navigation.navigate("AllInsurance")}
-              activeOpacity={0.92}
-            >
-              <LinearGradient
-                colors={["#3B82F6", "#2563EB"]}
-                style={styles.gradientCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.cardIcon}>
-                  <Ionicons name="documents" size={44} color="#fff" />
-                </View>
-                <Text style={styles.cardTitle}>View All Applied Insurance</Text>
-
-                <Ionicons
-                  name="chevron-forward"
-                  size={26}
-                  color="#fff"
-                  style={styles.arrow}
-                />
-              </LinearGradient>
-            </TouchableOpacity>
+        {/* Quick Features */}
+        <View style={styles.features}>
+          <View style={styles.featureRow}>
+            <Ionicons name="notifications" size={20} color="#E52710" />
+            <Text style={styles.featureText}>Auto Expiry Reminders</Text>
           </View>
-
-          {/* Trust & Stats Section */}
-          <View style={styles.bottomSection}>
-            {/* Trust Badges */}
-            <View style={styles.trustBadges}>
-              <View style={styles.trustItem}>
-                <Ionicons name="notifications" size={22} color="#10B981" />
-                <Text style={styles.trustText}>Auto Expiry Alerts</Text>
-              </View>
-              <View style={styles.trustItem}>
-                <Ionicons name="lock-closed" size={22} color="#10B981" />
-                <Text style={styles.trustText}>100% Secure</Text>
-              </View>
-              <View style={styles.trustItem}>
-                <Ionicons name="shield-checkmark" size={22} color="#10B981" />
-                <Text style={styles.trustText}>Trusted by 25,000+ Drivers</Text>
-              </View>
-            </View>
-
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>98%</Text>
-                <Text style={styles.statLabel}>On-Time Renewals</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>4.9</Text>
-                <Text style={styles.statLabel}>App Rating</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>50K+</Text>
-                <Text style={styles.statLabel}>Active Users</Text>
-              </View>
-            </View>
+          <View style={styles.featureRow}>
+            <Ionicons name="shield-checkmark" size={20} color="#E52710" />
+            <Text style={styles.featureText}>Secure & Encrypted Data</Text>
+          </View>
+          <View style={styles.featureRow}>
+            <Ionicons name="checkmark-circle" size={20} color="#E52710" />
+            <Text style={styles.featureText}>Never Miss a Renewal</Text>
           </View>
         </View>
       </ScrollView>
@@ -138,136 +86,83 @@ export default function InsuranceIntro() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
 
   header: {
     alignItems: "center",
-    paddingTop: height * 0.08,
+    paddingTop: 40,
     paddingHorizontal: 30,
   },
-  iconContainer: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "#ECFDF5",
+  iconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#E52710",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
-    borderWidth: 3,
-    borderColor: "#10B981",
+    marginBottom: 20,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: "#111827",
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#000",
     textAlign: "center",
-    marginBottom: 12,
-    letterSpacing: 0.3,
+    marginBottom: 10,
+    fontFamily: "SFProDisplay-Bold",
   },
   subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
+    fontSize: 15,
+    color: "#666",
     textAlign: "center",
-    lineHeight: 24,
-    fontWeight: "500",
+    lineHeight: 22,
+    fontFamily: "SFProDisplay-Medium",
   },
 
-  cardsContainer: {
+  cards: {
     paddingHorizontal: 20,
     marginTop: 40,
-    gap: 20,
+    gap: 16,
   },
-  cardWrapper: {
-    borderRadius: 20,
+  card: {
+    borderRadius: 16,
     overflow: "hidden",
-    elevation: 12,
+    elevation: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 20,
+    shadowRadius: 12,
   },
-  gradientCard: {
-    padding: 28,
-    borderRadius: 20,
+  gradient: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  cardIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: "rgba(255,255,255,0.4)",
+    padding: 20,
+    gap: 16,
   },
   cardTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    marginLeft: 20,
     flex: 1,
-  },
-  cardDesc: {
     fontSize: 14,
-    color: "#E0E7FF",
-    marginLeft: 20,
-    marginTop: 4,
-    flex: 1,
-  },
-  arrow: {
-    opacity: 0.9,
+    fontWeight: "600",
+    color: "#fff",
+    fontFamily: "SFProDisplay-Semibold",
   },
 
-  bottomSection: {
-    marginTop: 50,
-    paddingHorizontal: 24,
+  features: {
+    marginTop: 40,
+    paddingHorizontal: 30,
+    gap: 14,
   },
-  trustBadges: {
-    gap: 16,
-    marginBottom: 32,
-  },
-  trustItem: {
+  featureRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  trustText: {
-    fontSize: 15.5,
-    color: "#374151",
-    fontWeight: "600",
-  },
-
-  statsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    backgroundColor: "#F8FAFC",
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  statBox: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: "#10B981",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 6,
-    fontWeight: "600",
-  },
-  divider: {
-    width: 1,
-    height: "100%",
-    backgroundColor: "#E2E8F0",
+  featureText: {
+    fontSize: 15,
+    color: "#333",
+    fontFamily: "SFProDisplay-Medium",
   },
 });

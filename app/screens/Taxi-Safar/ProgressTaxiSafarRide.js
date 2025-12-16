@@ -33,7 +33,7 @@ import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import { UniversalAlert } from "../common/UniversalAlert";
 
 import mini from "../../assets/mini.png";
-import sedan from "../../assets/sedan.jpeg";
+import sedan from "../../assets/sedan.png";
 import suv from "../../assets/suv.png";
 import useDriverStore from "../../store/driver.store";
 import { decodePolyline } from "../../utils/utils";

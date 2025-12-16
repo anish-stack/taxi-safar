@@ -61,7 +61,7 @@ export default function ReserveScreen() {
 
   const [tempFilters, setTempFilters] = useState(filters);
 
-  const tabs = ["All Trip", "TaxiSafar Trip", "Driver Post"];
+  const tabs = ["All Trip","B2B Bookings", "B2C Bookings"];
 
   // === Custom Range Slider Logic ===
   const minThumbRef = useRef(new Animated.Value(0)).current;
@@ -154,10 +154,10 @@ export default function ReserveScreen() {
       let posts = [],
         trips = [];
 
-      if (activeTab === "Driver Post" || activeTab === "All Trip") {
+      if (activeTab === "B2B Bookings" || activeTab === "All Trip") {
         posts = await fetchDriverPosts(pageNum);
       }
-      if (activeTab === "TaxiSafar Trip" || activeTab === "All Trip") {
+      if (activeTab === "B2C Bookings" || activeTab === "All Trip") {
         trips = await fetchTaxiSafarTrips(pageNum);
       }
 
@@ -212,9 +212,9 @@ export default function ReserveScreen() {
   const getFilteredAndSortedData = () => {
     let data = [];
 
-    if (activeTab === "Driver Post") {
+    if (activeTab === "B2B Bookings") {
       data = driverPosts.map((d) => ({ ...d, sourceType: "driver" }));
-    } else if (activeTab === "TaxiSafar Trip") {
+    } else if (activeTab === "B2C Bookings") {
       data = taxiSafarTrips.map((t) => ({ ...t, sourceType: "taxisafar" }));
     } else {
       data = [

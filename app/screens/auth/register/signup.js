@@ -703,7 +703,7 @@ export default function RegisterScreen({ navigation }) {
     formData.append("mobile", mobile);
     formData.append("email", email);
     formData.append("gender", gender);
-    formData.append("aadhaarNumber", aadhaarNumber);
+    formData.append("aadhaarNumber", aadhaarNumber);  
     formData.append("dlNumber", licenseNumber);
     formData.append("address", JSON.stringify(address));
     if (fcmToken) formData.append("fcmToken", fcmToken);
@@ -800,7 +800,13 @@ export default function RegisterScreen({ navigation }) {
       onRequestClose={() => setShowOtpModal(false)}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+          <ScrollView
+      contentContainerStyle={styles.modalContentScroll}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+
+          <View style={styles.modalContent}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Enter OTP</Text>
           <Text style={styles.modalSubtitle}>
@@ -862,6 +868,8 @@ export default function RegisterScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
         </View>
+    </ScrollView>
+    
       </View>
     </Modal>
   );
@@ -1024,6 +1032,14 @@ export default function RegisterScreen({ navigation }) {
                 style={[styles.input, { backgroundColor: "#f0f0f0" }]}
               />
 
+              <Text style={styles.label}>Address (Optional)</Text>
+              <TextInput
+                placeholder="Enter Your Address"
+                value={address}
+                onChangeText={setAddress}
+                style={styles.input}
+              />
+
               <Text style={styles.label}>Email (Optional)</Text>
               <TextInput
                 placeholder="email@domain.com"
@@ -1033,13 +1049,13 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
               />
 
-              <Text style={styles.label}>Referral ID (Optional)</Text>
+              {/* <Text style={styles.label}>Referral ID (Optional)</Text>
               <TextInput
                 placeholder="Enter referral code"
                 value={referralId}
                 onChangeText={setReferralId}
                 style={styles.input}
-              />
+              /> */}
 
               {/* Aadhaar Upload */}
               <Text style={styles.label}>Upload Aadhaar *</Text>
@@ -1325,8 +1341,9 @@ export default function RegisterScreen({ navigation }) {
           </View>
         </Modal>
 
-        {/* Aadhaar OTP Modal (पुराना वाला) */}
-        {renderOtpModal()}
+ 
+         {renderOtpModal()}
+  
 
         {/* Camera View */}
         {cameraOpen && (
@@ -1609,22 +1626,23 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
+    marginBottom:200,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center", // ← center में
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
   },
   modalContent: {
     backgroundColor: Colors.white,
     borderRadius: 24,
-    padding: 24,
+    padding: 29,
     width: "100%",
-    maxWidth: 380,
+   width: 280,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
-    elevation: 20,
+    elevation: 10,
   },
   modalHandle: {
     width: 40,
@@ -1651,7 +1669,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 10,
-    gap: 10,
+    gap: 3,
   },
   otpInput: {
     flex: 1,
@@ -1676,4 +1694,10 @@ const styles = StyleSheet.create({
   resendContainer: { alignItems: "center", marginTop: 10 },
   resendText: { color: Colors.textPrimary, fontSize: 15, fontWeight: "500" },
   resendTextDisabled: { color: Colors.textSecondary },
+  modalContentScroll: {
+  flexGrow: 1,
+  justifyContent: "center",
+  alignItems: "center",
+  padding: 20,
+}
 });

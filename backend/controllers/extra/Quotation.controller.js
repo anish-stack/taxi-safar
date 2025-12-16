@@ -1,6 +1,7 @@
 const ComopanyDetails = require("../../models/driver/ComopanyDetails");
 const Driver = require("../../models/driver/driver.model");
 const Quotations = require("../../models/extra/Quatations");
+const BankDetails = require("../../models/driver/bankDetails.model");
 const { deleteImage, uploadSingleImage } = require("../../utils/cloudinary");
 const puppeteer = require("puppeteer");
 
@@ -128,439 +129,556 @@ const generateInvoiceNumber = async () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `INV-${year}${month}-${String(count + 1).padStart(5, "0")}`;
+  const day = String(date.getDate()).padStart(2, "0");
+  return `VFPL${year}${month}${day}${String(count + 1).padStart(4, "0")}`;
 };
 
-// HTML Template for PDF
-const generateHTMLTemplate = (quotation, company) => {
-  // Check if any trip has TotalAmountOftrip (simplified mode)
-  const isSimplifiedMode = quotation.trip_details.some(
-    (trip) => trip.TotalAmountOftrip && trip.TotalAmountOftrip > 0
-  );
+const generateInvoiceNewNumber = async () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  let txns;
+  let exists = true;
+
+  while (exists) {
+    const count = await Quotations.countDocuments({
+      invoice_number: new RegExp(`^TAXIN${year}${month}${day}`),
+    });
+
+    txns = `TAXIN${year}${month}${day}${String(count + 1).padStart(4, "0")}`;
+
+    exists = await Quotations.exists({ invoice_number: txns });
+  }
+
+  return txns;
+};
+
+const generateHTMLTemplate = (
+  quotation,
+  company,
+  documentType = "quotation"
+) => {
+  const isInvoice = documentType === "invoice";
+  const title = isInvoice ? "TAX INVOICE" : "Your Estimate Quotation";
+
+  const billTo = quotation.bill_to || {};
+  const summary = quotation.summary || {};
+  const trip = quotation.trip_details?.[0] || {};
+
+  const isDayWise = trip.pricing_mode === "day_wise";
+  const isKmWise = trip.pricing_mode === "km_wise";
+
+  // Split route into places
+  const routePlaces = (trip.pickup_drop_place || "")
+    .split("→")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  // Format date
+  const formatDate = (date) =>
+    date
+      ? new Date(date).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : "N/A";
+
+  const formatTime = (time) => time || "N/A";
+
+  // Build table rows - matching image format
+  let tableRows = "";
+  routePlaces.forEach((place, index) => {
+    const srNo = String(index + 1).padStart(2, "0");
+    const isLastPlaceBeforeReturn = index === routePlaces.length - 2;
+
+    // Check if this is a multi-stop
+    const isStop =
+      trip.multi_stops &&
+      trip.stops &&
+      trip.stops.some((s) => s.place === place);
+    const placeDisplay = isStop
+      ? `${place} <span style="color: #666; font-size: 11px; font-style: italic;">(Stop)</span>`
+      : place;
+
+    if (isLastPlaceBeforeReturn && (isDayWise || isKmWise)) {
+      // Row with fare details
+      tableRows += `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${srNo}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${placeDisplay}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${
+            isDayWise ? trip.per_day_cab_charges : trip.per_km_rate
+          }</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${
+            isDayWise ? trip.total_days : trip.total_km
+          }</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${(isDayWise
+            ? trip.day_fare
+            : trip.km_fare || 0
+          ).toLocaleString("en-IN")}</td>
+        </tr>`;
+    } else {
+      // Row without fare details
+      tableRows += `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${srNo}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;" colspan="4">${placeDisplay}</td>
+        </tr>`;
+    }
+  });
+
+  // Format trip type
+  const tripTypeDisplay =
+    quotation.trip_type === "round_trip"
+      ? "Round Trip"
+      : quotation.trip_type === "one_way"
+      ? "One Way"
+      : quotation.trip_type || "N/A";
 
   return `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Your Estimate Quotation</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: Arial, sans-serif;
-      padding: 30px;
-      font-size: 12px;
-      color: #000;
-    }
-    
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 10px;
-    }
-    
-    .company-info h1 {
-      font-size: 22px;
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
-    
-    .company-info p {
-      font-size: 11px;
-      margin: 2px 0;
-    }
-    
-    .company-logo {
-      width: 60px;
-      height: 60px;
-    }
-    
-    .divider {
-      border-top: 2px solid #ff1744;
-      margin: 15px 0;
-    }
-    
-    .invoice-title {
-      text-align: center;
-      font-size: 24px;
-      font-weight: bold;
-      color: #ff1744;
-      margin: 20px 0;
-    }
-    
-    .invoice-details-section {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 20px;
-    }
-    
-    .bill-to h3, .invoice-info h3 {
-      font-size: 13px;
-      font-weight: bold;
-      margin-bottom: 8px;
-    }
-    
-    .bill-to p, .invoice-info p {
-      font-size: 11px;
-      margin: 3px 0;
-    }
-    
-    .invoice-info {
-      text-align: right;
-    }
-    
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 20px 0;
-    }
-    
-    table thead {
-      background-color: #ff1744;
-      color: white;
-    }
-    
-    table th, table td {
-      padding: 10px 8px;
-      text-align: left;
-      font-size: 11px;
-      border: 1px solid #ddd;
-    }
-    
-    table th {
-      font-weight: bold;
-    }
-    
-    table tbody tr:nth-child(even) {
-      background-color: #f9f9f9;
-    }
-    
-    .total-row {
-      background-color: #f5f5f5 !important;
-      font-weight: bold;
-    }
-    
-    .summary-section {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 20px;
-    }
-    
-    .terms {
-      width: 48%;
-    }
-    
-    .terms h4 {
-      font-size: 12px;
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
-    
-    .terms p {
-      font-size: 11px;
-    }
-    
-    .amount-breakdown {
-      width: 48%;
-    }
-    
-    .amount-breakdown table {
-      margin: 0;
-    }
-    
-    .amount-breakdown td {
-      padding: 6px 8px;
-      border: 1px solid #ddd;
-    }
-    
-    .amount-breakdown .grand-total {
-      background-color: #ff1744;
-      color: white;
-      font-weight: bold;
-      font-size: 13px;
-    }
-    
-    .footer-section {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px solid #ddd;
-    }
-    
-    .bank-details h4, .signature h4 {
-      font-size: 12px;
-      font-weight: bold;
-      margin-bottom: 8px;
-    }
-    
-    .bank-details p {
-      font-size: 11px;
-      margin: 3px 0;
-    }
-    
-    .signature {
-      text-align: right;
-    }
-    
-    .signature img {
-      width: 120px;
-      margin-bottom: 5px;
-    }
-    
-    .signature p {
-      font-size: 11px;
-      font-weight: bold;
-    }
-    
-    .extra-charges {
-      font-size: 10px;
-      color: #666;
-      margin-top: 3px;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>${title}</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .page {
+    width: 595px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #fff;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+  }
+
+  .company-info h2 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 3px;
+  }
+
+  .company-info p {
+    font-size: 10px;
+    margin: 1px 0;
+  }
+
+  .logo {
+    width: 60px;
+    height: 60px;
+  }
+
+  .logo svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* TITLE BAR */
+  .title-bar {
+    background: #e53935;
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+
+  /* INFO GRID */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 10px;
+  }
+
+  .info-box {
+    padding: 5px;
+  }
+
+  .info-box strong {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 10px;
+  }
+
+  .info-box p {
+    margin: 2px 0;
+    line-height: 1.3;
+  }
+
+  .trip-info {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+  }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 5px;
+    font-size: 10px;
+  }
+
+  thead {
+    background: #f5f5f5;
+  }
+
+  th {
+    padding: 6px 8px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 10px;
+
+  }
+
+  th.center {
+    text-align: center;
+  }
+
+  td {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    font-size: 10px;
+  }
+
+  .total-row {
+    text-align: right;
+    padding: 8px;
+    font-weight: bold;
+    font-size: 11px;
+  }
+
+  /* BOTTOM SECTION */
+  .bottom-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 15px;
+    font-size: 10px;
+  }
+
+  .description-section h3 {
+    font-size: 11px;
+    margin-bottom: 8px;
+    font-weight: bold;
+  }
+
+  .description-content {
+    line-height: 1.5;
+  }
+
+  .description-content p {
+    margin: 4px 0;
+  }
+
+  .charges-section {
+   
+    padding: 10px;
+  }
+
+  .charge-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px dotted #ddd;
+  }
+
+  .charge-row:last-child {
+    border-bottom: none;
+  }
+
+  .total-payable {
+    background: #f5f5f5;
+    padding: 8px;
+    margin-top: 10px;
+    font-weight: bold;
+    text-align: center;
+    font-size: 11px;
+    border: 1px solid #ddd;
+  }
+
+  /* FOOTER */
+  .footer {
+    margin-top: 30px;
+    padding-top: 10px;
+    border-top: 2px solid #e53935;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+  }
+
+  .footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: bold;
+  }
+
+  .footer-logo svg {
+    width: 30px;
+    height: 20px;
+  }
+</style>
 </head>
+
 <body>
+
+<div class="page">
+
+  <!-- HEADER -->
   <div class="header">
     <div class="company-info">
-      <h1>${company.company_name}</h1>
-      <p>${company.address}</p>
-      <p>Phone no.: ${company.phone}</p>
-      <p>Email: ${company.email}</p>
+      <h2>${company.company_name || "Vicky Cab Service"}</h2>
+      <p>${company.address || "102/60 Sector 62 Noida Uttar Pradesh 201009"}</p>
+      <p>Contact No: ${company.phone || "941 2222 322"}</p>
+      <p>Email: ${company.email || "Vickeycabservice@Gmail.Com"}</p>
     </div>
-    ${
-      company.logo?.url
-        ? `<img src="${company.logo.url}" alt="Logo" class="company-logo">`
-        : ""
-    }
+    <div class="logo">
+      <img src=${company.logo.url}  />
+    </div>
   </div>
-  
-  <div class="divider"></div>
-  
-  <div class="invoice-title">Your Estimate Quotation</div>
-  
-  <div class="invoice-details-section">
-    <div class="bill-to">
-      <h3>Bill To</h3>
-      <p><strong>${quotation.bill_to.customer_name}</strong></p>
-      <p>Contact No.: ${quotation.bill_to.contact_number}</p>
+
+  <!-- TITLE BAR -->
+  <div class="title-bar">${title}</div>
+
+  <!-- INFO GRID -->
+  <div class="info-grid">
+    <div class="info-box">
+      <strong>Estimate For</strong>
+      <p>${billTo.customer_name || "Aakash Doshi"}</p>
+      <p>${billTo.address || "Rohini, New Delhi"}</p>
+      <p>${billTo.contact_number || "+91 7894561230"}</p>
     </div>
     
-    <div class="invoice-info">
-      <h3>Invoice Details</h3>
-      <p>Invoice No.: ${quotation.invoice_number}</p>
-      <p>Date: ${new Date(quotation.invoice_date).toLocaleDateString(
-        "en-IN"
-      )}</p>
-      <p>Trip Type: ${
-        quotation.trip_type === "one_way" ? "One Way" : "Round Trip"
-      }</p>
+    <div class="info-box">
+      <strong>Pickup Date & Time</strong>
+      <p>${formatDate(trip.pickup_date)} - ${formatTime(trip.pickup_time)}</p>
+      <div class="trip-info">
+        <span><strong>Trip Type:</strong> ${tripTypeDisplay}</span>
+      </div>
+    </div>
+    
+${
+  quotation.trip_type === "round_trip"
+    ? `
+  <div class="info-box">
+    <strong>Return Date & Time</strong>
+    <p>
+      ${formatDate(trip.return_date || trip.pickup_date)} - 
+      ${formatTime(trip.return_time || "10:00 AM")}
+    </p>
+    <div class="trip-info">
+      <span>
+        <strong>Vehicle Type:</strong> ${trip.vehicle_type || "SUV"}
+      </span>
     </div>
   </div>
-  
+`
+    : ""
+}
+
+    
+    <div class="info-box">
+      <strong>Estimate Details</strong>
+      <p>Date: ${formatDate(quotation.invoice_date)}</p>
+      <p>Driver Id: ${company.driverPub || "07 Delhi"}</p>
+    </div>
+  </div>
+
+  <!-- TRIP TABLE -->
   <table>
     <thead>
       <tr>
-        <th>S.N</th>
+        <th class="center" style="width: 50px;">Sr.#</th>
         <th>Pickup & Drop Place</th>
-        <th>Vehicle Type</th>
-        <th>Pickup Date & Time</th>
-        ${
-          quotation.trip_type === "round_trip"
-            ? "<th>Return Date & Time</th>"
-            : ""
-        }
-        ${!isSimplifiedMode ? "<th>Total Days</th>" : ""}
-        ${!isSimplifiedMode ? "<th>Per Day Charges</th>" : ""}
-        ${!isSimplifiedMode ? "<th>Toll Tax</th>" : ""}
-        <th>Amount</th>
+        <th class="center" style="width: 80px;">${
+          isDayWise ? "₹ Per Day" : "₹ Per Km"
+        }</th>
+        <th class="center" style="width: 80px;">${
+          isDayWise ? "Total Day" : "Total Km"
+        }</th>
+        <th class="center" style="width: 80px;">Amount</th>
       </tr>
     </thead>
     <tbody>
-      ${quotation.trip_details
-        .map((trip, index) => {
-          const extraChargesHTML =
-            trip.extra_charges && trip.extra_charges.length > 0
-              ? `<div class="extra-charges">${trip.extra_charges
-                  .map((ec) => `${ec.description}: ₹${ec.amount.toFixed(2)}`)
-                  .join(", ")}</div>`
-              : "";
-
-          return `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${trip.pickup_drop_place}</td>
-          <td>${trip.vehicle_type}</td>
-          <td>${new Date(trip.pickup_date).toLocaleDateString("en-IN")} ${
-            trip.pickup_time
-          }</td>
-          ${
-            quotation.trip_type === "round_trip"
-              ? `<td>${new Date(trip.return_date).toLocaleDateString(
-                  "en-IN"
-                )} ${trip.return_time}</td>`
-              : ""
-          }
-          ${!isSimplifiedMode ? `<td>${trip.total_days || "-"}</td>` : ""}
-          ${
-            !isSimplifiedMode
-              ? `<td>₹ ${
-                  trip.per_day_cab_charges
-                    ? trip.per_day_cab_charges.toFixed(2)
-                    : "-"
-                }</td>`
-              : ""
-          }
-          ${
-            !isSimplifiedMode
-              ? `<td>₹ ${trip.toll_tax_amount.toFixed(2)}</td>`
-              : ""
-          }
-          <td>
-            ₹ ${trip.total_amount.toFixed(2)}
-            ${extraChargesHTML}
-          </td>
-        </tr>
-      `;
-        })
-        .join("")}
-      <tr class="total-row">
-        <td colspan="${
-          isSimplifiedMode
-            ? quotation.trip_type === "round_trip"
-              ? "5"
-              : "4"
-            : quotation.trip_type === "round_trip"
-            ? "8"
-            : "7"
-        }" style="text-align: right;"><strong>Total</strong></td>
-        ${
-          !isSimplifiedMode
-            ? `<td>₹ ${quotation.summary.toll_tax_total.toFixed(2)}</td>`
-            : ""
-        }
-        <td>₹ ${quotation.summary.sub_total.toFixed(2)}</td>
-      </tr>
+      ${tableRows}
     </tbody>
   </table>
-  
-  <div class="summary-section">
-    <div class="terms">
-      <h4>Invoice Amount In Words</h4>
-      <p>${quotation.summary.amount_in_words}</p>
-      <br>
-      <h4>Terms And Conditions</h4>
-      <p>${quotation.terms_and_conditions}</p>
-    </div>
-    
-    <div class="amount-breakdown">
-      <table>
-        <tr>
-          <td>Sub Total</td>
-          <td style="text-align: right;">₹ ${quotation.summary.sub_total.toFixed(
-            2
-          )}</td>
-        </tr>
-        ${
-          !isSimplifiedMode
-            ? `
-        <tr>
-          <td>Toll Tax</td>
-          <td style="text-align: right;">₹ ${quotation.summary.toll_tax_total.toFixed(
-            2
-          )}</td>
-        </tr>
-        <tr>
-          <td>State Tax</td>
-          <td style="text-align: right;">₹ ${quotation.summary.state_tax.toFixed(
-            2
-          )}</td>
-        </tr>
-        <tr>
-          <td>Driver Charge</td>
-          <td style="text-align: right;">₹ ${quotation.summary.driver_charge.toFixed(
-            2
-          )}</td>
-        </tr>
-        <tr>
-          <td>Parking Charge</td>
-          <td style="text-align: right;">₹ ${quotation.summary.parking_charge.toFixed(
-            2
-          )}</td>
-        </tr>
-        `
-            : ""
-        }
-        ${
-          quotation.summary.extra_charges_total > 0
-            ? `
-        <tr>
-          <td>Extra Charges</td>
-          <td style="text-align: right;">₹ ${quotation.summary.extra_charges_total.toFixed(
-            2
-          )}</td>
-        </tr>
-        `
-            : ""
-        }
-        <tr class="grand-total">
-          <td><strong>Total</strong></td>
-          <td style="text-align: right;"><strong>₹ ${quotation.summary.grand_total.toFixed(
-            2
-          )}</strong></td>
-        </tr>
-        <tr>
-          <td>Payment Mode</td>
-          <td style="text-align: right;">${
-            quotation.payment_mode.charAt(0).toUpperCase() +
-            quotation.payment_mode.slice(1).replace("_", " ")
-          }</td>
-        </tr>
-      </table>
-    </div>
+
+  <div class="total-row">
+    Total : ₹${(
+      summary.subtotal ||
+      summary.km_fare_total ||
+      summary.day_fare_total ||
+      0
+    ).toLocaleString("en-IN")}
   </div>
-  
-  <div class="footer-section">
-    <div class="bank-details">
-      <h4>Pay To:</h4>
-      <p>Bank Name: ${quotation.bank_details.bank_name}</p>
-      <p>Bank Account No.: ${quotation.bank_details.account_number}</p>
-      <p>Bank IFSC code: ${quotation.bank_details.ifsc_code}</p>
-      <p>Account Holder's Name: ${
-        quotation.bank_details.account_holder_name
-      }</p>
-    </div>
+
+  <!-- BOTTOM SECTION -->
+  <div class="bottom-section">
     
-    <div class="signature">
-      <p>For: ${company.company_name}</p>
-      <br>
+    <!-- DESCRIPTION -->
+    <div class="description-section">
+      <h3>Description:</h3>
+      <div class="description-content">
+        ${
+          quotation.description
+            ? quotation.description
+                .split("\n")
+                .map((line) => `<p>${line}</p>`)
+                .join("")
+            : `
+        <p>Innova Crysta: ₹500/day</p>
+        <p>Ertiga SUV: ₹4200/day</p>
+        <p>Swift Dzire: ₹3500/day</p>
+        <p><strong>This charges is maximum 250km</strong></p>
+        <br>
+        <p><strong>Extra: Toll tax, State tax</strong></p>
+        <p>Parking charge and Driver charge and</p>
+        <p><strong>Extra km and Extra time charges:</strong></p>
+        <p>₹15/km and ₹250/hour</p>
+        <br>
+        <p><strong>Payment condition</strong></p>
+        <p>10% cab booking in advance</p>
+        <p>50% payment pickup time</p>
+        <p>40% last payment 2 hours before drop</p>
+        <br>
+        <p><strong>WhatsApp your details</strong></p>
+        <p>in advance with ID proof and photo</p>
+        <br>
+        <p><strong>Payment Details</strong></p>
+        <p>Paytm, Phone pay, Google pay all accepted</p>
+        <p>Payment no. +91 94122 22322</p>
+        `
+        }
+      </div>
+    </div>
+    <div>
+      <h3>Term & Conditions:</h3>
+  <div class="description-content">
+  ${quotation.terms_and_conditions}
+  </div>
+    </div>
+
+    <!-- CHARGES -->
+    <div class="charges-section">
+      <div class="charge-row">
+        <span>Toll & State Tax</span>
+        <span>: ₹${(summary.toll_tax_total || 1000).toLocaleString(
+          "en-IN"
+        )}</span>
+      </div>
+      <div class="charge-row">
+        <span>State Tax</span>
+        <span>: ₹${(summary.state_tax || 800).toLocaleString("en-IN")}</span>
+      </div>
+      <div class="charge-row">
+        <span>Driver Charges</span>
+        <span>: ₹${(summary.driver_charge || 900).toLocaleString(
+          "en-IN"
+        )}</span>
+      </div>
+      <div class="charge-row">
+        <span>Parking Charges</span>
+        <span>: ₹${(summary.parking_charge || 600).toLocaleString(
+          "en-IN"
+        )}</span>
+      </div>
       ${
-        company.signature?.url
-          ? `<img src="${company.signature.url}" alt="Signature">`
-          : "<br><br>"
+        summary.additional_charges
+          ?.map(
+            (c) => `
+        <div class="charge-row">
+          <span>${c.title}</span>
+          <span>: ₹${c.amount.toLocaleString("en-IN")}</span>
+        </div>
+      `
+          )
+          .join("") || ""
       }
-      <p>Authorized Signatory</p>
+      
+      <div class="total-payable">
+        Total Amount Payable : ₹${(summary.grand_total || 10300).toLocaleString(
+          "en-IN"
+        )}
+      </div>
     </div>
+
   </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-logo">
+      <img src=${company.logo.url}  />
+      <span style="color: #e53935; font-weight: bold;">${
+        company?.company_name
+      }</span>
+    </div>
+    <div>www.taxisafar.com</div>
+  </div>
+
+</div>
+
 </body>
 </html>
   `;
 };
 
-// Create Quotation
+// ============================================
+// CREATE QUOTATION - WITH DEVELOPMENT PREVIEW
+// ============================================
+
 exports.createQuotation = async (req, res) => {
   try {
     const driverId = req.user.id;
+    const documentType = req.body.document_type || "quotation";
 
-    // Find company details
-    const company = await ComopanyDetails.findOne({ driver: driverId });
+    // Check if development mode
+    const isDevelopment = process.env.NODE_ENV === "development";
+    const previewMode = req.query.preview === "true" || isDevelopment;
+
+    console.log("📥 Received Body:", req.body);
+    console.log("📥 previewMode Body:", previewMode);
+
+    /* -------------------------------------------------
+       1️⃣ Company & Bank Details
+    -------------------------------------------------- */
+    const company = await ComopanyDetails.findOne({
+      driver: driverId,
+    }).populate({
+      path: "driver",
+      select: "driver_name driver_contact_number",
+      populate: {
+        path: "current_vehicle_id",
+        select: "vehicle_number",
+      },
+    });
+
     if (!company) {
       return res.status(404).json({
         success: false,
@@ -568,124 +686,420 @@ exports.createQuotation = async (req, res) => {
       });
     }
 
-    // Generate invoice number
+    // Bank details - use from body if show_bank_details is true
+    const bankDetailsFromBody =
+      req.body.show_bank_details && req.body.bank_details
+        ? req.body.bank_details
+        : null;
+
+    /* -------------------------------------------------
+       2️⃣ Invoice Number
+    -------------------------------------------------- */
     const invoiceNumber = await generateInvoiceNumber();
 
-    // Calculate totals
-    let subTotal = 0;
-    let tollTaxTotal = 0;
-    let extraChargesTotal = 0;
+    /* -------------------------------------------------
+       3️⃣ Multi-Stops Handling
+    -------------------------------------------------- */
+    const multiStop = req.body.multi_stop || false;
+    const stops = Array.isArray(req.body.stops)
+      ? req.body.stops.map((place) => ({
+          place: String(place).trim(),
+          charge: 0,
+        }))
+      : [];
 
-    const tripDetails = req.body.trip_details.map((trip, index) => {
-      let tripTotal = 0;
+    /* -------------------------------------------------
+       4️⃣ Build Trip Details (Single Trip)
+    -------------------------------------------------- */
+    const pricingMode = req.body.pricing_mode || "km_wise";
 
-      // Check if TotalAmountOftrip is provided (simplified mode)
-      if (trip.TotalAmountOftrip && trip.TotalAmountOftrip > 0) {
-        tripTotal = trip.TotalAmountOftrip;
-      } else {
-        // Detailed calculation mode
-        tripTotal = (trip.per_day_cab_charges || 0) * (trip.total_days || 1);
-        tollTaxTotal += trip.toll_tax_amount || 0;
-      }
+    let kmFare = 0;
+    let dayFare = 0;
 
-      // Add extra charges to trip total
-      if (trip.extra_charges && trip.extra_charges.length > 0) {
-        const tripExtraCharges = trip.extra_charges.reduce(
-          (sum, charge) => sum + (charge.amount || 0),
-          0
-        );
-        tripTotal += tripExtraCharges;
-        extraChargesTotal += tripExtraCharges;
-      }
+    if (pricingMode === "km_wise") {
+      const totalKm = parseFloat(req.body.total_km) || 0;
+      const perKmRate = parseFloat(req.body.per_km_rate) || 0;
+      kmFare = totalKm * perKmRate;
+    } else if (pricingMode === "day_wise") {
+      const totalDays = parseInt(req.body.total_days) || 1;
+      const perDayCharges =
+        parseFloat(req.body.per_day_cab_charges || req.body.per_day_charges) ||
+        0;
+      dayFare = totalDays * perDayCharges;
+    }
 
-      subTotal += tripTotal;
+    const tollTax =
+      parseFloat(req.body.toll_tax || req.body.toll_tax_amount || 0) || 0;
 
-      return {
-        sn: index + 1,
-        pickup_drop_place: trip.pickup_drop_place,
-        vehicle_type: trip.vehicle_type,
-        pickup_date: trip.pickup_date,
-        pickup_time: trip.pickup_time,
-        return_date: trip.return_date || null,
-        return_time: trip.return_time || null,
-        TotalAmountOftrip: trip.TotalAmountOftrip || null,
-        total_days: trip.total_days || null,
-        per_day_cab_charges: trip.per_day_cab_charges || null,
-        toll_tax_amount: trip.toll_tax_amount || 0,
-        extra_charges: trip.extra_charges || [],
-        total_amount: tripTotal,
-      };
-    });
+    const tripDetails = [
+      {
+        sn: 1,
+        pickup_drop_place:
+          req.body.pickup_drop_place ||
+          `${req.body.pickup_place} → ${req.body.drop_place}`,
+        vehicle_type: req.body.vehicle_type,
 
-    const stateTax = req.body.summary?.state_tax || 0;
-    const driverCharge = req.body.summary?.driver_charge || 0;
-    const parkingCharge = req.body.summary?.parking_charge || 0;
+        pickup_date: req.body.pickup_date,
+        pickup_time: req.body.pickup_time,
+        return_date: req.body.return_date || req.body.pickup_date,
+        return_time: req.body.return_time || "10:00 AM",
+
+        pricing_mode: pricingMode,
+
+        total_km:
+          pricingMode === "km_wise" ? parseFloat(req.body.total_km) || 0 : 0,
+        per_km_rate:
+          pricingMode === "km_wise" ? parseFloat(req.body.per_km_rate) || 0 : 0,
+        km_fare: kmFare,
+
+        total_days:
+          pricingMode === "day_wise" ? parseInt(req.body.total_days) || 1 : 0,
+        per_day_cab_charges:
+          pricingMode === "day_wise"
+            ? parseFloat(
+                req.body.per_day_cab_charges || req.body.per_day_charges
+              ) || 0
+            : 0,
+        day_fare: dayFare,
+
+        toll_tax_amount: tollTax,
+
+        multi_stops: multiStop,
+        stops: stops,
+
+        extra_charges: [],
+
+        stop_charges_total: 0,
+        total_amount: kmFare + dayFare + tollTax,
+      },
+    ];
+
+    /* -------------------------------------------------
+       5️⃣ Summary from Request (Trust Frontend Calculation)
+    -------------------------------------------------- */
+    const summaryReq = req.body.summary || {};
 
     const grandTotal =
-      subTotal + tollTaxTotal + stateTax + driverCharge + parkingCharge;
-    const amountInWords =
-      numberToWords(Math.floor(grandTotal)) + " Rupees Only";
+      parseFloat(summaryReq.total || summaryReq.grand_total) || 0;
 
-    // Create quotation object
-    const quotationData = {
+    // Amount in words
+    const rupees = Math.floor(grandTotal);
+    const paise = Math.round((grandTotal - rupees) * 100);
+    let amountInWords = numberToWords(rupees);
+    if (paise > 0) {
+      amountInWords += ` And ${numberToWords(paise)} Paise Only`;
+    } else {
+      amountInWords += " Only";
+    }
+
+    /* -------------------------------------------------
+       6️⃣ Create Quotation/Invoice
+    -------------------------------------------------- */
+    const quotation = await Quotations.create({
       driver: driverId,
       company_id: company._id,
+      driver_name: company?.driver?.driver_name,
+      vehicle_number: company?.driver?.current_vehicle_id?.vehicle_number,
+
       invoice_number: invoiceNumber,
-      invoice_date: req.body.invoice_date || new Date(),
-      bill_to: req.body.bill_to,
+      invoice_date: new Date(),
+      document_type: documentType,
+
+      bill_to: {
+        customer_name: req.body.bill_to?.customer_name || "",
+        contact_number: req.body.bill_to?.contact_number || "",
+        email: req.body.bill_to?.email || "",
+        address: req.body.bill_to?.address || "",
+      },
+
       trip_type: req.body.trip_type || "one_way",
+      pricing_mode: pricingMode,
+
+      pickup_place: req.body.pickup_place,
+      drop_place: req.body.drop_place,
+      pickup_drop_place:
+        req.body.pickup_drop_place ||
+        `${req.body.pickup_place} → ${req.body.drop_place}`,
+
       trip_details: tripDetails,
+
+      multi_stops: multiStop,
+      stops: stops,
+
       summary: {
-        sub_total: subTotal,
-        toll_tax_total: tollTaxTotal,
-        state_tax: stateTax,
-        driver_charge: driverCharge,
-        parking_charge: parkingCharge,
-        extra_charges_total: extraChargesTotal,
+        base_fare_total: kmFare + dayFare,
+        km_fare_total: kmFare,
+        day_fare_total: dayFare,
+        toll_tax_total: tollTax,
+
+        state_tax: parseFloat(summaryReq.state_tax) || 0,
+        driver_charge: parseFloat(summaryReq.driver_charge) || 0,
+        parking_charge: parseFloat(summaryReq.parking_charge) || 0,
+
+        extra_charges_total: 0,
+        additional_charges: summaryReq.additional_charges || [],
+
+        discount: parseFloat(summaryReq.discount) || 0,
+        gst_applied: summaryReq.gst_applied || false,
+        gst_amount: parseFloat(summaryReq.gst_amount) || 0,
+
+        subtotal: parseFloat(summaryReq.subtotal) || kmFare + dayFare,
         grand_total: grandTotal,
+        total: grandTotal,
         amount_in_words: amountInWords,
       },
-      payment_mode: req.body.payment_mode || "bank_transfer",
-      bank_details: req.body.bank_details,
-      terms_and_conditions:
-        req.body.terms_and_conditions ||
-        "Thank you for doing business with us.",
-    };
 
-    // Save quotation
-    const quotation = await Quotations.create(quotationData);
+      show_bank_details: req.body.show_bank_details || false,
+      bank_details: bankDetailsFromBody
+        ? {
+            bank_name: bankDetailsFromBody.bank_name,
+            account_number: bankDetailsFromBody.account_number,
+            ifsc_code: bankDetailsFromBody.ifsc_code,
+            account_holder_name: bankDetailsFromBody.account_holder_name,
+          }
+        : null,
 
-    // Generate PDF
-    const html = generateHTMLTemplate(quotation, company);
+      description: req.body.description || req.body.terms_and_conditions || "",
+      terms_and_conditions:"You acknowledge and agree to accept all terms and conditions of the driver as applicable to this trip.",
+      place_of_supply: req.body.place_of_supply || "Delhi",
+      hsn_code: req.body.hsn_code || "996412",
+      order_id: req.body.order_id || null,
+    });
+
+    /* -------------------------------------------------
+       7️⃣ Generate HTML (and PDF in production)
+    -------------------------------------------------- */
+    const html = generateHTMLTemplate(quotation, company, documentType);
+
+    // 🔥 DEVELOPMENT MODE: Return HTML for preview
+    if (previewMode) {
+      console.log("🔍 Development Mode: Returning HTML preview");
+
+      return res.status(200).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Quotation Preview - Development Mode</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 20px;
+              background: #f0f0f0;
+              font-family: Arial, sans-serif;
+            }
+            .preview-container {
+              max-width: 1200px;
+              margin: 0 auto;
+            }
+            .preview-header {
+              background: #333;
+              color: white;
+              padding: 15px 20px;
+              border-radius: 5px 5px 0 0;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .preview-header h2 {
+              margin: 0;
+              font-size: 18px;
+            }
+            .preview-actions {
+              display: flex;
+              gap: 10px;
+            }
+            .btn {
+              padding: 8px 16px;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 14px;
+            }
+            .btn-primary {
+              background: #4CAF50;
+              color: white;
+            }
+            .btn-secondary {
+              background: #2196F3;
+              color: white;
+            }
+            .preview-body {
+              background: white;
+              padding: 20px;
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+              border-radius: 0 0 5px 5px;
+            }
+            iframe {
+              width: 100%;
+              height: 1000px;
+              border: 1px solid #ddd;
+              border-radius: 4px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="preview-container">
+            <div class="preview-header">
+              <h2>📄 Quotation Preview - Development Mode</h2>
+              <div class="preview-actions">
+                <button class="btn btn-primary" onclick="window.print()">🖨️ Print</button>
+                <button class="btn btn-secondary" onclick="downloadHTML()">💾 Download HTML</button>
+              </div>
+            </div>
+            <div class="preview-body">
+              <iframe srcdoc="${html.replace(/"/g, "&quot;")}"></iframe>
+            </div>
+          </div>
+
+          <script>
+            function downloadHTML() {
+              const html = \`${html.replace(/`/g, "\\`")}\`;
+              const blob = new Blob([html], { type: 'text/html' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'quotation_${quotation.invoice_number}.html';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    }
+
+    // 🚀 PRODUCTION MODE: Generate PDF and upload to Cloudinary
     const pdfBuffer = await generatePDF(html);
-    const pdfBufferSend = Buffer.from(pdfBuffer);
+    const pdfUpload = await uploadSingleImage(
+      Buffer.from(pdfBuffer),
+      "quotations"
+    );
 
-    // Upload to Cloudinary
-    const pdfUpload = await uploadSingleImage(pdfBufferSend, "quotations/pdf");
-
-    // Save PDF URL
     quotation.pdf = {
-      url: pdfUpload.image,
+      url: pdfUpload.image || pdfUpload.url,
       public_id: pdfUpload.public_id,
     };
     await quotation.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Quotation created successfully",
+      message:
+        documentType === "quotation"
+          ? "Quotation created successfully"
+          : "Tax Invoice created successfully",
       data: quotation,
     });
   } catch (error) {
-    console.error("Error creating quotation:", error);
-    res.status(500).json({
+    console.error("❌ Create Quotation Error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to create quotation",
-      error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      message: "Failed to create document",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+exports.convertToInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    /* -------------------------------------------------
+       1️⃣ Fetch quotation
+    -------------------------------------------------- */
+    const quotation = await Quotations.findById(id);
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found",
+      });
+    }
+
+    if (quotation.document_type === "invoice") {
+      return res.status(400).json({
+        success: false,
+        message: "Already converted to invoice",
+      });
+    }
+
+    /* -------------------------------------------------
+       2️⃣ Fetch company (required for PDF)
+    -------------------------------------------------- */
+    const company = await ComopanyDetails.findById(
+      quotation.company_id
+    ).populate({
+      path: "driver",
+      select: "driver_name driver_contact_number",
+      populate: {
+        path: "current_vehicle_id",
+        select: "vehicle_number",
+      },
+    });
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found",
+      });
+    }
+
+    /* -------------------------------------------------
+       3️⃣ Update quotation → invoice
+    -------------------------------------------------- */
+    const invoiceNumber = await generateInvoiceNewNumber();
+    console.log("nvoiceNumber", invoiceNumber);
+    quotation.document_type = "invoice";
+    quotation.invoice_number = invoiceNumber;
+    quotation.invoice_date = new Date();
+    quotation.status = "invoiced";
+    await quotation.save();
+
+    /* -------------------------------------------------
+       4️⃣ Generate TAX INVOICE PDF
+    -------------------------------------------------- */
+
+    const html = generateHTMLTemplate(quotation, company, "invoice");
+    const pdfBuffer = await generatePDF(html);
+    const pdfBufferSend = Buffer.from(pdfBuffer);
+
+    const pdfUpload = await uploadSingleImage(
+      pdfBufferSend,
+      "invoices" // 👈 correct folder
+    );
+
+    console.log("pdfUpload", pdfUpload);
+
+    /* -------------------------------------------------
+       5️⃣ REPLACE PDF URL
+    -------------------------------------------------- */
+    quotation.pdf = {
+      url: pdfUpload.image || pdfUpload.url,
+      public_id: pdfUpload.public_id,
+      is_locked: true, // optional but recommended
+    };
+
+    await quotation.save();
+
+    /* -------------------------------------------------
+       6️⃣ Response 
+    -------------------------------------------------- */
+
+    return res.status(200).json({
+      success: true,
+      message: "Quotation converted to Tax Invoice successfully",
+      data: quotation,
+    });
+  } catch (error) {
+    console.error("❌ Convert To Invoice Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to convert quotation to invoice",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
 
-// Get All Quotations
 exports.getAllQuotations = async (req, res) => {
   try {
     const driverId = req.user.id;
@@ -723,12 +1137,12 @@ exports.getAllQuotations = async (req, res) => {
 // Get Quotation by ID
 exports.getQuotationById = async (req, res) => {
   try {
-    const driverId = req.user.id;
+    // const driverId = req.user.id;
     const quotationId = req.params.id;
-
+    console.log("quotationId", quotationId);
     const quotation = await Quotations.findOne({
       _id: quotationId,
-      driver: driverId,
+      // driver: driverId,
     }).populate("company_id");
 
     if (!quotation) {
@@ -756,13 +1170,11 @@ exports.updateQuotation = async (req, res) => {
   try {
     const driverId = req.user.id;
     const quotationId = req.params.id;
+    const documentType = req.body.document_type || "quotation";
 
-
-    // Ensure Puppeteer is initialized
-    if (!htmlPDF.browser) {
-      await htmlPDF.initializeBrowser();
-    }
-
+    /* -------------------------------------------------
+       1️⃣ Find existing quotation
+    -------------------------------------------------- */
     const quotation = await Quotations.findOne({
       _id: quotationId,
       driver: driverId,
@@ -775,90 +1187,188 @@ exports.updateQuotation = async (req, res) => {
       });
     }
 
-    const company = await ComopanyDetails.findOne({ driver: driverId });
+    /* -------------------------------------------------
+       2️⃣ Multi-Stops Handling (SAME AS CREATE)
+    -------------------------------------------------- */
+    const multiStop = req.body.multi_stop || false;
 
-    // Recalculate if trip details changed
-    if (req.body.trip_details) {
-      let subTotal = 0;
-      let tollTaxTotal = 0;
+    const stops = Array.isArray(req.body.stops)
+      ? req.body.stops.map((place) => ({
+          place: String(place).trim(),
+          charge: 0,
+        }))
+      : [];
 
-      const tripDetails = req.body.trip_details.map((trip, index) => {
-        const tripTotal = trip.per_day_cab_charges * trip.total_days;
-        subTotal += tripTotal;
-        tollTaxTotal += trip.toll_tax_amount || 0;
+    /* -------------------------------------------------
+       3️⃣ Pricing Calculation (SAME AS CREATE)
+    -------------------------------------------------- */
+    const pricingMode = req.body.pricing_mode || "km_wise";
 
-        return {
-          sn: index + 1,
-          pickup_drop_place: trip.pickup_drop_place,
-          vehicle_type: trip.vehicle_type,
-          pickup_date: trip.pickup_date,
-          drop_date: trip.drop_date,
-          drop_time: trip.drop_time,
-          total_days: trip.total_days,
-          per_day_cab_charges: trip.per_day_cab_charges,
-          toll_tax_amount: trip.toll_tax_amount || 0,
-          total_amount: tripTotal,
-        };
-      });
+    let kmFare = 0;
+    let dayFare = 0;
 
-      const stateTax =
-        req.body.summary?.state_tax || quotation.summary.state_tax;
-      const driverCharge =
-        req.body.summary?.driver_charge || quotation.summary.driver_charge;
-      const parkingCharge =
-        req.body.summary?.parking_charge || quotation.summary.parking_charge;
+    if (pricingMode === "km_wise") {
+      const totalKm = parseFloat(req.body.total_km) || 0;
+      const perKmRate = parseFloat(req.body.per_km_rate) || 0;
+      kmFare = totalKm * perKmRate;
+    } else if (pricingMode === "day_wise") {
+      const totalDays = parseInt(req.body.total_days) || 1;
+      const perDayCharges =
+        parseFloat(req.body.per_day_cab_charges || req.body.per_day_charges) ||
+        0;
+      dayFare = totalDays * perDayCharges;
+    }
 
-      const grandTotal =
-        subTotal + tollTaxTotal + stateTax + driverCharge + parkingCharge;
-      const amountInWords =
-        numberToWords(Math.floor(grandTotal)) + " Rupees only";
+    const tollTax =
+      parseFloat(req.body.toll_tax || req.body.toll_tax_amount || 0) || 0;
 
-      req.body.summary = {
-        sub_total: subTotal,
-        toll_tax_total: tollTaxTotal,
-        state_tax: stateTax,
-        driver_charge: driverCharge,
-        parking_charge: parkingCharge,
+    /* -------------------------------------------------
+       4️⃣ Build Trip Details (IDENTICAL TO CREATE)
+    -------------------------------------------------- */
+    const tripDetails = [
+      {
+        sn: 1,
+        pickup_drop_place:
+          req.body.pickup_drop_place ||
+          `${req.body.pickup_place} → ${req.body.drop_place}`,
+
+        vehicle_type: req.body.vehicle_type,
+
+        pickup_date: req.body.pickup_date,
+        pickup_time: req.body.pickup_time,
+        return_date: req.body.return_date || req.body.pickup_date,
+        return_time: req.body.return_time || "10:00 AM",
+
+        pricing_mode: pricingMode,
+
+        total_km:
+          pricingMode === "km_wise" ? parseFloat(req.body.total_km) || 0 : 0,
+        per_km_rate:
+          pricingMode === "km_wise" ? parseFloat(req.body.per_km_rate) || 0 : 0,
+        km_fare: kmFare,
+
+        total_days:
+          pricingMode === "day_wise" ? parseInt(req.body.total_days) || 1 : 0,
+        per_day_cab_charges:
+          pricingMode === "day_wise"
+            ? parseFloat(
+                req.body.per_day_cab_charges || req.body.per_day_charges
+              ) || 0
+            : 0,
+        day_fare: dayFare,
+
+        toll_tax_amount: tollTax,
+
+        multi_stops: multiStop,
+        stops: stops,
+
+        extra_charges: [],
+        stop_charges_total: 0,
+
+        total_amount: kmFare + dayFare + tollTax,
+      },
+    ];
+
+    /* -------------------------------------------------
+       5️⃣ Summary (TRUST FRONTEND – SAME AS CREATE)
+    -------------------------------------------------- */
+    const summaryReq = req.body.summary || {};
+
+    const grandTotal =
+      parseFloat(summaryReq.total || summaryReq.grand_total) || 0;
+
+    // Amount in words
+    const rupees = Math.floor(grandTotal);
+    const paise = Math.round((grandTotal - rupees) * 100);
+
+    let amountInWords = numberToWords(rupees);
+    if (paise > 0) {
+      amountInWords += ` And ${numberToWords(paise)} Paise Only`;
+    } else {
+      amountInWords += " Only";
+    }
+
+    /* -------------------------------------------------
+       6️⃣ Update quotation document
+    -------------------------------------------------- */
+    quotation.set({
+      document_type: documentType,
+
+      bill_to: {
+        customer_name: req.body.bill_to?.customer_name || "",
+        contact_number: req.body.bill_to?.contact_number || "",
+        email: req.body.bill_to?.email || "",
+        address: req.body.bill_to?.address || "",
+      },
+
+      trip_type: req.body.trip_type || "one_way",
+      pricing_mode: pricingMode,
+
+      pickup_place: req.body.pickup_place,
+      drop_place: req.body.drop_place,
+      pickup_drop_place:
+        req.body.pickup_drop_place ||
+        `${req.body.pickup_place} → ${req.body.drop_place}`,
+
+      trip_details: tripDetails,
+
+      multi_stops: multiStop,
+      stops: stops,
+
+      summary: {
+        base_fare_total: kmFare + dayFare,
+        km_fare_total: kmFare,
+        day_fare_total: dayFare,
+        toll_tax_total: tollTax,
+
+        state_tax: parseFloat(summaryReq.state_tax) || 0,
+        driver_charge: parseFloat(summaryReq.driver_charge) || 0,
+        parking_charge: parseFloat(summaryReq.parking_charge) || 0,
+
+        extra_charges_total: 0,
+        additional_charges: summaryReq.additional_charges || [],
+
+        discount: parseFloat(summaryReq.discount) || 0,
+        gst_applied: summaryReq.gst_applied || false,
+        gst_amount: parseFloat(summaryReq.gst_amount) || 0,
+
+        subtotal:
+          parseFloat(summaryReq.subtotal) || kmFare + dayFare,
+
         grand_total: grandTotal,
+        total: grandTotal,
         amount_in_words: amountInWords,
-      };
+      },
 
-      req.body.trip_details = tripDetails;
-    }
+      show_bank_details: req.body.show_bank_details || false,
+      bank_details: req.body.show_bank_details
+        ? req.body.bank_details
+        : null,
 
-    // Update quotation
-    Object.assign(quotation, req.body);
+      description: req.body.description || req.body.terms_and_conditions || "",
+      terms_and_conditions:
+        "You acknowledge and agree to accept all terms and conditions of the driver as applicable to this trip.",
+
+      place_of_supply: req.body.place_of_supply || "Delhi",
+      hsn_code: req.body.hsn_code || "996412",
+    });
+
     await quotation.save();
 
-    // Regenerate PDF
-    if (quotation.pdf.public_id) {
-      await deleteImage(quotation.pdf.public_id);
-    }
-
-    const html = generateHTMLTemplate(quotation, company);
-
-    const pdfBuffer = await generatePDF(html);
-    const pdfBufferSend = Buffer.from(pdfBuffer);
-    // Upload to Cloudinary
-    const pdfUpload = await uploadSingleImage(pdfBufferSend, "quotations/pdf");
-
-    quotation.pdf.url = pdfUpload.image;
-    quotation.pdf.public_id = pdfUpload.public_id;
-    await quotation.save();
-
-    res.status(200).json({
+    return res.json({
       success: true,
       message: "Quotation updated successfully",
       data: quotation,
     });
   } catch (error) {
-    console.error("Error updating quotation:", error);
-    res.status(500).json({
+    console.error("❌ Update Quotation Error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to update quotation",
+      message: "Failed to update quotation",
     });
   }
 };
+
 
 // Delete Quotation
 exports.deleteQuotation = async (req, res) => {

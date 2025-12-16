@@ -1,9 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-  useRef,
-  useCallback,
-} from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,11 +7,7 @@ import {
   Dimensions,
   ScrollView,
 } from "react-native";
-import MapView, {
-  Marker,
-  Circle,
-  PROVIDER_GOOGLE,
-} from "react-native-maps";
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
 
 import useDriverStore from "../../store/driver.store";
 import { Colors } from "../../constant/ui";
@@ -25,12 +16,12 @@ import { getCurrentLocation } from "../../services/PermissionService";
 const { width } = Dimensions.get("window");
 
 // 16:9 Banner Height
-const BANNER_HEIGHT = width * 0.5625;
+const BANNER_HEIGHT = width * 0.45;
 
 // Offline Banners
 const OFFLINE_BANNERS = [
-  { id: 1, image: require("./taxi1.jpeg") },
-  { id: 2, image: require("./taxi2.jpeg") }
+  { id: 1, image: require("./image1.png") },
+  { id: 2, image: require("./image.png") },
 ];
 
 const DEFAULT_COORDS = { latitude: 28.7041, longitude: 77.1025 };
@@ -55,11 +46,7 @@ export default function DriverMap() {
     1000;
 
 
-    console.log("currentLocation",currentLocation)
 
-  // -----------------------------
-  // 🚀 Fast Location Fetch (Silent)
-  // -----------------------------
   const fetchLocation = useCallback(async () => {
     // Prevent multiple simultaneous fetches
     if (locationFetchedRef.current) return;
@@ -69,15 +56,10 @@ export default function DriverMap() {
       let loc = null;
 
       // Priority 1: Use store location if available (fastest)
-      if (
-        location &&
-        Array.isArray(location) &&
-        location[0] &&
-        location[1]
-      ) {
+      if (location && Array.isArray(location) && location[0] && location[1]) {
         loc = { latitude: location[1], longitude: location[0] };
         console.log("📍 Using store location:", loc);
-      } 
+      }
       // Priority 2: Fetch fresh location (silent)
       else {
         console.log("📍 Fetching fresh location...");
@@ -106,21 +88,17 @@ export default function DriverMap() {
     }
   }, [location]);
 
-  // Fetch location immediately on mount
   useEffect(() => {
     fetchLocation();
   }, [fetchLocation]);
 
-  // Refetch location when driver goes online
   useEffect(() => {
     if (isDriverOnline && !locationReady) {
       fetchLocation();
     }
   }, [isDriverOnline, locationReady, fetchLocation]);
 
-  // -----------------------------
-  // 🚀 Auto Banner Slider (Offline)
-  // -----------------------------
+
   useEffect(() => {
     if (isDriverOnline) {
       if (intervalRef.current) {
@@ -138,7 +116,7 @@ export default function DriverMap() {
         });
         return next;
       });
-    }, 4000);
+    }, 800000);
 
     return () => {
       if (intervalRef.current) {
@@ -147,46 +125,54 @@ export default function DriverMap() {
     };
   }, [isDriverOnline]);
 
-  // -----------------------------
-  // 🚀 OFFLINE UI (16:9 Banner)
-  // -----------------------------
-  if (!isDriverOnline) {
-    return (
-      <View style={styles.offlineContainer}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          decelerationRate="fast"
-          snapToInterval={width}
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(e) => {
-            const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-            setBannerIndex(idx);
-          }}
-        >
-          {OFFLINE_BANNERS.map((banner) => (
-            <View key={banner.id} style={styles.slide}>
-              <Image
-                source={banner.image}
-                style={styles.bannerImage}
-                resizeMode="cover"
-              />
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.pagination}>
-          {OFFLINE_BANNERS.map((_, i) => (
-            <View
-              key={i}
-              style={[styles.dot, bannerIndex === i ? styles.dotActive : {}]}
+// -----------------------------
+// 🚀 OFFLINE UI (Card Slider)
+// -----------------------------
+if (!isDriverOnline) {
+  return (
+    <View style={styles.offlineWrapper}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        decelerationRate="fast"
+        snapToInterval={width - 32}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        onMomentumScrollEnd={(e) => {
+          const idx = Math.round(
+            e.nativeEvent.contentOffset.x / (width - 32)
+          );
+          setBannerIndex(idx);
+        }}
+      >
+        {OFFLINE_BANNERS.map((banner) => (
+          <View key={banner.id} style={styles.bannerCard}>
+            <Image
+              source={banner.image}
+              style={styles.bannerImage}
+              resizeMode="cover"
             />
-          ))}
-        </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Pagination */}
+      <View style={styles.pagination}>
+        {OFFLINE_BANNERS.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.dot,
+              bannerIndex === i && styles.dotActive,
+            ]}
+          />
+        ))}
       </View>
-    );
-  }
+    </View>
+  );
+}
+
 
   // -----------------------------
   // 🚀 ONLINE UI (Map + Radius + Car)
@@ -217,20 +203,19 @@ export default function DriverMap() {
         rotateEnabled={false}
         pitchEnabled={false}
       >
-{currentLocation && (
-  <Marker
-    coordinate={{
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
-    }}
-  >
-    <Image
-      source={require("../../assets/car-marker.png")}
-      style={{ width: 24, height: 24 }}
-    />
-  </Marker>
-)}
-
+        {currentLocation && (
+          <Marker
+            coordinate={{
+              latitude: currentLocation.latitude,
+              longitude: currentLocation.longitude,
+            }}
+          >
+            <Image
+              source={require("../../assets/car-marker.png")}
+              style={{ width: 24, height: 24 }}
+            />
+          </Marker>
+        )}
 
         {/* Search Radius Circle */}
         <Circle
@@ -257,52 +242,58 @@ export default function DriverMap() {
 // -----------------------------------------
 const styles = StyleSheet.create({
   mapContainer: {
-    height: 420,
-    overflow: "hidden", // No border radius
+    height: BANNER_HEIGHT,
     marginVertical: 12,
   },
 
   map: {
     ...StyleSheet.absoluteFillObject,
   },
+offlineWrapper: {
+  marginTop: 5,
+  marginLeft:-15,
+},
 
-  // ---------- Offline ----------
-  offlineContainer: {
-    height: BANNER_HEIGHT,
-    overflow: "hidden", // No border radius
-    backgroundColor: "#000",
-  },
+bannerCard: {
+  padding:4,
+  width: width,
+  height: BANNER_HEIGHT,
+  borderRadius: 12,
+  overflow: "hidden",
 
-  slide: {
-    width,
-    height: BANNER_HEIGHT,
-  },
+  backgroundColor: "#fff",
+  elevation:1,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.12,
+  shadowRadius: 8,
+},
 
-  bannerImage: {
-    width: "100%",
-    height: "100%",
-  },
+bannerImage: {
+  width: "100%",
+  height: "100%",
+},
 
-  pagination: {
-    position: "absolute",
-    bottom: 12,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "center",
-  },
+pagination: {
+  flexDirection: "row",
+  justifyContent: "center",
+ 
+},
 
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 6,
-    marginHorizontal: 4,
-    backgroundColor: "rgba(255,255,255,0.4)",
-  },
+dot: {
+  width: 8,
+  height: 8,
+  borderRadius: 4,
+  backgroundColor: "#D1D5DB",
+  marginHorizontal: 4,
+},
 
-  dotActive: {
-    width: 24,
-    backgroundColor: "#fff",
-  },
+dotActive: {
+  width: 24,
+  backgroundColor: "#111",
+  borderRadius: 6,
+},
+
 
   // Silent loading indicator (subtle)
   silentIndicator: {

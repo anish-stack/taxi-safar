@@ -30,6 +30,19 @@ export const formatDate = (dateString) => {
     year: "numeric",
   });
 };
+export const formatTime12Hour = (time) => {
+  if (!time) return "07:00 PM";
+
+  // supports "HH:mm" or "HH:mm:ss"
+  const [hour, minute] = time.split(":");
+  const h = parseInt(hour, 10);
+
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 || 12;
+
+  return `${hour12}:${minute} ${period}`;
+};
+
 
 export const formatTime = (timeString) => {
   return timeString;

@@ -8,17 +8,21 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import { API_URL_APP } from "../../constant/api";
-import { LinearGradient } from "expo-linear-gradient";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function Categories({ isRefresh }) {
   const navigation = useNavigation();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState(null);
+
+  const MAX_VISIBLE = 4;
 
   const fetchCategories = async () => {
     try {
@@ -46,15 +50,29 @@ export default function Categories({ isRefresh }) {
   }, [isRefresh]);
 
   const handlePress = (item) => {
+    if (item._id === "view_more") {
+      navigation.navigate("AllCategories");
+      return;
+    }
+
     setActiveId(item._id);
     navigation.navigate(item.screen);
     setTimeout(() => setActiveId(null), 300);
   };
 
+  // Show first 4 + View More if needed
+  const visibleCategories =
+    categories.length > MAX_VISIBLE
+      ? [
+          ...categories.slice(0, MAX_VISIBLE),
+          { _id: "view_more", title: "View More" },
+        ]
+      : categories;
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="small" color="#DC2626" />
+        <ActivityIndicator size="small" color="#000" />
       </View>
     );
   }
@@ -66,34 +84,38 @@ export default function Categories({ isRefresh }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {categories.map((item) => {
-          const isActive = activeId === item._id;
+        {visibleCategories.map((item) => {
+          const isViewMore = item._id === "view_more";
 
           return (
             <TouchableOpacity
               key={item._id}
               onPress={() => handlePress(item)}
-              activeOpacity={0.85}
-              style={[styles.card, isActive && styles.activeCard]}
+              activeOpacity={0.8}
+              style={[
+                styles.card,
+                isViewMore && styles.viewMoreCard,
+                activeId === item._id && styles.activeCard,
+              ]}
             >
-              {/* Badge */}
-              {item.badge && (
-                <View style={styles.badgeContainer}>
-                  <LinearGradient
-                    colors={item.badge === "New" ? ["#FF3B30", "#FF9500"] : ["#34C759", "#28A745"]} style={styles.badge}>
-                    <Text style={styles.badgeText}>{item.badge}</Text>
-                  </LinearGradient>
-                </View>
-              )}
-
-              {/* Icon */}
-              <View style={[styles.iconWrapper, isActive && styles.activeIconWrapper]}>
-                <Image source={{ uri: item.image.url }} style={styles.icon} resizeMode="contain" />
+              <View style={styles.iconWrapper}>
+                {isViewMore ? (
+                  <View style={styles.dotsIcon}>
+                    <View style={styles.dot} />
+                    <View style={styles.dot} />
+                    <View style={styles.dot} />
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: item.image.url }}
+                    style={styles.icon}
+                    resizeMode="contain"
+                  />
+                )}
               </View>
 
-              {/* Title – Font Family बिल्कुल वैसी ही */}
-              <Text style={[styles.title, isActive && styles.activeTitle]} numberOfLines={2}>
-                {item.title}
+              <Text style={styles.title} numberOfLines={1}>
+                {isViewMore ? "View More" : item.title}
               </Text>
             </TouchableOpacity>
           );
@@ -105,88 +127,65 @@ export default function Categories({ isRefresh }) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 8,
+      marginTop:10,
+
+  marginBottom:10,
     backgroundColor: "#fff",
   },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingRight: 20,
-    gap: 10,
+    alignItems: "center",
+    gap: 3, // matches Figma gap
   },
   loadingContainer: {
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: "center",
   },
-
   card: {
-    width: 72,
-    height: 96,
-    backgroundColor: "#fff",
-    borderRadius: 18,
+    width: 64,
+    height: 70,
+    backgroundColor: "#F2F5F6",
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderWidth: 1.2,
-    borderColor: "#f0f0f0",
+    paddingTop: 2,
    
   },
   activeCard: {
-    backgroundColor: "#FFF5F5",
-    borderColor: "#FCA5A5",
-    transform: [{ scale: 0.94 }],
+    backgroundColor: "#FFF5F5", 
+    transform: [{ scale: 0.95 }],
   },
-
+  viewMoreCard: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+  },
   iconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: "#F9FAFB",
-    justifyContent: "center",
-    alignItems: "center",
     marginBottom: 6,
   },
-  activeIconWrapper: {
-    backgroundColor: "#FEE2E2",
-  },
-
   icon: {
-    width: 32,
-    height: 32,
+    width: 22,
+    height: 22,
   },
-
+  dotsIcon: {
+    width: 20,
+    height: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#000",
+  },
   title: {
-    fontSize: 10.8,
-    fontFamily: "SFProDisplay-Medium",     // रखा हुआ है
-    fontWeight: "600",
-    color: "#374151",
+    fontSize: 7.5,
+    fontWeight: "500",
+    color: "#010005",
     textAlign: "center",
-    lineHeight: 13,
-    paddingHorizontal: 2,
-  },
-  activeTitle: {
-    color: "#DC2626",
-    fontFamily: "SFProDisplay-Bold",       // रखा हुआ है
-    fontWeight: "700",
-  },
-
-  badgeContainer: {
-    position: "absolute",
-    top: 4,
-    right: -4,
-    zIndex: 10,
-  },
-  badge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  badgeText: {
-    color: "#fff",
-    fontSize: 8.5,
-    fontFamily: "SFProDisplay-Bold",       // रखा हुआ है
-    fontWeight: "bold",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    lineHeight: 10,
   },
 });

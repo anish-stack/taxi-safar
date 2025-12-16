@@ -1,11 +1,10 @@
-const { publisher } = require('../../config/redis');
-const CompanyDetails = require('../../models/driver/ComopanyDetails');
-const Driver = require('../../models/driver/driver.model');
-const { uploadSingleImage, deleteImage } = require('../../utils/cloudinary');
-const { deleteFile } = require('../../middlewares/multer');
-const TaxiSafariRide = require('../../models/rides/taxi_safar_ride');
-const RidesPost = require('../../models/rides_post/Rides_Post');
-
+const { publisher } = require("../../config/redis");
+const CompanyDetails = require("../../models/driver/ComopanyDetails");
+const Driver = require("../../models/driver/driver.model");
+const { uploadSingleImage, deleteImage } = require("../../utils/cloudinary");
+const { deleteFile } = require("../../middlewares/multer");
+const TaxiSafariRide = require("../../models/rides/taxi_safar_ride");
+const RidesPost = require("../../models/rides_post/Rides_Post");
 
 exports.toggleStatus = async (req, res) => {
   try {
@@ -13,17 +12,17 @@ exports.toggleStatus = async (req, res) => {
     const { status } = req.body;
 
     // ✅ Quick validation
-    if (typeof status !== 'boolean') {
+    if (typeof status !== "boolean") {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status value (must be boolean)',
+        message: "Invalid status value (must be boolean)",
       });
     }
 
     if (!driverId) {
       return res.status(401).json({
         success: false,
-        message: 'Unauthorized access - driver not found in token',
+        message: "Unauthorized access - driver not found in token",
       });
     }
 
@@ -31,28 +30,27 @@ exports.toggleStatus = async (req, res) => {
     const updatedDriver = await Driver.findByIdAndUpdate(
       driverId,
       { is_online: status },
-      { new: true, select: 'is_online updatedAt' }
+      { new: true, select: "is_online updatedAt" }
     ).lean();
 
     if (!updatedDriver) {
       return res.status(404).json({
         success: false,
-        message: 'Driver not found',
+        message: "Driver not found",
       });
     }
 
     // ✅ Send instant response
     return res.status(200).json({
       success: true,
-      message: `Driver is now ${status ? 'online' : 'offline'}`,
+      message: `Driver is now ${status ? "online" : "offline"}`,
       is_online: updatedDriver.is_online,
-
     });
   } catch (error) {
-    console.error('❌ Toggle Status Error:', error);
+    console.error("❌ Toggle Status Error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Something went wrong while toggling status',
+      message: "Something went wrong while toggling status",
       error: error.message,
     });
   }
@@ -60,11 +58,12 @@ exports.toggleStatus = async (req, res) => {
 exports.updateDriverLocation = async (req, res) => {
   try {
     const driverId = req.user?._id; // from JWT middleware
-    console.log("driver",req.user?.driver_name)
+    console.log("driver", req.user?.driver_name);
     if (!driverId) {
-      return res.status(401).json({ success: false, message: "Unauthorized: Driver ID missing" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized: Driver ID missing" });
     }
-
 
     const {
       latitude: lat,
@@ -72,13 +71,13 @@ exports.updateDriverLocation = async (req, res) => {
       accuracy,
       speed,
       timestamp,
-      platform
+      platform,
     } = req.body;
     // console.log('Received location update:', req.body);
     if (lat == null || lng == null) {
       return res.status(400).json({
         success: false,
-        message: "Latitude and Longitude are required."
+        message: "Latitude and Longitude are required.",
       });
     }
 
@@ -88,7 +87,7 @@ exports.updateDriverLocation = async (req, res) => {
     // 1️⃣ GeoJSON point
     const geoPoint = {
       type: "Point",
-      coordinates: [parseFloat(lng), parseFloat(lat)]
+      coordinates: [parseFloat(lng), parseFloat(lat)],
     };
 
     // 2️⃣ Save latest position in Redis hash (fast lookup)
@@ -98,7 +97,7 @@ exports.updateDriverLocation = async (req, res) => {
       accuracy,
       speed,
       platform,
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
     });
 
     // 3️⃣ Publish to Redis Pub/Sub for real-time map updates
@@ -112,17 +111,20 @@ exports.updateDriverLocation = async (req, res) => {
         speed,
         timestamp,
         platform,
-        updatedAt: now
+        updatedAt: now,
       })
     );
 
     // 4️⃣ Update MongoDB every 60 seconds (reduce DB writes)
     const driver = await Driver.findById(driverId).select("lastLocationUpdate");
 
-    if (!driver?.lastLocationUpdate || now - driver.lastLocationUpdate > 60 * 1000) {
+    if (
+      !driver?.lastLocationUpdate ||
+      now - driver.lastLocationUpdate > 60 * 1000
+    ) {
       await Driver.findByIdAndUpdate(driverId, {
         current_location: geoPoint,
-        lastLocationUpdate: now
+        lastLocationUpdate: now,
       });
       dataSource = "mongodb"; // DB write occurred
       console.log(`🗺️ MongoDB updated for driver ${driverId}`);
@@ -137,16 +139,15 @@ exports.updateDriverLocation = async (req, res) => {
         accuracy,
         speed,
         updatedAt: now,
-        source: dataSource // ✅ shows where txphe data was updated last
-      }
+        source: dataSource, // ✅ shows where txphe data was updated last
+      },
     });
-
   } catch (error) {
     console.error("❌ Location update error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to update driver location",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -177,7 +178,7 @@ exports.getDriverLocation = async (req, res) => {
           lat: parseFloat(location.lat),
           lng: parseFloat(location.lng),
           updatedAt_utc: location.updatedAt,
-          updatedAt_ist: convertToIST(location.updatedAt),  // ⭐ IST TIME ADDED
+          updatedAt_ist: convertToIST(location.updatedAt), // ⭐ IST TIME ADDED
         },
       });
     }
@@ -214,7 +215,6 @@ exports.getDriverLocation = async (req, res) => {
     });
   }
 };
-
 
 exports.updateFcmToken = async (req, res) => {
   try {
@@ -262,7 +262,6 @@ exports.updateFcmToken = async (req, res) => {
       success: true,
       message: "FCM token updated successfully",
     });
-
   } catch (error) {
     console.error("❌ Update FCM Token Error:", error);
     return res.status(500).json({
@@ -272,7 +271,6 @@ exports.updateFcmToken = async (req, res) => {
     });
   }
 };
-
 
 exports.get_all_Drivers = async (req, res) => {
   try {
@@ -326,7 +324,9 @@ exports.get_all_Drivers = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: drivers.length ? "Drivers fetched successfully" : "No drivers found",
+      message: drivers.length
+        ? "Drivers fetched successfully"
+        : "No drivers found",
       data: drivers,
       pagination: {
         total: totalDrivers,
@@ -337,7 +337,6 @@ exports.get_all_Drivers = async (req, res) => {
         hasPrev: page > 1,
       },
     });
-
   } catch (error) {
     console.error("Get All Drivers Error:", error);
     return res.status(500).json({
@@ -348,13 +347,11 @@ exports.get_all_Drivers = async (req, res) => {
   }
 };
 
-
 exports.addCompanyDetails = async (req, res) => {
   try {
-    console.log(req.files)
     const driverId = req.user.id;
     const files = req.files || {};
-    const { company_name, address, phone, email } = req.body;
+    const { company_name, address, phone, email, gst_number } = req.body;
 
     if (!company_name || !address || !phone || !email) {
       return res.status(400).json({
@@ -363,7 +360,6 @@ exports.addCompanyDetails = async (req, res) => {
       });
     }
 
-
     let logo = { url: null, publicId: null };
     if (files.logo) {
       const uploaded = await uploadSingleImage(files.logo[0].path);
@@ -371,12 +367,18 @@ exports.addCompanyDetails = async (req, res) => {
       deleteFile(files.logo[0].path);
     }
 
-
     let signature = { url: null, publicId: null };
     if (files.signature) {
       const uploaded = await uploadSingleImage(files.signature[0].path);
       signature = { url: uploaded.image, publicId: uploaded.public_id };
       deleteFile(files.signature[0].path);
+    }
+
+    let driverPub = "";
+    if (gst_number.length >= 6) {
+      driverPub = gst_number.substring(0, 2) + gst_number.slice(-4);
+    } else {
+      driverPub = gst_number; 
     }
 
     const newCompany = await CompanyDetails.create({
@@ -386,21 +388,21 @@ exports.addCompanyDetails = async (req, res) => {
       phone,
       email,
       logo,
+      driverPub,
+      gst_no: gst_number,
       signature,
     });
 
     return res.status(201).json({
       success: true,
       message: "Company details added successfully.",
-      data: newCompany
+      data: newCompany,
     });
-
   } catch (error) {
     console.error("Add Company Error:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 
 // -----------------------------------------------------------
 // GET MY COMPANY DETAILS
@@ -413,15 +415,13 @@ exports.getMyCompanyDetails = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: details || {}
+      data: details || {},
     });
-
   } catch (error) {
     console.error("Get Company Error:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 
 exports.updateCompanyDetails = async (req, res) => {
   try {
@@ -432,7 +432,6 @@ exports.updateCompanyDetails = async (req, res) => {
     let details = await CompanyDetails.findOne({ driver: driverId });
 
     if (!details) {
-      
       return res.status(404).json({
         success: false,
         message: "Company details not found.",
@@ -472,15 +471,13 @@ exports.updateCompanyDetails = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Company details updated successfully.",
-      data: details
+      data: details,
     });
-
   } catch (error) {
     console.error("Update Company Error:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 
 // -----------------------------------------------------------
 // DELETE COMPANY DETAILS
@@ -500,43 +497,41 @@ exports.deleteCompanyDetails = async (req, res) => {
 
     // Delete images from cloudinary
     if (details.logo?.publicId) await deleteImage(details.logo.publicId);
-    if (details.signature?.publicId) await deleteImage(details.signature.publicId);
+    if (details.signature?.publicId)
+      await deleteImage(details.signature.publicId);
 
     await CompanyDetails.deleteOne({ driver: driverId });
 
     return res.status(200).json({
       success: true,
-      message: "Company details deleted successfully."
+      message: "Company details deleted successfully.",
     });
-
   } catch (error) {
     console.error("Delete Company Error:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
 
-
 // -----------------------------------------------------------
 // ADMIN → GET ALL COMPANY DETAILS
 // -----------------------------------------------------------
 exports.adminGetAllCompanyDetails = async (req, res) => {
   try {
-    const list = await CompanyDetails.find()
-      .populate("driver", "driver_name driver_contact_number");
+    const list = await CompanyDetails.find().populate(
+      "driver",
+      "driver_name driver_contact_number"
+    );
 
     return res.status(200).json({
       success: true,
       count: list.length,
       data: list,
     });
-
   } catch (error) {
     console.error("Admin Get Error:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
-
 
 exports.FetchMyAssignedRides = async (req, res) => {
   try {
@@ -568,22 +563,26 @@ exports.FetchMyAssignedRides = async (req, res) => {
     }
 
     // Parallel execution with lean queries and field selection
-    const [taxiSafariRides, ridesPostRides, taxiSafariCount, ridesPostCount] = 
+    const [taxiSafariRides, ridesPostRides, taxiSafariCount, ridesPostCount] =
       await Promise.all([
         // Fetch TaxiSafari rides with only needed fields
- TaxiSafariRide.find(taxiSafariQuery).select(
-    "pickup_address destination_address name contact vehicle_type vehicle_name distance durationText original_amount trip_status createdAt scheduled_time")
+        TaxiSafariRide.find(taxiSafariQuery)
+          .select(
+            "pickup_address destination_address name contact vehicle_type vehicle_name distance durationText original_amount trip_status createdAt scheduled_time"
+          )
 
           .sort({ createdAt: -1 })
           .limit(limit)
           .skip(skip)
-          .lean() 
+          .lean()
           .exec(),
 
         // Fetch RidesPost rides with only needed fields
         RidesPost.find(ridesPostQuery)
-          .select('pickupAddress tripType dropAddress totalAmount commissionAmount driverEarning rideStatus createdAt driverPostId')
-          .populate('driverPostId', 'driver_name driver_contact_number')
+          .select(
+            "pickupAddress tripType dropAddress totalAmount commissionAmount driverEarning rideStatus createdAt driverPostId"
+          )
+          .populate("driverPostId", "driver_name driver_contact_number")
           .sort({ createdAt: -1 })
           .limit(limit)
           .skip(skip)
@@ -634,10 +633,9 @@ exports.FetchMyAssignedRides = async (req, res) => {
         },
       },
     });
-
   } catch (error) {
     console.error("FetchMyAssignedRides Error:", error);
-    
+
     return res.status(500).json({
       success: false,
       message: "Failed to fetch assigned rides",

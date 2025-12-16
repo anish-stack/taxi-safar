@@ -30,8 +30,7 @@ const buyInsuranceSchema = new mongoose.Schema(
 
     budget: {
       type: Number,
-      required: true,
-      min: 500, // Optional validation
+     
     },
 
     insurance_type: {

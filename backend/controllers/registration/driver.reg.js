@@ -10,6 +10,13 @@ const AadharDetails = require("../../models/driver/AadharDetails");
 const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
+const gstCache = new Map(); // GST cache
+const rateLimitMap = new Map(); // Rate limit tracker
+
+const CACHE_TTL = 20 * 60 * 1000; // 20 minutes
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS = Number(process.env.GST_VERIFY_RATE_LIMIT || 10);
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -884,28 +891,34 @@ exports.addVehicleDetails = async (req, res) => {
     const files = req.files || [];
     const body = req.body || {};
 
-    console.log("Vehicle add request body:", body);
     console.log(
-      "Uploaded files:",
-      files.map((f) => ({ fieldname: f.fieldname, size: f.size }))
+      "📂 Uploaded files:",
+      files.map((f) => ({ field: f.fieldname, size: f.size }))
     );
 
+    /* ----------------------------
+       1️⃣ Validate Driver
+    -----------------------------*/
     if (!driverId) {
       cleanupFiles(files);
-      return res
-        .status(400)
-        .json({ success: false, message: "Driver ID is required." });
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID is required",
+      });
     }
 
     const driver = await Driver.findById(driverId);
     if (!driver) {
       cleanupFiles(files);
-      return res
-        .status(404)
-        .json({ success: false, message: "Driver not found." });
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
     }
 
-    // Parse RC Data
+    /* ----------------------------
+       2️⃣ Parse RC Data
+    -----------------------------*/
     let rcData = null;
     if (body.rcData) {
       try {
@@ -913,22 +926,26 @@ exports.addVehicleDetails = async (req, res) => {
           typeof body.rcData === "string"
             ? JSON.parse(body.rcData)
             : body.rcData;
-        console.log("RC Data parsed:", rcData.rc_number);
       } catch (err) {
         cleanupFiles(files);
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid RC data format." });
+        return res.status(400).json({
+          success: false,
+          message: "Invalid RC data format",
+        });
       }
     }
 
     if (!rcData) {
       cleanupFiles(files);
-      return res
-        .status(400)
-        .json({ success: false, message: "RC verification data is required." });
+      return res.status(400).json({
+        success: false,
+        message: "RC verification data is required",
+      });
     }
 
+    /* ----------------------------
+       3️⃣ Validate Required Fields
+    -----------------------------*/
     const {
       vehicleType,
       vehicleNumber,
@@ -937,29 +954,35 @@ exports.addVehicleDetails = async (req, res) => {
       permitExpiry,
     } = body;
 
-    // Required fields
     if (!vehicleType || !vehicleNumber) {
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
-        message: "vehicleType and vehicleNumber are required.",
+        message: "vehicleType and vehicleNumber are required",
       });
     }
 
-    // Check duplicate vehicle
+    /* ----------------------------
+       4️⃣ Check Duplicate Vehicle
+    -----------------------------*/
     const existingVehicle = await Vehicle.findOne({
       vehicle_number: vehicleNumber.toUpperCase(),
       is_deleted: false,
     });
+
     if (existingVehicle) {
       cleanupFiles(files);
-      return res
-        .status(409)
-        .json({ success: false, message: "Vehicle already exists." });
+      return res.status(409).json({
+        success: false,
+        message: "Vehicle already exists",
+      });
     }
 
-    // Find ALL 6 files
-    const rcBookFile = files.find((f) => f.fieldname === "rcBook");
+    /* ----------------------------
+       5️⃣ Extract Required Files
+    -----------------------------*/
+    const rcFrontFile = files.find((f) => f.fieldname === "rcFront");
+    const rcBackFile = files.find((f) => f.fieldname === "rcBack");
     const insuranceFile = files.find((f) => f.fieldname === "insurance");
     const permitFile = files.find((f) => f.fieldname === "permit");
     const vehicleFront = files.find((f) => f.fieldname === "vehicleFront");
@@ -968,15 +991,16 @@ exports.addVehicleDetails = async (req, res) => {
       (f) => f.fieldname === "vehicleInterior"
     );
 
-    // Validate ALL 6 files are present
     const requiredFiles = {
-      rcBookFile,
+      rcFrontFile,
+      rcBackFile,
       insuranceFile,
       permitFile,
       vehicleFront,
       vehicleBack,
       vehicleInterior,
     };
+
     const missing = Object.keys(requiredFiles).filter(
       (key) => !requiredFiles[key]
     );
@@ -989,10 +1013,16 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
-    // Upload ALL 6 files to Cloudinary
-    uploadedFiles.rcBook = await uploadSingleImage(
-      rcBookFile.path,
-      "vehicle_documents/rc"
+    /* ----------------------------
+       6️⃣ Upload to Cloudinary
+    -----------------------------*/
+    uploadedFiles.rcFront = await uploadSingleImage(
+      rcFrontFile.path,
+      "vehicle_documents/rc/front"
+    );
+    uploadedFiles.rcBack = await uploadSingleImage(
+      rcBackFile.path,
+      "vehicle_documents/rc/back"
     );
     uploadedFiles.insurance = await uploadSingleImage(
       insuranceFile.path,
@@ -1015,54 +1045,35 @@ exports.addVehicleDetails = async (req, res) => {
       "vehicle_photos/interior"
     );
 
-    // Cleanup local files
     cleanupFiles(files);
 
-    // Extract from RC
-    const vehicleDetails = {
-      chassisNumber: rcData.vehicle_chasi_number,
-      engineNumber: rcData.vehicle_engine_number,
-      fuelType: rcData.fuel_type,
-      color: rcData.color,
-      seatingCapacity: rcData.seat_capacity
-        ? parseInt(rcData.seat_capacity)
-        : null,
-      manufacturingDate: rcData.manufacturing_date_formatted,
-      registeredAt: rcData.registered_at,
-    };
-
-    const ownerDetails = {
-      ownerName: rcData.owner_name,
-      fatherName: rcData.father_name,
-      presentAddress: rcData.present_address,
-      permanentAddress: rcData.permanent_address,
-    };
-
-    // Create Vehicle
+    /* ----------------------------
+       7️⃣ Create Vehicle
+    -----------------------------*/
     const vehicle = new Vehicle({
       driver_id: driver._id,
       vehicle_type: vehicleType.toLowerCase(),
-      vehicle_brand: rcData.maker_description || "Maruti Suzuki",
+      vehicle_brand: rcData.maker_description || "Unknown",
       vehicle_name: rcData.maker_model || "Unknown",
       vehicle_number: vehicleNumber.toUpperCase(),
 
-      // Technical specs
-      chassis_number: vehicleDetails.chassisNumber,
-      engine_number: vehicleDetails.engineNumber,
-      fuel_type: vehicleDetails.fuelType,
-      color: vehicleDetails.color,
-      seating_capacity: vehicleDetails.seatingCapacity,
-      manufacturing_date: vehicleDetails.manufacturingDate,
+      chassis_number: rcData.vehicle_chasi_number,
+      engine_number: rcData.vehicle_engine_number,
+      fuel_type: rcData.fuel_type,
+      color: rcData.color,
+      seating_capacity: rcData.seat_capacity
+        ? Number(rcData.seat_capacity)
+        : null,
+      manufacturing_date: rcData.manufacturing_date_formatted,
+      registered_at: rcData.registered_at,
 
-      // Owner from RC
       owner_details: {
-        owner_name: ownerDetails.ownerName,
-        father_name: ownerDetails.fatherName,
-        present_address: ownerDetails.presentAddress,
-        permanent_address: ownerDetails.permanentAddress,
+        owner_name: rcData.owner_name,
+        father_name: rcData.father_name,
+        present_address: rcData.present_address,
+        permanent_address: rcData.permanent_address,
       },
 
-      // RC Document (uploaded by user)
       registration_certificate: {
         rc_number: rcData.rc_number,
         register_date: registrationDate || rcData.registration_date,
@@ -1071,13 +1082,17 @@ exports.addVehicleDetails = async (req, res) => {
         verified: true,
         verified_at: new Date(),
         verified_via: "quickekyc_api",
-        document: {
-          url: uploadedFiles.rcBook.image,
-          public_id: uploadedFiles.rcBook.public_id,
+
+        front: {
+          url: uploadedFiles.rcFront.image,
+          public_id: uploadedFiles.rcFront.public_id,
+        },
+        back: {
+          url: uploadedFiles.rcBack.image,
+          public_id: uploadedFiles.rcBack.public_id,
         },
       },
 
-      // Insurance Document (uploaded by user)
       insurance: {
         company_name: rcData.insurance_company,
         policy_number: rcData.insurance_policy_number,
@@ -1091,7 +1106,6 @@ exports.addVehicleDetails = async (req, res) => {
         },
       },
 
-      // Permit (uploaded)
       permit: {
         expiry_date: permitExpiry,
         verified: false,
@@ -1101,20 +1115,10 @@ exports.addVehicleDetails = async (req, res) => {
         },
       },
 
-      // Photos
       vehicle_photos: {
-        front: {
-          url: uploadedFiles.vehicleFront.image,
-          public_id: uploadedFiles.vehicleFront.public_id,
-        },
-        back: {
-          url: uploadedFiles.vehicleBack.image,
-          public_id: uploadedFiles.vehicleBack.public_id,
-        },
-        interior: {
-          url: uploadedFiles.vehicleInterior.image,
-          public_id: uploadedFiles.vehicleInterior.public_id,
-        },
+        front: uploadedFiles.vehicleFront,
+        back: uploadedFiles.vehicleBack,
+        interior: uploadedFiles.vehicleInterior,
       },
 
       rc_verification_data: rcData,
@@ -1124,25 +1128,18 @@ exports.addVehicleDetails = async (req, res) => {
 
     await vehicle.save();
 
-    // Link to driver
     driver.current_vehicle_id = vehicle._id;
     await driver.save();
 
     return res.status(201).json({
       success: true,
-      message: "Vehicle added successfully! Awaiting admin approval.",
+      message: "Vehicle added successfully. Awaiting admin approval.",
       driverId: driver._id,
       vehicleId: vehicle._id,
-      data: {
-        vehicle_number: vehicle.vehicle_number,
-        vehicle_type: vehicle.vehicle_type,
-        approval_status: vehicle.approval_status,
-      },
     });
   } catch (error) {
-    console.error("Error adding vehicle:", error);
+    console.error("🔥 Add vehicle error:", error);
 
-    // Cleanup Cloudinary
     for (const file of Object.values(uploadedFiles)) {
       if (file?.public_id) {
         try {
@@ -1151,7 +1148,6 @@ exports.addVehicleDetails = async (req, res) => {
       }
     }
 
-    // Cleanup local
     cleanupFiles(req.files || []);
 
     return res.status(500).json({
@@ -1161,6 +1157,7 @@ exports.addVehicleDetails = async (req, res) => {
     });
   }
 };
+
 
 // Helper to delete local files
 function cleanupFiles(files) {
@@ -1281,7 +1278,7 @@ exports.addBankDetails = async (req, res) => {
       await bankDetails.save();
 
       driver.BankDetails = bankDetails._id;
-      driver.account_status = "active";   // ⭐ FIXED
+      driver.account_status = "active"; // ⭐ FIXED
       await driver.save();
 
       console.log("💾 Bank details updated successfully!");
@@ -1311,7 +1308,7 @@ exports.addBankDetails = async (req, res) => {
 
     // Link with driver
     driver.BankDetails = newBankDetails._id;
-    driver.account_status = "active";    // ⭐ FIXED for NEW case also
+    driver.account_status = "active"; // ⭐ FIXED for NEW case also
     await driver.save();
 
     console.log("💾 Driver updated with new BankDetails!");
@@ -1322,7 +1319,6 @@ exports.addBankDetails = async (req, res) => {
         "Your bank details have been added successfully. Verification pending.",
       data: newBankDetails,
     });
-
   } catch (error) {
     console.log("❌ ERROR in addBankDetails:", error);
     return res.status(500).json({
@@ -1460,20 +1456,20 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
 
     let isCacheValid = false;
 
-    if (cachedData) {
-      console.log("🗂️ Cached Data Found:", cachedData);
+    // if (cachedData) {
+    //   console.log("🗂️ Cached Data Found:", cachedData);
 
-      const data = cachedData.aadhar_verification_data;
+    //   const data = cachedData.aadhar_verification_data;
 
-      isCacheValid =
-        data?.aadhaar_number === aadhaarNumber &&
-        data?.status === "success_aadhaar" &&
-        Date.now() < new Date(cachedData.expiredDataHour).getTime();
+    //   isCacheValid =
+    //     data?.aadhaar_number === aadhaarNumber &&
+    //     data?.status === "success_aadhaar" &&
+    //     Date.now() < new Date(cachedData.expiredDataHour).getTime();
 
-      console.log("📌 Is Cache Valid:", isCacheValid);
-    } else {
-      console.log("🗃️ No Cached Data Found");
-    }
+    //   console.log("📌 Is Cache Valid:", isCacheValid);
+    // } else {
+    //   console.log("🗃️ No Cached Data Found");
+    // }
 
     // ========================================================================
     // SCENARIO 1: New User (Driver doesn't exist)
@@ -1928,17 +1924,24 @@ exports.verifyDrivingLicense = async (req, res) => {
     const dlInfo = apiResponse.data.data;
 
     // ------------------ NAME MATCH ------------------
-    const aadhaarNameLower = aadhaarData?.full_name?.toLowerCase()?.trim();
-    const dlNameLower = dlInfo?.name?.toLowerCase()?.trim();
+    const normalizeName = (name = "") =>
+      name.toLowerCase().trim().replace(/\s+/g, " "); // 👈 convert multiple spaces to single
 
-    console.log("🔍 Checking Name Match:", aadhaarNameLower, dlNameLower);
+    const aadhaarNameNormalized = normalizeName(aadhaarData?.full_name);
+    const dlNameNormalized = normalizeName(dlInfo?.name);
 
-    if (aadhaarNameLower !== dlNameLower) {
+    console.log(
+      "🔍 Checking Name Match:",
+      aadhaarNameNormalized,
+      dlNameNormalized
+    );
+
+    if (aadhaarNameNormalized !== dlNameNormalized) {
       console.log("❌ Name mismatch");
       return res.status(400).json({
         success: false,
         nameMismatch: true,
-        message: `Aadhaar name "${aadhaarName}" does not match DL name "${dlInfo.name}"`,
+        message: `Aadhaar name "${aadhaarData.full_name}" does not match DL name "${dlInfo.name}"`,
       });
     }
 
@@ -1973,8 +1976,7 @@ exports.verifyDrivingLicense = async (req, res) => {
 
 exports.verifyRcDetails = async (req, res) => {
   try {
-    const { rcNumber, deviceId, isByPass } = req.body;
-    console.log("🔹 RC Verification Request Body:", req.body);
+    const { rcNumber, deviceId, isByPass ,driverId,mobile,formAll } = req.body;
 
     if (!rcNumber) {
       return res.status(400).json({
@@ -1983,7 +1985,8 @@ exports.verifyRcDetails = async (req, res) => {
       });
     }
 
-        const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
+    const driverDetails = await Driver.findById(driverId)
+    const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -2030,7 +2033,7 @@ exports.verifyRcDetails = async (req, res) => {
       return res.status(200).json({
         success: true,
         message: "RC verified successfully (bypass).",
-        rcData: rcInfo,     // ← updated category sent here
+        rcData: rcInfo, // ← updated category sent here
         aadhaarData: null,
         bikeDetected: isBike,
         bypassUsed: true,
@@ -2043,20 +2046,15 @@ exports.verifyRcDetails = async (req, res) => {
     if (isBike) {
       return res.status(400).json({
         success: false,
+        aadharModel: false,
         message: "Bikes/Two-wheelers are not allowed. Please register a car.",
       });
     }
 
     // ---------------- Aadhaar match ---------------
 
-    if (!aadhaarRecord?.aadhar_verification_data) {
-      return res.status(400).json({
-        success: false,
-        message: "Aadhaar verification required before RC verification.",
-      });
-    }
 
-    const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name
+    const aadhaarName = driverDetails?.driver_name || aadhaarRecord.aadhar_verification_data.full_name
       .toLowerCase()
       .trim();
     const rcOwnerName = rcInfo.owner_name.toLowerCase().trim();
@@ -2065,7 +2063,8 @@ exports.verifyRcDetails = async (req, res) => {
       return res.status(400).json({
         success: false,
         rcData: rcInfo,
-        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarRecord.aadhar_verification_data.full_name}".`,
+        aadharModel: true,
+        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
       });
     }
 
@@ -2074,16 +2073,162 @@ exports.verifyRcDetails = async (req, res) => {
       success: true,
       message: "RC verified successfully.",
       rcData: rcInfo,
-      aadhaarData: aadhaarRecord.aadhar_verification_data,
       bikeDetected: false,
       bypassUsed: false,
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "Something went wrong during RC verification.",
       error: error.message,
+    });
+  }
+};
+
+exports.VerifyGstNo = async (req, res) => {
+  try {
+    const { gst } = req.body;
+    const settings = await AppSettings.findOne();
+    const isBypass = settings?.ByPassApi || false;
+    if (!gst) {
+      return res.status(400).json({
+        success: false,
+        message: "GST number is required",
+      });
+    }
+
+    const gstNo = gst.toUpperCase().trim();
+    const identifier = req.user?.id || req.ip;
+    const now = Date.now();
+
+    /* -------------------------------------------------
+       1️⃣ RATE LIMIT (Map)
+    -------------------------------------------------- */
+    const rateData = rateLimitMap.get(identifier) || {
+      count: 0,
+      startTime: now,
+    };
+
+    if (now - rateData.startTime > RATE_LIMIT_WINDOW) {
+      rateData.count = 0;
+      rateData.startTime = now;
+    }
+
+    rateData.count += 1;
+    rateLimitMap.set(identifier, rateData);
+
+    if (rateData.count > MAX_REQUESTS) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many GST verification requests. Try again later.",
+      });
+    }
+
+    /* -------------------------------------------------
+       2️⃣ CACHE CHECK (20 MIN)
+    -------------------------------------------------- */
+    const cached = gstCache.get(gstNo);
+
+    if (cached && now - cached.timestamp < CACHE_TTL) {
+      return res.json({
+        success: true,
+        source: "cache",
+        data: cached.data,
+      });
+    }
+
+    /* -------------------------------------------------
+       3️⃣ BYPASS API WITH DEFAULT DATA
+    -------------------------------------------------- */
+    if (isBypass) {
+      const defaultData = {
+        gstin: gstNo,
+        pan_number: "ABCDE1234F",
+        business_name: "Default Business",
+        legal_name: "Default Legal Name",
+        gstin_status: "Active",
+        taxpayer_type: "Regular",
+        constitution_of_business: "Private Limited",
+        date_of_registration: "2020-01-01",
+        address: "ABC, B1, Tech Park, Bangalore Pin-560001",
+        state_jurisdiction: "Default State Jurisdiction",
+        center_jurisdiction: "Default Center Jurisdiction",
+      };
+
+      // Store in cache
+      gstCache.set(gstNo, { data: defaultData, timestamp: now });
+
+      return res.json({
+        success: true,
+        source: "bypass",
+        data: defaultData,
+      });
+    }
+
+    /* -------------------------------------------------
+       4️⃣ CALL QUICK eKYC API
+    -------------------------------------------------- */
+    const response = await axios.post(
+      `https://api.quickekyc.com/api/v1/corporate/gstin`,
+      {
+        id_number: gstNo,
+        key: process.env.QUICKEKYC_API_KEY,
+        filing_status_get: false,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      }
+    );
+
+    if (response.data?.status !== "success") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid GST number or verification failed",
+      });
+    }
+
+    /* -------------------------------------------------
+       5️⃣ NORMALIZE RESPONSE
+    -------------------------------------------------- */
+    const gstData = response.data.data;
+
+    const normalizedData = {
+      gstin: gstData.gstin,
+      pan_number: gstData.pan_number,
+      business_name: gstData.business_name,
+      legal_name: gstData.legal_name,
+      gstin_status: gstData.gstin_status,
+      taxpayer_type: gstData.taxpayer_type,
+      constitution_of_business: gstData.constitution_of_business,
+      date_of_registration: gstData.date_of_registration,
+      nature_of_business: gstData.nature_bus_activities || [],
+      address: gstData.address,
+      state_jurisdiction: gstData.state_jurisdiction,
+      center_jurisdiction: gstData.center_jurisdiction,
+    };
+
+    /* -------------------------------------------------
+       6️⃣ STORE IN MAP CACHE
+    -------------------------------------------------- */
+    gstCache.set(gstNo, { data: normalizedData, timestamp: now });
+
+    return res.json({
+      success: true,
+      source: "api",
+      data: normalizedData,
+    });
+  } catch (error) {
+    console.error(
+      "❌ GST Verify Error:",
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "GST verification service unavailable",
     });
   }
 };
@@ -2287,3 +2432,370 @@ exports.getDriverDetailsOfDriverMobile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+exports.changeDpOfProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile image is required",
+      });
+    }
+
+    const driver = await Driver.findById(userId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    // 🗑 Delete old profile image if exists
+    if (driver.profile_photo?.public_id) {
+      await deleteImage(driver.profile_photo.public_id);
+    }
+
+    // ⬆ Upload new DP
+    const uploadDp = await uploadSingleImage(file.path, "dp");
+
+    // 💾 Update driver profile photo
+    driver.profile_photo = {
+      url: uploadDp.url || uploadDp.image,
+      public_id: uploadDp.public_id,
+    };
+
+    await driver.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile photo updated successfully",
+      profile_photo: driver.profile_photo,
+    });
+  } catch (error) {
+    console.error("Change DP Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while updating profile photo",
+    });
+  }
+};
+
+exports.getAllVehcilesOfDriver = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 🔍 Find driver
+    const driver = await Driver.findById(userId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    // 🚗 Find all vehicles of the driver
+    const vehicles = await Vehicle.find({
+      driver_id: driver._id,
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: vehicles.length,
+      vehicles,
+    });
+  } catch (error) {
+    console.error("Get Vehicles Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching vehicles",
+    });
+  }
+};
+
+exports.changeActiveVehcile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    console.log("🔄 Change vehicle request:", { is_active }, id);
+
+    /* ----------------------------
+       1️⃣ Find Driver
+    -----------------------------*/
+    const driver = await Driver.findById(userId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    // 🕒 Log last current vehicle
+    const lastCurrentVehicleId = driver.current_vehicle_id?.toString() || null;
+    console.log("🕒 Last current vehicle:", lastCurrentVehicleId);
+
+    /* ----------------------------
+       2️⃣ Find Vehicle
+    -----------------------------*/
+    const vehicle = await Vehicle.findById(id);
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        message: "Vehicle not found",
+      });
+    }
+
+    /* ----------------------------
+       3️⃣ Ownership Check
+    -----------------------------*/
+    if (vehicle.driver_id.toString() !== driver._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized to update this vehicle",
+      });
+    }
+
+    /* ----------------------------
+       4️⃣ If deactivating, ensure at least one active vehicle remains
+    -----------------------------*/
+    if (is_active === false) {
+      const activeCount = await Vehicle.countDocuments({
+        driver_id: driver._id,
+        is_active: true,
+        is_deleted: false,
+      });
+
+      console.log("🚗 Active vehicle count:", activeCount);
+
+      if (activeCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "You must have at least one active vehicle. Deactivation not allowed.",
+        });
+      }
+
+      vehicle.is_active = false;
+      await vehicle.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Vehicle deactivated successfully",
+        vehicle_id: vehicle._id,
+        is_active: false,
+      });
+    }
+
+    /* ----------------------------
+       5️⃣ ACTIVATING VEHICLE
+       👉 Deactivate ALL other vehicles
+    -----------------------------*/
+    console.log("⚙️ Deactivating other vehicles...");
+
+    await Vehicle.updateMany(
+      {
+        driver_id: driver._id,
+        _id: { $ne: vehicle._id },
+        is_deleted: false,
+      },
+      { $set: { is_active: false } }
+    );
+
+    // Activate selected vehicle
+    vehicle.is_active = true;
+    await vehicle.save();
+
+    // Update driver's current vehicle
+    driver.current_vehicle_id = vehicle._id;
+    await driver.save();
+
+    console.log("✅ New current vehicle:", vehicle._id.toString());
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle activated successfully",
+      last_current_vehicle: lastCurrentVehicleId,
+      new_current_vehicle: vehicle._id.toString(),
+      vehicle_id: vehicle._id,
+      is_active: true,
+    });
+  } catch (error) {
+    console.error("❌ Change Active Vehicle Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while updating vehicle status",
+    });
+  }
+};
+
+exports.updatePrefrences = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      accept_mini_rides,
+      accept_sedan_rides,
+      accept_suv_rides,
+    } = req.body;
+
+    console.log("🔄 Update preferences:", req.body);
+
+    const driver = await Driver.findById(userId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    if (typeof accept_mini_rides === "boolean") {
+      driver.preferences.accept_mini_rides = accept_mini_rides;
+    }
+
+    if (typeof accept_sedan_rides === "boolean") {
+      driver.preferences.accept_sedan_rides = accept_sedan_rides;
+    }
+
+    if (typeof accept_suv_rides === "boolean") {
+      driver.preferences.accept_suv_rides = accept_suv_rides;
+    }
+
+    await driver.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Preferences updated successfully",
+      preferences: driver.preferences,
+    });
+  } catch (error) {
+    console.error("❌ Update Preferences Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+exports.getPreferencesViaVehicleCategory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1️⃣ Fetch driver & active vehicle
+    const driver = await Driver.findById(userId).populate(
+      "current_vehicle_id"
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found. Please login again.",
+      });
+    }
+
+    if (!driver.current_vehicle_id) {
+      return res.status(400).json({
+        success: false,
+        message: "No active vehicle found. Please activate a vehicle.",
+      });
+    }
+
+    const vehicle = driver.current_vehicle_id;
+    const category = (vehicle.vehicle_type || "").toUpperCase();
+
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: "Vehicle category missing. Please update vehicle details.",
+      });
+    }
+
+    console.log("🚗 Active vehicle category:", category);
+
+    // 2️⃣ Driver saved preferences
+    let preferences = {
+      accept_mini_rides:
+        driver.preferences?.accept_mini_rides ?? false,
+      accept_sedan_rides:
+        driver.preferences?.accept_sedan_rides ?? false,
+      accept_suv_rides:
+        driver.preferences?.accept_suv_rides ?? false,
+    };
+
+    const updatedFields = {};
+
+    // 3️⃣ Apply rules per vehicle category
+    if (category === "MINI") {
+      // MINI → only accept_mini_rides
+      if (!preferences.accept_mini_rides) {
+        preferences.accept_mini_rides = true;
+        updatedFields["preferences.accept_mini_rides"] = true;
+      }
+      preferences.accept_sedan_rides = false;
+      preferences.accept_suv_rides = false;
+    } 
+    else if (category === "SEDAN") {
+      // SEDAN → accept_mini_rides and accept_sedan_rides
+      if (!preferences.accept_sedan_rides) {
+        preferences.accept_sedan_rides = true;
+                preferences.accept_mini_rides = true;
+
+        updatedFields["preferences.accept_sedan_rides"] = true;
+      }
+      // MINI stays as driver saved (could be on/off)
+      preferences.accept_suv_rides = false;
+    } 
+    else if (category === "SUV") {
+      // SUV → accept_mini_rides + accept_sedan_rides + accept_suv_rides
+      if (!preferences.accept_suv_rides) {
+        preferences.accept_suv_rides = true;
+        updatedFields["preferences.accept_suv_rides"] = true;
+      }
+      // MINI & SEDAN stay as driver saved
+    } 
+    else {
+      // OTHER → all allowed, do not force ON
+    }
+
+    // 4️⃣ Save auto-corrected preferences
+    if (Object.keys(updatedFields).length > 0) {
+      console.log("🔁 Auto-correcting preferences:", updatedFields);
+      await Driver.updateOne({ _id: driver._id }, { $set: updatedFields });
+    }
+
+    // 5️⃣ Response
+    return res.status(200).json({
+      success: true,
+      message: "Preferences loaded successfully",
+      data: {
+        vehicle_category: category,
+        preferences,
+        auto_corrected: Object.keys(updatedFields).length > 0,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "❌ getPreferencesViaVehicleCategory error:",
+      error
+    );
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while loading preferences. Please try again.",
+    });
+  }
+};
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of gstCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      gstCache.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+
+

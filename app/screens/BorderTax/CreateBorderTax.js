@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from "react";
+// screens/CreateBorderTax.js
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
   TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
   Platform,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -27,7 +28,6 @@ export default function CreateBorderTax({ route, navigation }) {
   // Form States
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [borderState, setBorderState] = useState("");
-
   const [tripDuration, setTripDuration] = useState("one_day"); // one_day | many_days
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
@@ -50,19 +50,19 @@ export default function CreateBorderTax({ route, navigation }) {
     setAlertVisible(true);
   };
 
-  // Load driver on mount
+  // Load driver
   useEffect(() => {
     fetchDriverDetails();
   }, []);
 
-  // Prefill vehicle from driver
+  // Prefill vehicle
   useEffect(() => {
     if (driver?.current_vehicle_id?.vehicle_number) {
       setVehicleNumber(driver.current_vehicle_id.vehicle_number);
     }
   }, [driver]);
 
-  // Load existing record for editing
+  // Load existing for edit
   useEffect(() => {
     if (editId) loadExisting();
   }, [editId]);
@@ -70,201 +70,139 @@ export default function CreateBorderTax({ route, navigation }) {
   const loadExisting = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(
-        `${API_URL_APP}/api/v1/border-tax/${editId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const res = await axios.get(`${API_URL_APP}/api/v1/border-tax/${editId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const d = res.data.data;
 
-      setVehicleNumber(d.vehicle_number);
-      setBorderState(d.border_state);
-
+      setVehicleNumber(d.vehicle_number || "");
+      setBorderState(d.border_state || "");
       setTripDuration(d.trip_type === "one_way" ? "one_day" : "many_days");
-
       if (d.start_date) setStartDate(new Date(d.start_date));
       if (d.end_date) setEndDate(new Date(d.end_date));
-
-      setLoading(false);
     } catch (error) {
-      console.log(error.response.data);
-      setLoading(false);
       showAlert("error", "Error", "Unable to load details.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Submit Form
   const handleSubmit = async () => {
     if (!vehicleNumber.trim() || !borderState.trim()) {
-      return showAlert(
-        "error",
-        "Missing Fields",
-        "Vehicle number and border state are required."
-      );
+      return showAlert("error", "Required", "Vehicle number and border state are required.");
     }
 
     if (tripDuration === "many_days" && startDate >= endDate) {
-      return showAlert(
-        "error",
-        "Invalid Dates",
-        "End date must be after start date."
-      );
+      return showAlert("error", "Invalid", "End date must be after start date.");
     }
 
-    const formData = new FormData();
-    formData.append("vehicle_number", vehicleNumber);
-    formData.append("border_state", borderState);
-    formData.append("start_date", startDate.toISOString());
-
-    if (tripDuration === "one_day") {
-      formData.append("trip_type", "one_way");
-      formData.append("end_date", startDate.toISOString());
-    } else {
-      formData.append("trip_type", "round_trip");
-      formData.append("end_date", endDate.toISOString());
-    }
+    const payload = {
+      vehicle_number: vehicleNumber.trim(),
+      border_state: borderState.trim(),
+      trip_type: tripDuration === "one_day" ? "one_way" : "round_trip",
+      start_date: startDate.toISOString(),
+      end_date: tripDuration === "one_day" ? startDate.toISOString() : endDate.toISOString(),
+    };
 
     try {
       setLoading(true);
-
-      let res;
-
       if (editId) {
-        res = await axios.put(
-          `${API_URL_APP}/api/v1/border-tax/${editId}`,
-          formData,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
-      } else {
-        res = await axios.post(`${API_URL_APP}/api/v1/border-tax`, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+        await axios.put(`${API_URL_APP}/api/v1/border-tax/${editId}`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
         });
+        showAlert("success", "Updated", "Border tax updated successfully");
+      } else {
+        await axios.post(`${API_URL_APP}/api/v1/border-tax`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        showAlert("success", "Created", "Border tax request submitted");
       }
-
-      showAlert(
-        "success",
-        "Success",
-        editId ? "Record Updated!" : "Border Tax Created!"
-      );
-
-      setTimeout(() => navigation.goBack(), 900);
+      setTimeout(() => navigation.goBack(), 1000);
     } catch (error) {
-      showAlert(
-        "error",
-        "Error",
-        error.response?.data?.message || "Something went wrong."
-      );
+      showAlert("error", "Failed", error.response?.data?.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <BackWithLogo title={editId ? "Edit Border Tax" : "Add Border Tax"} />
+    <SafeAreaView style={styles.container}>
+      <BackWithLogo title={editId ? "Edit Border Tax" : "Post Border Tax"} />
 
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          {/* VEHICLE NUMBER (Editable) */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Vehicle Number *</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="car" size={20} color="#EF4444" />
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.form}>
+          {/* Vehicle Number */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Vehicle Number </Text>
+            <View style={styles.input}>
+              <Ionicons name="car-outline" size={20} color="#000" />
               <TextInput
-                style={styles.input}
-                placeholder="Enter Vehicle Number"
+                style={styles.textInput}
+                placeholder="e.g. DL01AB1234"
+                placeholderTextColor="#aaa"
                 value={vehicleNumber}
                 onChangeText={setVehicleNumber}
+                autoCapitalize="characters"
               />
             </View>
           </View>
 
-          {/* BORDER STATE */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Border State *</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Maharashtra, Gujarat"
-              value={borderState}
-              onChangeText={setBorderState}
-            />
+          {/* Border State */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Border State </Text>
+            <View style={styles.input}>
+              <Ionicons name="location-outline" size={20} color="#000" />
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. Maharashtra"
+                placeholderTextColor="#aaa"
+                value={borderState}
+                onChangeText={setBorderState}
+              />
+            </View>
           </View>
 
-          {/* TRIP DURATION */}
-          <View style={styles.inputGroup}>
+          {/* Trip Duration Tabs */}
+          <View style={styles.field}>
             <Text style={styles.label}>Trip Duration</Text>
-            <View style={styles.tabContainer}>
+            <View style={styles.tabs}>
               <TouchableOpacity
-                style={[
-                  styles.tab,
-                  tripDuration === "one_day" && styles.tabActive,
-                ]}
+                style={[styles.tab, tripDuration === "one_day" && styles.tabActive]}
                 onPress={() => setTripDuration("one_day")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    tripDuration === "one_day" && styles.tabTextActive,
-                  ]}
-                >
+                <Text style={[styles.tabText, tripDuration === "one_day" && styles.tabTextActive]}>
                   One Day
                 </Text>
               </TouchableOpacity>
-
               <TouchableOpacity
-                style={[
-                  styles.tab,
-                  tripDuration === "many_days" && styles.tabActive,
-                ]}
+                style={[styles.tab, tripDuration === "many_days" && styles.tabActive]}
                 onPress={() => setTripDuration("many_days")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    tripDuration === "many_days" && styles.tabTextActive,
-                  ]}
-                >
+                <Text style={[styles.tabText, tripDuration === "many_days" && styles.tabTextActive]}>
                   Many Days
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* START DATE */}
-          <View style={styles.inputGroup}>
+          {/* Start Date */}
+          <View style={styles.field}>
             <Text style={styles.label}>Start Date</Text>
-
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowStartPicker(true)}
-            >
-              <Ionicons name="calendar" size={20} color="#EF4444" />
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setShowStartPicker(true)}>
+              <Ionicons name="calendar-outline" size={20} color="#fff" />
               <Text style={styles.dateText}>
                 {startDate.toLocaleDateString("en-IN")}
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* END DATE (only for many days trip) */}
+          {/* End Date (Many Days) */}
           {tripDuration === "many_days" && (
-            <View style={styles.inputGroup}>
+            <View style={styles.field}>
               <Text style={styles.label}>End Date</Text>
-
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowEndPicker(true)}
-              >
-                <Ionicons name="calendar" size={20} color="#EF4444" />
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setShowEndPicker(true)}>
+                <Ionicons name="calendar-outline" size={20} color="#fff" />
                 <Text style={styles.dateText}>
                   {endDate.toLocaleDateString("en-IN")}
                 </Text>
@@ -272,9 +210,9 @@ export default function CreateBorderTax({ route, navigation }) {
             </View>
           )}
 
-          {/* SUBMIT */}
+          {/* Submit */}
           <TouchableOpacity
-            style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+            style={[styles.submitBtn, loading && styles.submitDisabled]}
             onPress={handleSubmit}
             disabled={loading}
           >
@@ -282,96 +220,99 @@ export default function CreateBorderTax({ route, navigation }) {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text style={styles.submitText}>
-                {editId ? "Update Border Tax" : "Create Border Tax"}
+                {editId ? "Update" : "Submit"} Request
               </Text>
             )}
           </TouchableOpacity>
         </View>
-
-        {/* DATE PICKERS */}
-        {showStartPicker && (
-          <DateTimePicker
-            value={startDate}
-            mode="date"
-            display={Platform.OS === "ios" ? "spinner" : "default"}
-            onChange={(event, date) => {
-              setShowStartPicker(false);
-              if (date) setStartDate(date);
-            }}
-          />
-        )}
-
-        {showEndPicker && (
-          <DateTimePicker
-            value={endDate}
-            minimumDate={startDate}
-            mode="date"
-            display={Platform.OS === "ios" ? "spinner" : "default"}
-            onChange={(event, date) => {
-              setShowEndPicker(false);
-              if (date) setEndDate(date);
-            }}
-          />
-        )}
-
-        <UniversalAlert
-          visible={alertVisible}
-          setVisible={setAlertVisible}
-          {...alertConfig}
-        />
       </ScrollView>
+
+      {/* Date Pickers */}
+      {showStartPicker && (
+        <DateTimePicker
+          value={startDate}
+          mode="date"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={(e, date) => {
+            setShowStartPicker(false);
+            if (date) setStartDate(date);
+          }}
+        />
+      )}
+
+      {showEndPicker && (
+        <DateTimePicker
+          value={endDate}
+          minimumDate={startDate}
+          mode="date"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={(e, date) => {
+            setShowEndPicker(false);
+            if (date) setEndDate(date);
+          }}
+        />
+      )}
+
+      <UniversalAlert
+        visible={alertVisible}
+        setVisible={setAlertVisible}
+        {...alertConfig}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: "#f8fafc", flex: 1 },
-  card: {
+  container: {
+    flex: 1,
     backgroundColor: "#fff",
-    margin: 16,
-    borderRadius: 20,
+  },
+  content: {
     padding: 20,
   },
-  inputGroup: { marginBottom: 20 },
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
+
+  form: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "#eee",
   },
 
-  inputWrapper: {
-    backgroundColor: "#fef2f2",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fecaca",
+  field: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#000",
+    marginBottom: 8,
+    fontFamily: "SFProDisplay-Medium",
   },
 
   input: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    fontSize: 16,
-  },
-
-  textInput: {
-    backgroundColor: "#f9fafb",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    fontSize: 16,
-  },
-
-  tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    // backgroundColor: "#000",
+    borderRadius: 22,
+    borderWidth:0.4,
+
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  textInput: {
+    flex: 1,
+    color: "#000",
+    fontSize: 15,
+    marginLeft: 12,
+    fontFamily: "SFProDisplay-Regular",
+  },
+
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: "#f0f0f0",
     borderRadius: 12,
-    padding: 6,
+    padding: 4,
   },
   tab: {
     flex: 1,
@@ -379,34 +320,48 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  tabActive: { backgroundColor: "#EF4444" },
-  tabText: { fontSize: 15, fontWeight: "600", color: "#64748b" },
-  tabTextActive: { color: "#fff" },
-
-  dateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fef2f2",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fca5a5",
+  tabActive: {
+    backgroundColor: "#000",
+  },
+  tabText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "600",
+  },
+  tabTextActive: {
+    color: "#fff",
   },
 
+  dateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderColor:"#f0f0f0",
+    borderWidth:1,
+    // backgroundColor: "#000",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
   dateText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: "#991b1b",
-    fontWeight: "600",
+    color: "#000",
+    fontSize: 15,
+    marginLeft: 12,
+    fontWeight: "500",
   },
 
   submitBtn: {
-    backgroundColor: "#EF4444",
-    paddingVertical: 18,
-    borderRadius: 16,
+    backgroundColor: "#000",
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
-    marginTop: 20,
+    marginTop: 10,
   },
-  submitBtnDisabled: { opacity: 0.7 },
-  submitText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  submitDisabled: {
+    opacity: 0.6,
+  },
+  submitText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 });

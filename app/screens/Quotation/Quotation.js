@@ -8,17 +8,20 @@ import {
   ActivityIndicator,
   StatusBar,
   RefreshControl,
-  Share,
+
   Linking,
   TextInput,
   Alert,
+  Modal,
 } from "react-native";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { MaterialCommunityIcons, Ionicons, Feather } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { useNavigation } from "@react-navigation/native";
 import { UniversalAlert } from "../common/UniversalAlert";
-import { API_URL_APP } from "../../constant/api"; // Fixed: was API_URL_APP
+import { API_URL_APP } from "../../constant/api";
 import loginStore from "../../store/auth.store";
 import BackWithLogo from "../common/back_with_logo";
 
@@ -28,10 +31,17 @@ export default function Quotation() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [convertingId, setConvertingId] = useState(null);
   const [quotations, setQuotations] = useState([]);
   const [filteredQuotations, setFilteredQuotations] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // all, ready, processing
+  const [filterType, setFilterType] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
+  const [showSortModal, setShowSortModal] = useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
@@ -45,7 +55,6 @@ export default function Quotation() {
     setAlertVisible(true);
   };
 
-  // Fetch Quotations
   const fetchQuotations = async () => {
     try {
       const res = await axios.get(`${API_URL_APP}/api/v1/get-quotation`, {
@@ -61,7 +70,7 @@ export default function Quotation() {
       showAlert(
         "error",
         "Error",
-        error.response?.data?.message || "Failed to load quotations"
+        error.response?.data?.message || "Failed to load documents"
       );
     } finally {
       setLoading(false);
@@ -69,36 +78,122 @@ export default function Quotation() {
     }
   };
 
-  // Delete Quotation
-  const deleteQuotation = async (id, invoiceNo) => {
-    Alert.alert(
-      "Delete Quotation",
-      `Are you sure you want to delete ${invoiceNo}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.delete(
-                `${API_URL_APP}/api/v1/delete-quotation/${id}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
-              showAlert("success", "Deleted", `${invoiceNo} has been deleted.`);
-              fetchQuotations();
-            } catch (error) {
-              showAlert("error", "Failed", "Could not delete quotation.");
-            }
-          },
+  const convertToInvoice = async (id, invoiceNo) => {
+    Alert.alert("Convert to Invoice", `Convert ${invoiceNo} to Tax Invoice?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Convert",
+        onPress: async () => {
+          setConvertingId(id);
+          try {
+            await axios.post(
+              `${API_URL_APP}/api/v1/convert-to-invoice/${id}`,
+              {},
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            showAlert(
+              "success",
+              "Success",
+              `${invoiceNo} converted to Invoice`
+            );
+            setFilterType("invoice");
+            fetchQuotations();
+          } catch (error) {
+            showAlert(
+              "error",
+              "Failed",
+              error.response?.data?.message || "Could not convert"
+            );
+          } finally {
+            setConvertingId(null);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  // Search & Filter Logic
+  const deleteDocument = async (id, invoiceNo) => {
+    Alert.alert("Delete Document", `Delete ${invoiceNo} permanently?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await axios.delete(`${API_URL_APP}/api/v1/delete-quotation/${id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            showAlert(
+              "success",
+              "Deleted",
+              `${invoiceNo} deleted successfully`
+            );
+            fetchQuotations();
+          } catch (error) {
+            showAlert("error", "Failed", "Could not delete document");
+          }
+        },
+      },
+    ]);
+  };
+
+const shareDocument = async (pdfUrl, invoiceNo) => {
+  try {
+    // ✅ Legacy cache directory is guaranteed
+    const localUri = `${FileSystem.cacheDirectory}${invoiceNo}.pdf`;
+
+    console.log("⬇️ Downloading PDF to:", localUri);
+
+    await FileSystem.downloadAsync(pdfUrl, localUri);
+
+    if (!(await Sharing.isAvailableAsync())) {
+      throw new Error("Sharing not available");
+    }
+
+    await Sharing.shareAsync(localUri, {
+      mimeType: "application/pdf",
+      dialogTitle: invoiceNo,
+      UTI: "com.adobe.pdf", // iOS
+    });
+  } catch (err) {
+    console.error("❌ Share error:", err);
+    showAlert("error", "Share Failed", "Unable to share document");
+  }
+};
+  const sortQuotations = (data, sortType) => {
+    const sorted = [...data];
+    switch (sortType) {
+      case "date_desc":
+        return sorted.sort(
+          (a, b) => new Date(b.invoice_date) - new Date(a.invoice_date)
+        );
+      case "date_asc":
+        return sorted.sort(
+          (a, b) => new Date(a.invoice_date) - new Date(b.invoice_date)
+        );
+      case "amount_desc":
+        return sorted.sort(
+          (a, b) =>
+            (b.summary?.grand_total || 0) - (a.summary?.grand_total || 0)
+        );
+      case "amount_asc":
+        return sorted.sort(
+          (a, b) =>
+            (a.summary?.grand_total || 0) - (b.summary?.grand_total || 0)
+        );
+      case "name_asc":
+        return sorted.sort((a, b) =>
+          a.bill_to.customer_name.localeCompare(b.bill_to.customer_name)
+        );
+      case "name_desc":
+        return sorted.sort((a, b) =>
+          b.bill_to.customer_name.localeCompare(a.bill_to.customer_name)
+        );
+      default:
+        return sorted;
+    }
+  };
+
   useEffect(() => {
     let filtered = quotations;
 
@@ -112,14 +207,18 @@ export default function Quotation() {
       );
     }
 
-    if (filterStatus !== "all") {
+    if (filterType !== "all") {
       filtered = filtered.filter((q) =>
-        filterStatus === "ready" ? q.pdf?.url : !q.pdf?.url
+        filterType === "quotation"
+          ? q.document_type === "quotation"
+          : q.document_type === "invoice"
       );
     }
 
+    filtered = sortQuotations(filtered, sortBy);
     setFilteredQuotations(filtered);
-  }, [searchQuery, filterStatus, quotations]);
+    setCurrentPage(1);
+  }, [searchQuery, filterType, quotations, sortBy]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -138,31 +237,27 @@ export default function Quotation() {
     });
   };
 
-  const sharePDF = async (pdfUrl, invoiceNo) => {
-    try {
-      await Share.share({
-        title: `Quotation ${invoiceNo}`,
-        message: `Quotation ${invoiceNo} from your travel partner`,
-        url: pdfUrl,
-      });
-    } catch (error) {
-      showAlert("error", "Share Failed", "Unable to share PDF");
-    }
-  };
+  const totalPages = Math.ceil(filteredQuotations.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedQuotations = filteredQuotations.slice(startIndex, endIndex);
 
-  const downloadPDF = (pdfUrl) => {
-    Linking.openURL(pdfUrl).catch(() =>
-      showAlert("error", "Error", "Cannot open PDF")
-    );
-  };
+  const sortOptions = [
+    { label: "Date (Newest First)", value: "date_desc" },
+    { label: "Date (Oldest First)", value: "date_asc" },
+    { label: "Amount (High to Low)", value: "amount_desc" },
+    { label: "Amount (Low to High)", value: "amount_asc" },
+    { label: "Customer (A-Z)", value: "name_asc" },
+    { label: "Customer (Z-A)", value: "name_desc" },
+  ];
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#FF5252" />
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#FF5252" />
-          <Text style={styles.loadingText}>Loading quotations...</Text>
+          <ActivityIndicator size="large" color="#000" />
+          <Text style={styles.loadingText}>Loading documents...</Text>
         </View>
       </SafeAreaView>
     );
@@ -170,13 +265,11 @@ export default function Quotation() {
 
   return (
     <SafeAreaView style={styles.container}>
-   
-    <BackWithLogo/>
+      <BackWithLogo />
 
-      {/* Search & Filter Bar */}
       <View style={styles.searchFilterContainer}>
         <View style={styles.searchBar}>
-          <Feather name="search" size={20} color="#999" />
+          <Feather name="search" size={18} color="#999" />
           <TextInput
             placeholder="Search invoice or customer..."
             value={searchQuery}
@@ -186,222 +279,276 @@ export default function Quotation() {
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#999" />
+              <Ionicons name="close-circle" size={18} color="#999" />
             </TouchableOpacity>
           ) : null}
         </View>
 
-        <View style={styles.filterButtons}>
-          {["all", "ready", "processing"].map((status) => (
-            <TouchableOpacity
-              key={status}
-              style={[
-                styles.filterBtn,
-                filterStatus === status && styles.filterBtnActive,
-              ]}
-              onPress={() => setFilterStatus(status)}
-            >
-              <Text
+        <View style={styles.filterRow}>
+          <View style={styles.filterButtons}>
+            {["all", "quotation", "invoice"].map((type) => (
+              <TouchableOpacity
+                key={type}
                 style={[
-                  styles.filterBtnText,
-                  filterStatus === status && styles.filterBtnTextActive,
+                  styles.filterBtn,
+                  filterType === type && styles.filterBtnActive,
                 ]}
+                onPress={() => setFilterType(type)}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.filterBtnText,
+                    filterType === type && styles.filterBtnTextActive,
+                  ]}
+                >
+                  {type === "all"
+                    ? "All"
+                    : type?.charAt(0).toUpperCase() + type.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={() => setShowSortModal(true)}
+          >
+            <MaterialCommunityIcons name="sort" size={20} color="#000" />
+          </TouchableOpacity>
         </View>
+
+        {filteredQuotations.length > 0 && (
+          <Text style={styles.resultCount}>
+            {filteredQuotations.length} result
+            {filteredQuotations.length !== 1 ? "s" : ""}
+          </Text>
+        )}
       </View>
 
-      {/* Quotation List */}
       <ScrollView
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#FF5252"]}
+            colors={["#000"]}
           />
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 16 }}
       >
-        {/* Empty View */}
         {filteredQuotations.length === 0 ? (
           <View style={styles.emptyContainer}>
             <MaterialCommunityIcons
               name="file-document-outline"
-              size={80}
-              color="#ddd"
+              size={70}
+              color="#ccc"
             />
             <Text style={styles.emptyTitle}>
-              {searchQuery || filterStatus !== "all"
+              {searchQuery || filterType !== "all"
                 ? "No results found"
-                : "No Quotations Yet"}
+                : "No Documents Yet"}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {searchQuery || filterStatus !== "all"
-                ? "Try different keywords"
-                : "Create your first quotation"}
+              Create your first quotation
             </Text>
           </View>
         ) : (
-          filteredQuotations.map((q) => {
-            const trip = q.trip_details?.[0];
-            const isRoundTrip = q.trip_type === "round_trip";
-            const pdfUrl = q.pdf?.url;
-            const amountFormatted = `₹${q.summary.grand_total
-              .toLocaleString()
-              .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+          <>
+         {paginatedQuotations.map((q) => {
+  const trip = q.trip_details?.[0] || {};
+  const isQuotation = q.document_type === "quotation";
+  const pdfUrl = q.pdf?.url;
+  const amount = q.summary?.grand_total || q.summary?.total || 0;
+  const amountFormatted = `₹${amount.toLocaleString("en-IN")}`;
+  const isConverting = convertingId === q._id;
 
-            return (
-              <View key={q._id} style={styles.cardWrapper}>
+  return (
+    <View key={q._id} style={styles.card}>
+      {/* Header: Invoice No, Customer, Type + Amount & Date */}
+      <View style={styles.cardHeader}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.invoiceNo}>#{q.invoice_number}</Text>
+          <Text style={styles.customerName}>{q.bill_to?.customer_name}</Text>
+          <Text style={styles.docType}>
+            {isQuotation ? "Quotation" : "Tax Invoice"}
+          </Text>
+        </View>
+
+        <View style={styles.headerRight}>
+          <Text style={styles.amount}>{amountFormatted}</Text>
+          <Text style={styles.dateText}>{formatDate(q.invoice_date)}</Text>
+        </View>
+      </View>
+
+      {/* Trip Info */}
+      <View style={styles.tripInfo}>
+        <Text style={styles.routeText} numberOfLines={1}>
+          {trip?.pickup_drop_place?.toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) || "N/A"}
+        </Text>
+        <Text style={styles.tripDateTime}>
+          {trip?.pickup_date ? formatDate(trip.pickup_date) : "N/A"} • {trip?.pickup_time || "N/A"}
+        </Text>
+      </View>
+
+      {/* Action Buttons Row */}
+      {pdfUrl && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => Linking.openURL(pdfUrl)}
+          >
+            <Ionicons name="eye-outline" size={14} color="#000" />
+            {/* <Text style={styles.actionText}>View</Text> */}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => navigation.navigate("create-quotation",{id:q?._id})} // Replace with actual edit navigation if available
+          >
+            <Feather name="edit-2" size={14} color="#000" />
+            {/* <Text style={styles.actionText}>Edit</Text> */}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.shareBtn]}
+            onPress={() => shareDocument(pdfUrl, q.invoice_number)}
+          >
+            <MaterialCommunityIcons name="share-variant" size={14} color="#fff" />
+            {/* <Text style={styles.shareText}>Share</Text> */}
+          </TouchableOpacity>
+
+          {isQuotation && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.convertBtn]}
+              onPress={() => convertToInvoice(q._id, q.invoice_number)}
+              disabled={isConverting}
+            >
+              {isConverting ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <MaterialCommunityIcons name="swap-horizontal" size={14} color="#000" />
+              )}
+              <Text style={styles.actionText}>
+                {isConverting ? "Converting..." : "To Invoice"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => deleteDocument(q._id, q.invoice_number)}
+          >
+            <MaterialCommunityIcons name="trash-can-outline" size={16} color="#e74c3c" />
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+})}
+
+            {totalPages > 1 && (
+              <View style={styles.paginationContainer}>
                 <TouchableOpacity
-                  style={styles.card}
-                  activeOpacity={0.8}
-                  // onPress={() =>
-                  //   navigation.navigate("QuotationDetail", {
-                  //     quotationId: q._id,
-                  //   })
-                  // }
+                  style={[
+                    styles.pageBtn,
+                    currentPage === 1 && styles.pageBtnDisabled,
+                  ]}
+                  onPress={() =>
+                    setCurrentPage((prev) => Math.max(1, prev - 1))
+                  }
+                  disabled={currentPage === 1}
                 >
-                  {/* ---------- Card Header ---------- */}
-                  <View style={styles.cardHeader}>
-                    <View>
-                      <Text style={styles.invoiceNo}>{q.invoice_number}</Text>
-                      <Text style={styles.customerName}>
-                        {q.bill_to?.customer_name}
-                      </Text>
-                    </View>
-
-                    <View style={styles.amountContainer}>
-                      <Text style={styles.amount}>{amountFormatted}</Text>
-
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          pdfUrl ? styles.statusSuccess : styles.statusPending,
-                        ]}
-                      >
-                        <Text style={styles.statusText}>
-                          {pdfUrl ? "Ready" : "Processing"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* ---------- Trip Info ---------- */}
-                  <View style={styles.tripInfo}>
-                    {/* Pickup & Drop */}
-                    <View style={styles.tripRow}>
-                      <Ionicons name="location" size={16} color="#777" />
-                      <Text style={styles.tripText}>
-                        {trip?.pickup_drop_place}
-                      </Text>
-                    </View>
-
-                    {/* Pickup Date */}
-                    <View style={styles.dateRow}>
-                      <MaterialCommunityIcons
-                        name="calendar"
-                        size={16}
-                        color="#777"
-                      />
-                      <Text style={styles.dateText}>
-                        {formatDate(trip?.pickup_date)} {trip?.pickup_time}
-                      </Text>
-                    </View>
-
-                    {/* Return Date (Round Trip) */}
-                    {isRoundTrip && trip?.return_date && (
-                      <View style={styles.dateRow}>
-                        <Ionicons
-                          name="return-up-back"
-                          size={16}
-                          color="#FF5252"
-                        />
-                        <Text style={styles.returnText}>
-                          Return: {formatDate(trip?.return_date)}{" "}
-                          {trip?.return_time || ""}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Footer Row */}
-                    <View style={styles.footerRow}>
-                      <View style={styles.tripTypeBadge}>
-                        <Text style={styles.tripTypeText}>
-                          {isRoundTrip ? "Round Trip" : "One Way"}
-                        </Text>
-                      </View>
-                      <Text style={styles.invoiceDate}>
-                        {formatDate(q.invoice_date)}
-                      </Text>
-                    </View>
-                  </View>
-                   <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => deleteQuotation(q._id, q.invoice_number)}
-                >
-                  <MaterialCommunityIcons
-                    name="trash-can-outline"
-                    size={22}
-                    color="#fff"
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color={currentPage === 1 ? "#ccc" : "#000"}
                   />
                 </TouchableOpacity>
 
-                  {/* ---------- PDF Action Buttons ---------- */}
-                  {pdfUrl && (
-                    <View style={styles.pdfActions}>
-                      <TouchableOpacity
-                        style={styles.pdfActionBtn}
-                        onPress={() => downloadPDF(pdfUrl)}
-                      >
-                        <MaterialCommunityIcons
-                          name="download"
-                          size={20}
-                          color="#FF5252"
-                        />
-                        <Text style={styles.pdfActionText}>Download</Text>
-                      </TouchableOpacity>
+                <View style={styles.pageInfo}>
+                  <Text style={styles.pageText}>
+                    Page {currentPage} of {totalPages}
+                  </Text>
+                  <Text style={styles.pageSubtext}>
+                    Showing {startIndex + 1}-
+                    {Math.min(endIndex, filteredQuotations.length)} of{" "}
+                    {filteredQuotations.length}
+                  </Text>
+                </View>
 
-                      <TouchableOpacity
-                        style={[
-                          styles.pdfActionBtn,
-                          { backgroundColor: "#FF5252" },
-                        ]}
-                        onPress={() => sharePDF(pdfUrl, q.invoice_number)}
-                      >
-                        <MaterialCommunityIcons
-                          name="share-variant"
-                          size={20}
-                          color="#fff"
-                        />
-                        <Text style={[styles.pdfActionText, { color: "#fff" }]}>
-                          Share
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                <TouchableOpacity
+                  style={[
+                    styles.pageBtn,
+                    currentPage === totalPages && styles.pageBtnDisabled,
+                  ]}
+                  onPress={() =>
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={currentPage === totalPages ? "#ccc" : "#000"}
+                  />
                 </TouchableOpacity>
-
-                {/* ---------- Delete Button ---------- */}
-               
               </View>
-            );
-          })
+            )}
+          </>
         )}
       </ScrollView>
 
-      {/* Floating Action Button */}
-      {filteredQuotations.length > 0 && (
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate("create-quotation")}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
+
+      <Modal
+        visible={showSortModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSortModal(false)}
+      >
         <TouchableOpacity
-          style={styles.fab}
-          onPress={() => navigation.navigate("create-quotation")}
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSortModal(false)}
         >
-          <Ionicons name="add" size={32} color="#fff" />
+          <View style={styles.sortModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Sort By</Text>
+              <TouchableOpacity onPress={() => setShowSortModal(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {sortOptions.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={styles.sortOption}
+                onPress={() => {
+                  setSortBy(option.value);
+                  setShowSortModal(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortBy === option.value && styles.sortOptionTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {sortBy === option.value && (
+                  <Ionicons name="checkmark" size={20} color="#000" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
         </TouchableOpacity>
-      )}
+      </Modal>
 
       <UniversalAlert
         visible={alertVisible}
@@ -417,166 +564,278 @@ export default function Quotation() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafafa" },
+  container: { flex: 1, backgroundColor: "#fff",paddingBottom:80 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 16, fontSize: 16, color: "#777" },
-
-  header: {
-    backgroundColor: "#FF5252",
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    elevation: 5,
-  },
-  backButton: { padding: 6 },
-  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
-  addButton: { padding: 6 },
+  loadingText: { marginTop: 16, fontSize: 15, color: "#777" },
 
   searchFilterContainer: {
     backgroundColor: "#fff",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#f5f5f5",
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 46,
+    paddingHorizontal: 14,
+    height: 44,
     marginBottom: 12,
   },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: "#333" },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 15, color: "#000" },
 
-  filterButtons: { flexDirection: "row", justifyContent: "space-between" },
+  filterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  filterButtons: { flexDirection: "row", gap: 8 },
   filterBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: "#f0f0f0",
   },
-  filterBtnActive: { backgroundColor: "#FF5252" },
-  filterBtnText: { fontSize: 13, color: "#666", fontWeight: "600" },
+  filterBtnActive: { backgroundColor: "#000" },
+  filterBtnText: { fontSize: 13, fontWeight: "600", color: "#666" },
   filterBtnTextActive: { color: "#fff" },
 
-  cardWrapper: { position: "relative", marginBottom: 16 },
+  sortButton: {
+    padding: 8,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+  },
+
+  resultCount: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 8,
+  },
+
+  // ========== REWRITTEN CARD STYLES ==========
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#eee",
     elevation: 4,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-  },
-  deleteBtn: {
-    // position: "absolute",
-    top: 12,
-    right: 12,
-    backgroundColor: "#e74c3c",
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 6,
   },
 
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  invoiceNo: { fontSize: 17, fontWeight: "bold", color: "#333" },
-  customerName: { fontSize: 14, color: "#666", marginTop: 4 },
-  amountContainer: { alignItems: "flex-end" },
-  amount: { fontSize: 19, fontWeight: "bold", color: "#FF5252" },
-  statusBadge: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusSuccess: { backgroundColor: "#e8f5e9" },
-  statusPending: { backgroundColor: "#fff8e1" },
-  statusText: { fontSize: 11, fontWeight: "bold", color: "#2e7d32" },
-
-  tripInfo: { marginTop: 16 },
-  tripRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  tripText: { marginLeft: 10, fontSize: 15, color: "#444" },
-  dateRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  dateText: { marginLeft: 10, fontSize: 14, color: "#666" },
-  returnText: {
-    marginLeft: 10,
-    fontSize: 14,
-    color: "#FF5252",
-    fontWeight: "600",
+    marginBottom: 14,
   },
 
-  footerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 14,
-  },
-  tripTypeBadge: {
-    backgroundColor: "#FF5252",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  tripTypeText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
-  invoiceDate: { fontSize: 13, color: "#999" },
-
-  pdfActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-    gap: 12,
-  },
-  pdfActionBtn: {
+  headerLeft: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    borderWidth: 1.5,
-    borderColor: "#FF5252",
-  },
-  pdfActionText: {
-    marginLeft: 8,
-    fontWeight: "bold",
-    color: "#FF5252",
-    fontSize: 15,
   },
 
-  emptyContainer: { alignItems: "center", marginTop: 100 },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#aaa",
-    marginTop: 20,
+  headerRight: {
+    alignItems: "flex-end",
   },
-  emptySubtitle: { fontSize: 15, color: "#bbb", marginTop: 8 },
+
+  invoiceNo: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#000",
+  },
+
+  customerName: {
+    fontSize: 15,
+    color: "#333",
+    marginTop: 4,
+  },
+
+  docType: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#000",
+    marginTop: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+
+  amount: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#000",
+  },
+
+  dateText: {
+    fontSize: 13,
+    color: "#777",
+    marginTop: 4,
+  },
+
+  tripInfo: {
+    marginBottom: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+
+  routeText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#000",
+    textTransform: "capitalize",
+  },
+
+  tripDateTime: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 6,
+  },
+
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginTop: 4,
+  },
+
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8f8f8",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 2,
+    width: 68,
+    justifyContent: "center",
+  },
+
+  shareBtn: {
+    backgroundColor: "#000",
+    borderColor: "#000",
+  },
+
+  convertBtn: {
+    backgroundColor: "#fff",
+    borderColor: "#000",
+    borderWidth: 1.5,
+  },
+
+  actionText: {
+    fontSize: 8,
+    fontWeight: "600",
+    color: "#000",
+  },
+
+  shareText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+  },
+
+  deleteBtn: {
+    padding: 10,
+    marginLeft: "auto",
+  },
+
+  // ========== REST OF STYLES (unchanged) ==========
+  paginationContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 8,
+  },
+  pageBtn: {
+    padding: 10,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+  },
+  pageBtnDisabled: {
+    backgroundColor: "#f9f9f9",
+  },
+  pageInfo: {
+    alignItems: "center",
+  },
+  pageText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#000",
+  },
+  pageSubtext: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 2,
+  },
+
+  emptyContainer: { alignItems: "center", marginTop: 80 },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#aaa", marginTop: 16 },
+  emptySubtitle: { fontSize: 14, color: "#bbb", marginTop: 8 },
 
   fab: {
     position: "absolute",
     right: 20,
     bottom: 30,
-    backgroundColor: "#FF5252",
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    backgroundColor: "#000",
+    width: 40,
+    height: 40,
+    borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 10,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sortModal: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#000",
+  },
+  sortOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f5f5f5",
+  },
+  sortOptionText: {
+    fontSize: 15,
+    color: "#444",
+  },
+  sortOptionTextActive: {
+    fontWeight: "600",
+    color: "#000",
   },
 });

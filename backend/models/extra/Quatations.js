@@ -7,7 +7,12 @@ const quotationSchema = new mongoose.Schema(
       ref: "Driver",
       required: true,
     },
-
+    vehicle_number: {
+      type: String,
+    },
+    driver_name: {
+      type: String,
+    },
     company_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "CompanyDetails",
@@ -25,9 +30,18 @@ const quotationSchema = new mongoose.Schema(
       required: true,
     },
 
+    // NEW: Document type (quotation or invoice)
+    document_type: {
+      type: String,
+      enum: ["quotation", "invoice"],
+      default: "invoice",
+    },
+
     bill_to: {
       customer_name: { type: String, required: true },
       contact_number: { type: String, required: true },
+      email: { type: String },
+      address: { type: String },
     },
 
     // Trip Type: one_way or round_trip
@@ -47,10 +61,9 @@ const quotationSchema = new mongoose.Schema(
 
         // Pickup
         pickup_date: { type: Date, required: true },
-        pickup_time: { type: String, required: true }, // e.g., "10:30 AM"
+        pickup_time: { type: String, required: true },
 
-       
-        // Return Trip (Only for round_trip)
+        // Return Trip
         return_date: {
           type: Date,
           required: function () {
@@ -63,36 +76,105 @@ const quotationSchema = new mongoose.Schema(
             return this.parent().trip_type === "round_trip";
           },
         },
-        TotalAmountOftrip:{
-          type: Number
+
+        // ================= PRICING (NEW) =================
+
+        pricing_mode: {
+          type: String,
+          enum: ["km_wise", "day_wise"],
+          required: true,
         },
-        total_days: { type: Number,  },
-        per_day_cab_charges: { type: Number,  },
+
+        // KM WISE
+        total_km: { type: Number, default: 0 },
+        per_km_rate: { type: Number, default: 0 },
+        km_fare: { type: Number, default: 0 },
+
+        // DAY WISE
+        total_days: { type: Number, default: 1 },
+        per_day_cab_charges: { type: Number, default: 0 },
+        day_fare: { type: Number, default: 0 },
+
+        // Common Charges
         toll_tax_amount: { type: Number, default: 0 },
 
-        // Any extra charges (night halt, permit, hill charge, etc.)
-        extra_charges: [
-          {
-            description: { type: String },
-            amount: { type: Number },
-          },
-        ],
+        // Driver info
+        driver_name: { type: String },
+        vehicle_number: { type: String },
 
-        total_amount: { type: Number }, // Line total
+         stops: [
+      {
+        place: String,
+        charge: Number,
       },
     ],
 
-    // Summary Section
+    multi_stops: {
+      type: Boolean,
+      default: false,
+    },
+
+        extra_charges: [
+          {
+            description: { type: String },
+            amount: { type: Number, default: 0 },
+          },
+        ],
+
+        // Final total for this trip
+        total_amount: { type: Number, default: 0 },
+      },
+    ],
+    stops: [
+      {
+        place: String,
+        charge: Number,
+      },
+    ],
+
+    multi_stops: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Summary Section with ALL charges
     summary: {
-      sub_total: { type: Number, required: true },
-      toll_tax_total: { type: Number, required: true },
+      sub_total: { type: Number, default: 0 },
+
+      // Trip-related charges
+      toll_tax_total: { type: Number, default: 0 },
       state_tax: { type: Number, default: 0 },
       driver_charge: { type: Number, default: 0 },
       parking_charge: { type: Number, default: 0 },
-      extra_charges_total: { type: Number, default: 0 }, // Sum of all extra charges
 
-      grand_total: { type: Number, required: true },
-      amount_in_words: { type: String, required: true },
+      // Extra charges from trips
+      extra_charges_total: { type: Number, default: 0 },
+
+      // Additional charges (separate array for custom charges)
+      additional_charges: [
+        {
+          title: { type: String },
+          amount: { type: Number, default: 0 },
+        },
+      ],
+
+      // Discount
+      discount: { type: Number, default: 0 },
+
+      // Tax information
+      gst_applied: { type: Boolean, default: false },
+      gst_amount: { type: Number, default: 0 },
+      cgst_amount: { type: Number, default: 0 },
+      sgst_amount: { type: Number, default: 0 },
+      igst_amount: { type: Number, default: 0 },
+
+      // Total amounts
+      subtotal: { type: Number, default: 0 },
+      grand_total: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+
+      // Amount in words
+      amount_in_words: { type: String },
     },
 
     // Payment Mode
@@ -104,16 +186,36 @@ const quotationSchema = new mongoose.Schema(
 
     // Bank Details
     bank_details: {
-      bank_name: { type: String, required: true },
-      account_number: { type: String, required: true },
-      ifsc_code: { type: String, required: true },
-      account_holder_name: { type: String, required: true },
+      bank_name: { type: String },
+      account_number: { type: String },
+      ifsc_code: { type: String },
+      account_holder_name: { type: String },
+      branch_name: { type: String },
+      upi_id: { type: String },
     },
 
     // Terms and Conditions
     terms_and_conditions: {
       type: String,
       default: "Thank you for doing business with us.",
+    },
+    description: {
+      type: String,
+      default: "Thank you for doing business with us.",
+    },
+
+    place_of_supply: {
+      type: String,
+      default: "Delhi",
+    },
+
+    hsn_code: {
+      type: String,
+      default: "996412",
+    },
+
+    order_id: {
+      type: String,
     },
 
     // PDF Details
@@ -129,6 +231,13 @@ const quotationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
     },
+
+    // Status
+    status: {
+      type: String,
+      enum: ["draft", "sent", "accepted", "rejected", "invoiced"],
+      default: "draft",
+    },
   },
   { timestamps: true }
 );
@@ -136,5 +245,7 @@ const quotationSchema = new mongoose.Schema(
 // Index for better query performance
 quotationSchema.index({ driver: 1, invoice_number: 1 });
 quotationSchema.index({ company_id: 1 });
+quotationSchema.index({ document_type: 1 });
+quotationSchema.index({ status: 1 });
 
 module.exports = mongoose.model("Quotation", quotationSchema);

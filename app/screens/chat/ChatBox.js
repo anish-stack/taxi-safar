@@ -92,7 +92,7 @@ const ChatBox = ({ route, navigation }) => {
       });
       const isInitiator = role === "initiator";
       if (res.data) {
-        setSamneWalaDriver(isInitiator ?  res.data.owner :res.data.init );
+        setSamneWalaDriver(isInitiator ? res.data.owner : res.data.init);
       } else {
         setSamneWalaDriver(null);
       }
@@ -238,12 +238,11 @@ Amount to Pay: ₹${commissionAmount}
     const interiorUrl = photos?.interior?.url || null;
 
     const detailsText = `🚗 Driver Details  
-━━━━━━━━━━━━━━━━━━  
+  ━━━━━━━━━━━━━━━━━━  
 👤 Name: ${driver?.driver_name || "N/A"}  
 📞 Contact: ${driver?.driver_contact_number || "N/A"}  
 
 🚙 Vehicle Details  
-• Type: ${vehicle?.vehicle_type || "N/A"}  
 • Number: ${vehicle?.vehicle_number || "N/A"}  
 • Name: ${vehicle?.vehicle_name || "N/A"}  
 • Fuel Type: ${vehicle?.fuel_type || "N/A"}  
@@ -267,6 +266,22 @@ Amount to Pay: ₹${commissionAmount}
     });
 
     setDetailsSent(true);
+  };
+
+  const AskForPaymentLink = () => {
+    if (detailsSent) {
+      const detailsText =
+        "💰 Please send the payment link at your earliest convenience.";
+
+      socketRef.current.emit("send_message", {
+        chatId: chat._id,
+        sender: driver._id,
+        text: detailsText,
+        messageType: "payment-link", // fixed typo
+      });
+    } else {
+      Alert.alert("Please send Details First");
+    }
   };
 
   const handleTyping = (typing) => {
@@ -333,7 +348,7 @@ Amount to Pay: ₹${commissionAmount}
     return text.match(urlRegex) || [];
   };
 
-     let chatRole = role === "initiator";
+  let chatRole = role === "initiator";
 
   const getLinkInfo = (url) => {
     const lowerUrl = url.toLowerCase();
@@ -482,7 +497,6 @@ Amount to Pay: ₹${commissionAmount}
             <Text style={styles.rideTitle}>
               {ride?.vehicleType || "Vehicle"}
             </Text>
-           
           </View>
           <View style={styles.dateContainer}>
             <Ionicons name="calendar-outline" size={14} color="#666" />
@@ -602,6 +616,33 @@ Amount to Pay: ₹${commissionAmount}
                 ]}
               >
                 {detailsSent ? "Details Sent" : "Send Details"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.secondaryButton,
+                detailsSent && styles.disabledButton,
+              ]}
+              onPress={AskForPaymentLink}
+              disabled={!detailsSent}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={
+                  !detailsSent ? "checkmark-circle-outline" : "cash-outline"
+                }
+                size={18}
+                color={"#000"}
+              />
+              <Text
+                style={[
+                  styles.actionButtonText,
+                  styles.secondaryButtonText,
+                  !detailsSent && styles.disabledButtonText,
+                ]}
+              >
+                Request Payment Link
               </Text>
             </TouchableOpacity>
 
@@ -799,7 +840,7 @@ Amount to Pay: ₹${commissionAmount}
 
         <View style={styles.headerInfo}>
           <Text style={styles.headerName} numberOfLines={1}>
-          Chat With {samneWalaDriver?.driver_name}
+            Chat With {samneWalaDriver?.driver_name}
           </Text>
           {otherUserTyping ? (
             <Text style={styles.typingHeader}>typing...</Text>
@@ -1222,7 +1263,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   actionButtonsRow: {
-    flexDirection: "row",
+    // flexDirection: "row",
     gap: 8,
   },
   secondaryButton: {
@@ -1264,7 +1305,9 @@ const styles = StyleSheet.create({
     maxWidth: "80%",
   },
   myBubble: {
-    backgroundColor: "#000",
+    // backgroundColor: "#000",
+    borderWidth:.8,
+    borderRadius:3,
     borderBottomRightRadius: 4,
   },
   otherBubble: {

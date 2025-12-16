@@ -17,9 +17,7 @@ const validateInsuranceInput = (data) => {
     errors.vehicle_number = "Vehicle number is required";
   }
 
-  if (!data.budget || isNaN(Number(data.budget)) || Number(data.budget) < 500) {
-    errors.budget = "Budget must be at least ₹500";
-  }
+
 
   if (
     data.insurance_type &&

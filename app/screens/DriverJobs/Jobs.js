@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
   skillText: { color: "#166534", fontSize: 13, fontWeight: "600" },
 
   applyButton: {
-    backgroundColor: "#EF4444",
+    backgroundColor: "#000",
     marginHorizontal: 20,
     paddingVertical: 16,
     borderRadius: 12,

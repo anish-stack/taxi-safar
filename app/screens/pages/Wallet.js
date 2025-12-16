@@ -148,7 +148,7 @@ const WalletScreen = () => {
       <Layout>
         <SafeAreaView style={styles.container}>
           <View style={styles.center}>
-            <ActivityIndicator size="large" color="#DC2626" />
+            <ActivityIndicator size="large" color="#000" />
             <Text style={styles.loadingText}>Loading wallet...</Text>
           </View>
         </SafeAreaView>
@@ -172,7 +172,7 @@ const WalletScreen = () => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={["#DC2626"]}
+              colors={["#000"]}
             />
           }
           ListHeaderComponent={
@@ -180,8 +180,8 @@ const WalletScreen = () => {
               {/* Wallet Balance Card */}
               <View style={styles.balanceCard}>
                 <View style={styles.balanceHeader}>
-                  <WalletIcon size={32} color="#FFF" />
-                  <Text style={styles.balanceTitle}>Wallet Balance</Text>
+                  <WalletIcon size={32} color="#000" />
+                  <Text style={styles.balanceTitle}>Available Balance</Text>
                 </View>
 
                 <Text style={styles.mainBalance}>
@@ -189,9 +189,9 @@ const WalletScreen = () => {
                 </Text>
 
                 <View style={styles.balanceBreakdown}>
-                  <View style={styles.breakdownItem}>
+                   <View style={styles.breakdownItem}>
                     <IndianRupee size={20} color="#10B981" />
-                    <Text style={styles.breakdownLabel}>Available</Text>
+                    <Text style={styles.breakdownLabel}>Total Balance</Text>
                     <Text style={[styles.breakdownValue, styles.availableText]}>
                       ₹{availableBalance.toLocaleString()}
                     </Text>
@@ -203,6 +203,7 @@ const WalletScreen = () => {
                       ₹{totalLocked.toLocaleString()}
                     </Text>
                   </View>
+                 
                 </View>
               </View>
 
@@ -217,7 +218,7 @@ const WalletScreen = () => {
                 </View>
                 <View style={styles.statCard}>
                   <Clock size={24} color="#F59E0B" />
-                  <Text style={styles.statLabel}>Pending</Text>
+                  <Text style={styles.statLabel}>Withdrawl Pending</Text>
                   <Text style={styles.statValue}>
                     ₹{pendingSettlement.toLocaleString()}
                   </Text>
@@ -263,14 +264,7 @@ const WalletScreen = () => {
 
               {/* Action Buttons */}
               <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => navigation.navigate("recharge")}
-                >
-                  <Plus size={24} color="#DC2626" />
-                  <Text style={styles.actionText}>Add Money</Text>
-                </TouchableOpacity>
-
+            
                 <TouchableOpacity
                   style={[
                     styles.actionButton,
@@ -282,6 +276,14 @@ const WalletScreen = () => {
                   <IndianRupee size={24} color="#6366F1" />
                   <Text style={styles.actionText}>Withdraw</Text>
                 </TouchableOpacity>
+                    <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => navigation.navigate("recharge")}
+                >
+                  <Plus size={24} color="#000" />
+                  <Text style={styles.actionText}>Add Money</Text>
+                </TouchableOpacity>
+
               </View>
 
               {/* Transactions Header with Filter */}
@@ -293,7 +295,7 @@ const WalletScreen = () => {
                   style={styles.filterButton}
                   onPress={() => setFilterVisible(true)}
                 >
-                  <Filter size={20} color="#DC2626" />
+                  <Filter size={20} color="#000" />
                   <Text style={styles.filterText}>Filter</Text>
                 </TouchableOpacity>
               </View>
@@ -304,7 +306,7 @@ const WalletScreen = () => {
                     Filter: {selectedFilter.toUpperCase()}
                   </Text>
                   <TouchableOpacity onPress={() => applyFilter("all")}>
-                    <X size={16} color="#DC2626" />
+                    <X size={16} color="#000" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -546,13 +548,13 @@ const WalletScreen = () => {
 export default WalletScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: "#F9FAFB",paddingBottom:50, },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: "#6B7280" },
 
   // Balance Card
   balanceCard: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#fff",
     margin: 16,
     borderRadius: 20,
     padding: 24,
@@ -568,13 +570,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   balanceTitle: {
-    color: "#FFF",
+    color: "#000",
     fontSize: 18,
     fontWeight: "600",
     marginLeft: 12,
   },
   mainBalance: {
-    color: "#FFF",
+    color: "#000",
     fontSize: 48,
     fontWeight: "800",
     marginVertical: 8,
@@ -586,9 +588,9 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   breakdownItem: { alignItems: "center", flex: 1 },
-  breakdownLabel: { color: "#FFF", fontSize: 13, opacity: 0.9, marginTop: 6 },
+  breakdownLabel: { color: "#000", fontSize: 13, opacity: 0.9, marginTop: 6 },
   breakdownValue: {
-    color: "#FFF",
+    color: "#000",
     fontSize: 20,
     fontWeight: "bold",
     marginTop: 4,
@@ -722,7 +724,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
   },
-  filterText: { color: "#DC2626", fontWeight: "bold", fontSize: 15 },
+  filterText: { color: "#000", fontWeight: "bold", fontSize: 15 },
 
   activeFilter: {
     flexDirection: "row",
@@ -735,7 +737,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
   },
-  activeFilterText: { color: "#DC2626", fontWeight: "bold", fontSize: 15 },
+  activeFilterText: { color: "#000", fontWeight: "bold", fontSize: 15 },
 
   // Transaction Item
   transactionItem: {
@@ -871,7 +873,7 @@ const styles = StyleSheet.create({
   debitBadge: { backgroundColor: "#FEE2E2", color: "#991B1B" },
 
   closeButton: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     marginHorizontal: 20,
     marginVertical: 16,
     paddingVertical: 16,
@@ -907,7 +909,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
   },
   filterOptionActive: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
   },
   filterOptionText: {
     fontSize: 17,

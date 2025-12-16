@@ -18,64 +18,94 @@ exports.createJob = async (req, res) => {
 
     const driverId = req.user?.id || req.body.driverId;
 
+    // ------------------------
+    // 🔐 Driver Validation
+    // ------------------------
     if (!driverId || !mongoose.Types.ObjectId.isValid(driverId)) {
       return res.status(400).json({
         success: false,
-        message: "Valid driverId is required",
+        message: "Invalid driver. Please login again.",
       });
     }
 
-    // Validation
-    if (!title?.trim())
-      return res
-        .status(400)
-        .json({ success: false, message: "Title is required" });
-    if (!description?.trim())
-      return res
-        .status(400)
-        .json({ success: false, message: "Description is required" });
-    if (!company?.name?.trim())
-      return res
-        .status(400)
-        .json({ success: false, message: "Company name is required" });
-    if (!location?.address?.trim())
-      return res
-        .status(400)
-        .json({ success: false, message: "Address is required" });
-    if (!valid_till)
-      return res
-        .status(400)
-        .json({ success: false, message: "Valid till date is required" });
-
-    // Salary validation
-    if (!salary || typeof salary.min !== "number" || salary.min < 0) {
-      return res.status({
+    // ------------------------
+    // 📌 Basic Validations
+    // ------------------------
+    if (!title?.trim()) {
+      return res.status(400).json({
         success: false,
-        message: "Valid minimum salary is required",
+        message: "Job title is required",
       });
     }
+
+    if (!description?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Job description is required",
+      });
+    }
+
+    if (!company?.name?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Company name is required",
+      });
+    }
+
+    if (!location?.address?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Job location address is required",
+      });
+    }
+
+    if (!valid_till) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid till date is required",
+      });
+    }
+
+    // ------------------------
+    // 💰 Salary Validation
+    // ------------------------
+    if (!salary || typeof salary.min !== "number" || salary.min < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Minimum salary must be a valid number",
+      });
+    }
+
     if (
-      salary.max &&
+      salary.max !== undefined &&
       (typeof salary.max !== "number" || salary.max < salary.min)
     ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Max salary must be >= min salary" });
+      return res.status(400).json({
+        success: false,
+        message: "Maximum salary must be greater than minimum salary",
+      });
     }
 
-    // Date validation
+    // ------------------------
+    // 📅 Date Validation
+    // ------------------------
     const validTillDate = new Date(valid_till);
-    if (isNaN(validTillDate) || validTillDate <= new Date()) {
+    if (isNaN(validTillDate.getTime()) || validTillDate <= new Date()) {
       return res.status(400).json({
         success: false,
         message: "Valid till date must be a future date",
       });
     }
 
+    // ------------------------
+    // 🛠 Create Job
+    // ------------------------
     const job = await DriverJob.create({
       title: title.trim(),
       description: description.trim(),
-      company: { name: company.name.trim() },
+      company: {
+        name: company.name.trim(),
+      },
       salary: {
         min: salary.min,
         max: salary.max || null,
@@ -89,9 +119,9 @@ exports.createJob = async (req, res) => {
         lng: location.lng || null,
       },
       skills: skills
-        .map((s) => s.trim())
+        .map((s) => s?.trim())
         .filter(Boolean)
-        .slice(0, 20), // limit skills
+        .slice(0, 20),
       driverId,
       valid_till: validTillDate,
     });
@@ -102,14 +132,51 @@ exports.createJob = async (req, res) => {
       data: job,
     });
   } catch (error) {
-    console.error("Error creating job:", error);
-    return res.status(500).json({
+
+  // ------------------------
+  // 🧠 Mongoose Validation Error
+  // ------------------------
+  if (error.name === "ValidationError") {
+    const errors = {};
+
+    Object.keys(error.errors).forEach((field) => {
+      errors[field] = error.errors[field].message;
+    });
+
+    // 🔇 Clean log (no stack dump)
+    console.warn("⚠️ Job Validation Failed:", errors);
+
+    return res.status(400).json({
       success: false,
-      message: "Server error",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      message: "Please fix the highlighted fields",
+      errors,
     });
   }
+
+  // ------------------------
+  // 🔁 Mongo Cast / ObjectId Error
+  // ------------------------
+  if (error.name === "CastError") {
+    console.warn(`⚠️ Invalid ${error.path}:`, error.value);
+
+    return res.status(400).json({
+      success: false,
+      message: `Invalid ${error.path}`,
+    });
+  }
+
+  // ------------------------
+  // 💥 Unknown Error
+  // ------------------------
+  console.error("❌ Create Job Server Error:", error.message);
+
+  return res.status(500).json({
+    success: false,
+    message: "Something went wrong. Please try again later.",
+  });
+}
 };
+
 
 // 🟡 GET ALL JOBS (with pagination + search + filters)
 exports.getJobs = async (req, res) => {
@@ -151,7 +218,7 @@ exports.getJobs = async (req, res) => {
       ? { ...filters, $text: { $search: search } }
       : filters;
 
-    const jobs = await DriverJob.find(query)
+    const jobs = await DriverJob.find(query).populate('driverId','driver_name driver_contact_number')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

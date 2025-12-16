@@ -61,31 +61,6 @@ export default function Header({
     if (currentRadius) setRadius(currentRadius);
   }, [is_online, currentRadius]);
 
-  // Fetch unread chat count
-  const fetchUnreadMessages = async () => {
-    if (!driver?._id) return;
-
-    try {
-      const res = await axios.get(
-        `${API_URL_APP_CHAT}/api/chat/driver/${driver._id}`
-      );
-
-      const count = res?.data?.chats?.[0]?.unreadCount || 0;
-      setUnreadChatCount(count);
-    } catch (e) {
-      console.log("Unread chat fetch error:", e);
-    }
-  };
-
-  useEffect(() => {
-    if (driver?._id) fetchUnreadMessages();
-  }, [driver]);
-
-  // Listen for FCM chat updates
-  useEffect(() => {
-    const unsubscribe = messaging().onMessage(() => fetchUnreadMessages());
-    return unsubscribe;
-  }, []);
 
   // Handle Online/Offline toggle
   const handleToggle = async () => {
@@ -237,35 +212,26 @@ export default function Header({
       </View>
 
       {/* ONLINE / OFFLINE BUTTON */}
-      <TouchableOpacity
-        style={[
-          styles.statusButton,
-          isSmallScreen && styles.statusButtonSmall,
-          isMediumScreen && styles.statusButtonMedium,
-          { backgroundColor: localStatus ? "#4CAF50" : "#F44336" },
-          isToggling && { opacity: 0.7 },
-        ]}
-        onPress={handleToggle}
-        disabled={isToggling}
-        activeOpacity={0.8}
-      >
-        <Text 
-          style={[
-            styles.statusText,
-            isSmallScreen && styles.statusTextSmall,
-          ]}
-          numberOfLines={1}
-        >
-          {isToggling ? "Wait..." : localStatus ? "ONLINE" : "OFFLINE"}
-        </Text>
+<TouchableOpacity
+  style={[
+    styles.toggleButton,
+    { backgroundColor: localStatus ? "#4CAF50" : "#E5260F" },
+    isToggling && { opacity: 0.7 },
+  ]}
+  onPress={handleToggle}
+  disabled={isToggling}
+  activeOpacity={0.8}
+>
+  {/* ONLINE: dot left, OFFLINE: dot right */}
+  {localStatus && <View style={[styles.toggleDot, { marginRight: 10 }]} />}
+  
+  <Text style={styles.toggleText}>
+    {isToggling ? "Wait..." : localStatus ? "ONLINE" : "OFFLINE"}
+  </Text>
+  
+  {!localStatus && <View style={[styles.toggleDot, { marginLeft: 10 }]} />}
+</TouchableOpacity>
 
-        <View 
-          style={[
-            styles.statusDot,
-            isSmallScreen && styles.statusDotSmall,
-          ]} 
-        />
-      </TouchableOpacity>
 
       {/* RIGHT SIDE ICONS */}
       <View style={styles.rightContainer}>
@@ -292,45 +258,8 @@ export default function Header({
           />
         </TouchableOpacity>
 
-        {/* Notifications */}
-        <TouchableOpacity 
-          style={[
-            styles.iconButton,
-            isSmallScreen && styles.iconButtonSmall,
-          ]}
-        >
-          <Icon 
-            name="notifications-outline" 
-            size={isSmallScreen ? 20 : 24} 
-            color="#000" 
-          />
-        </TouchableOpacity>
-
-        {/* Chat */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate("chat")}
-          style={[
-            styles.iconButton,
-            isSmallScreen && styles.iconButtonSmall,
-          ]}
-        >
-          <Icon 
-            name="chatbubble-outline" 
-            size={isSmallScreen ? 20 : 24} 
-            color="#000" 
-          />
-
-          {unreadChatCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {unreadChatCount > 99 ? "99+" : unreadChatCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
       </View>
 
-      {/* RADIUS SELECTION POPUP */}
       <Modal
         transparent
         visible={modalVisible}
@@ -381,7 +310,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#fff",
+    backgroundColor: "#F2F5F6",
     // borderRadius: 12,
     paddingVertical: isSmallScreen ? 8 : 10,
     paddingHorizontal: isSmallScreen ? 10 : 16,
@@ -394,15 +323,15 @@ const styles = StyleSheet.create({
     marginRight: isSmallScreen ? 6 : 8,
   },
   logo: { 
-    width: 100, 
+    width: 140, 
     height: 40,
   },
   logoSmall: {
-    width: 70,
+    width: 90,
     height: 30,
   },
   logoMedium: {
-    width: 85,
+    width: 135,
     height: 35,
   },
 
@@ -413,7 +342,7 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     paddingVertical: 7,
     paddingHorizontal: 14,
-    marginHorizontal: 4,
+    marginHorizontal: 0,
     minWidth: isSmallScreen ? 75 : 85,
     justifyContent: "center",
   },
@@ -430,7 +359,7 @@ const styles = StyleSheet.create({
   statusText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 12,
+    fontSize: 10,
     marginRight: 4,
   },
   statusTextSmall: {
@@ -554,6 +483,30 @@ const styles = StyleSheet.create({
     fontSize: 15, 
     color: "#333",
   },
+ 
+  toggleButton: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 50,
+  paddingVertical: 6,
+  paddingHorizontal: 8,
+  minWidth: 90,
+},
+
+toggleDot: {
+  width: 14,
+  height: 14,
+  borderRadius: 7,
+  backgroundColor: "#fff",
+},
+
+toggleText: {
+  color: "#fff",
+  fontWeight: "bold",
+  fontSize: 12,
+},
+
   modalItemTextSelected: { 
     fontWeight: "bold",
     color: "#4CAF50",

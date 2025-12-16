@@ -9,7 +9,8 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
-  FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -25,11 +26,12 @@ import { useRoute } from "@react-navigation/native";
 import { getData } from "../../../utils/storage";
 import { UniversalAlert } from "../../common/UniversalAlert";
 import useSettings from "../../../hooks/Settings";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AddVehicle({ navigation }) {
   const route = useRoute();
-  const { driverId } = route.params || {};
-  const VEHICLE_TYPES = ["Mini", "Sedan", "SUV", "Premium"];
+  const { driverId, fromAll, mobile } = route.params || {};
+  const VEHICLE_TYPES = ["Mini", "Sedan", "SUV", "Invoa Crysta Premium"];
 
   const { data, fetchSettings } = useSettings({ autoFetch: true });
 
@@ -60,9 +62,9 @@ export default function AddVehicle({ navigation }) {
     permitExpiry: null,
   });
 
-  // <CHANGE> Added 6 document fields for comprehensive vehicle documentation
   const [docs, setDocs] = useState({
-    rcBook: null,
+    rcFront: null,
+    rcBack: null,
     insurance: null,
     permit: null,
     vehicleFront: null,
@@ -70,22 +72,21 @@ export default function AddVehicle({ navigation }) {
     vehicleInterior: null,
   });
 
-  // <CHANGE> Added demo modal state for showing sample photos
   const [demoModal, setDemoModal] = useState({
     visible: false,
     image: null,
     title: "",
   });
 
-  // <CHANGE> Demo images mapping
   const DEMO_IMAGES = {
     vehicleFront: require("../../../assets/demo/front.jpg"),
     vehicleBack: require("../../../assets/demo/back.jpg"),
     vehicleInterior: require("../../../assets/demo/interior.jpg"),
   };
 
-  const isByPass =
-    data?.data?.ByPassApi === true || data?.ByPassApi === true ? true : false;
+  // const isByPass =
+  //   data?.data?.ByPassApi === true || data?.ByPassApi === true ? true : false;
+    const isByPass =true
 
   const [showDatePicker, setShowDatePicker] = useState({
     key: null,
@@ -130,8 +131,10 @@ export default function AddVehicle({ navigation }) {
   }, [timer]);
 
   useEffect(() => {
-    if (rcData) {
-      checkDriverAadhaarMatch();
+    if (rcData && !isRcVerified) {
+      setTimeout(() => {
+        checkDriverAadhaarMatch();
+      }, 1000);
     }
   }, [rcData]);
 
@@ -175,26 +178,43 @@ export default function AddVehicle({ navigation }) {
   };
 
   const handleVerifyRC = async () => {
+    console.log("🚀 RC Verify started");
+
     fetchSettings();
-    if (!rcNumber.trim()) return showAlert("error", "Invalid", "Enter RC number");
+
+    if (!rcNumber.trim()) {
+      console.log("❌ RC number empty");
+      return showAlert("error", "Invalid", "Enter RC number");
+    }
 
     setIsVerifyingRc(true);
+
     const deviceId = await Application.getAndroidId();
+    console.log("📱 Device ID:", deviceId);
+    console.log("🔢 RC Number:", rcNumber.toUpperCase().trim());
+    console.log("🛑 isByPass:", isByPass);
 
     try {
+      console.log("📡 Calling RC verify API...");
+
       const res = await axios.post(`${API_URL_APP}/api/v1/rc-verify`, {
         rcNumber: rcNumber.toUpperCase().trim(),
         isByPass,
+        driverId,
         deviceId,
       });
 
+      console.log("✅ API Response:", res.data);
+
       if (res.data.success) {
         const data = res.data.rcData;
+        console.log("🚗 RC Data:", data);
 
         if (
           data.vehicle_category?.includes("2W") ||
           data.vehicle_category?.includes("MOTORCYCLE")
         ) {
+          console.log("❌ Two-wheeler detected:", data.vehicle_category);
           return showAlert(
             "error",
             "Invalid Vehicle",
@@ -203,35 +223,53 @@ export default function AddVehicle({ navigation }) {
         }
 
         setRcData(data);
-
-        // <CHANGE> Auto-fill form from RC data
         fillFormFromRC(data);
-
         setIsRcVerified(true);
+
+        console.log("🎉 RC verified successfully");
         showAlert("success", "RC Verified", "Vehicle details loaded");
       } else {
-        showAlert("error", "Failed", res.data.message || "Invalid RC");
+        console.log("❌ RC verification failed:", res.data.message);
+
+        showAlert("error", "Failed", res.data.message || "Invalid RC", () => {
+          console.log("🔐 Opening Aadhaar modal (API failure)");
+          checkDriverAadhaarMatch();
+          setShowAadhaarModal(true);
+        });
       }
     } catch (err) {
-      if (err.response?.data?.rcData) {
-        setRcData(err.response.data.rcData);
+      const errorData = err.response?.data;
+
+      console.log("🔥 RC verify error:", errorData);
+
+      if (errorData?.rcData) {
+        console.log("⚠️ Partial RC Data from error:", errorData.rcData);
+        setRcData(errorData.rcData);
       }
+
+      const shouldOpenAadhaarModal = errorData?.aadharModel === true;
+
       showAlert(
         "error",
         "Error",
-        err.response?.data?.message || "RC verification failed"
+        errorData?.message || "RC verification failed",
+        shouldOpenAadhaarModal
+          ? () => {
+              console.log("🔐 Opening Aadhaar modal (aadharModel = true)");
+              checkDriverAadhaarMatch();
+              setShowAadhaarModal(true);
+            }
+          : undefined
       );
     } finally {
       setIsVerifyingRc(false);
+      console.log("⏹ RC Verify process ended");
     }
   };
 
-  // <CHANGE> Auto-fill form data from RC information
   const fillFormFromRC = async (rcInfo) => {
-    // Set vehicle number
     setVehicleNumber(rcInfo.rc_number || "");
 
-    // Set dates from RC data
     if (rcInfo.registration_date) {
       setDates((prev) => ({ ...prev, regDate: rcInfo.registration_date }));
     }
@@ -257,13 +295,10 @@ export default function AddVehicle({ navigation }) {
     const deviceId = await Application.getAndroidId();
 
     try {
-      const res = await axios.post(
-        `${API_URL_APP}/api/v1/send-otp-on-aadhar`,
-        {
-          aadhaarNumber: ownerAadhaar,
-          device_id: deviceId,
-        }
-      );
+      const res = await axios.post(`${API_URL_APP}/api/v1/send-otp-on-aadhar`, {
+        aadhaarNumber: ownerAadhaar,
+        device_id: deviceId,
+      });
 
       if (res.data.success) {
         setAadhaarRequestId(res.data.request_id);
@@ -295,24 +330,31 @@ export default function AddVehicle({ navigation }) {
     const deviceId = await Application.getAndroidId();
 
     try {
-      const res = await axios.post(`${API_URL_APP}/api/v1/verify-otp-on-aadhar`, {
-        request_id: aadhaarRequestId,
-        otp: otpValue,
-        deviceId,
-        aadhaarNumber: ownerAadhaar,
-      });
+      const res = await axios.post(
+        `${API_URL_APP}/api/v1/verify-otp-on-aadhar`,
+        {
+          request_id: aadhaarRequestId,
+          otp: otpValue,
+          deviceId,
+          aadhaarNumber: ownerAadhaar,
+        }
+      );
 
       if (res.data.success) {
-        const aadhaarName = res.data.aadhaarData?.full_name?.toLowerCase().trim();
+        const aadhaarName = res.data.aadhaarData?.full_name
+          ?.toLowerCase()
+          .trim();
         const rcOwnerName = rcData?.owner_name?.toLowerCase().trim();
 
         if (
           aadhaarName &&
           rcOwnerName &&
-          (aadhaarName.includes(rcOwnerName) || rcOwnerName.includes(aadhaarName))
+          (aadhaarName.includes(rcOwnerName) ||
+            rcOwnerName.includes(aadhaarName))
         ) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setShowOtpModal(false);
+          setIsRcVerified(true);
           showAlert("success", "Success!", "Aadhaar verified successfully!");
         } else {
           showAlert(
@@ -335,7 +377,6 @@ export default function AddVehicle({ navigation }) {
     }
   };
 
-  // <CHANGE> Enhanced image picker with camera and gallery support
   const pickImage = async (key, source = "library") => {
     try {
       let result;
@@ -374,9 +415,8 @@ export default function AddVehicle({ navigation }) {
     }
   };
 
-  // <CHANGE> Show camera/gallery options
-  const showImagePickerOptions = (key) => {
-    Alert.alert("Choose Photo Source", "Select how to upload the photo", [
+  const showImagePickerOptions = (key, hasDemo = false) => {
+    const options = [
       {
         text: "Camera",
         onPress: () => pickImage(key, "camera"),
@@ -385,15 +425,24 @@ export default function AddVehicle({ navigation }) {
         text: "Gallery",
         onPress: () => pickImage(key, "library"),
       },
-      {
+    ];
+
+    if (hasDemo) {
+      options.push({
         text: "View Demo",
         onPress: () => showDemoImage(key),
-      },
-      { text: "Cancel", onPress: () => {}, style: "cancel" },
-    ]);
+      });
+    }
+
+    options.push({ text: "Cancel", onPress: () => {}, style: "cancel" });
+
+    Alert.alert(
+      "Choose Photo Source",
+      "Select how to upload the photo",
+      options
+    );
   };
 
-  // <CHANGE> Show demo image modal
   const showDemoImage = (field) => {
     if (DEMO_IMAGES[field]) {
       setDemoModal({
@@ -404,14 +453,14 @@ export default function AddVehicle({ navigation }) {
     }
   };
 
-  // <CHANGE> Get document labels
   const getDocLabel = (field) => {
     const labels = {
-      rcBook: "RC Book (Detail Page)",
+      rcFront: "RC Front",
+      rcBack: "RC Back",
       insurance: "Insurance Certificate",
       permit: "Permit Document",
-      vehicleFront: "Front Photo",
-      vehicleBack: "Back Photo",
+      vehicleFront: "Vehicle Front Photo",
+      vehicleBack: "Vehicle Back Photo",
       vehicleInterior: "Interior (Seat Covers)",
     };
     return labels[field] || field;
@@ -421,7 +470,6 @@ export default function AddVehicle({ navigation }) {
     const e = {};
     if (!vehicleType) e.vehicleType = "Select vehicle type";
     if (!dates.permitExpiry) e.permitExpiry = "Select permit expiry";
-    if (!docs.permit) e.permit = "Upload permit";
     if (!docs.vehicleFront) e.vehicleFront = "Upload front photo";
     if (!docs.vehicleBack) e.vehicleBack = "Upload back photo";
     if (!docs.vehicleInterior) e.vehicleInterior = "Upload interior photo";
@@ -445,8 +493,15 @@ export default function AddVehicle({ navigation }) {
 
     if (rcData) formData.append("rcData", JSON.stringify(rcData));
 
-    // <CHANGE> Add all document uploads
-    ["rcBook", "insurance", "permit", "vehicleFront", "vehicleBack", "vehicleInterior"].forEach((k) => {
+    [
+      "rcFront",
+      "rcBack",
+      "insurance",
+      "permit",
+      "vehicleFront",
+      "vehicleBack",
+      "vehicleInterior",
+    ].forEach((k) => {
       if (docs[k]) {
         formData.append(k, {
           uri: docs[k].uri,
@@ -465,11 +520,27 @@ export default function AddVehicle({ navigation }) {
 
       if (res.data.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showAlert("success", "Success!", "Vehicle added successfully!", () => {
-          navigation.navigate("bankAdd", {
-            driverId: res.data.driverId || riderId,
-          });
-        });
+        if (fromAll) {
+          showAlert(
+            "success",
+            "Success!",
+            "Vehicle added successfully!",
+            () => {
+              navigation.goBack();
+            }
+          );
+        } else {
+          showAlert(
+            "success",
+            "Success!",
+            "Vehicle added successfully!",
+            () => {
+              navigation.navigate("bankAdd", {
+                driverId: res.data.driverId || riderId,
+              });
+            }
+          );
+        }
       }
     } catch (err) {
       showAlert(
@@ -484,17 +555,13 @@ export default function AddVehicle({ navigation }) {
 
   const renderError = (field) => {
     return errors[field] ? (
-      <Text style={styles.error}>{errors[field]}</Text>
+      <Text style={styles.errorText}>{errors[field]}</Text>
     ) : null;
   };
 
-  // <CHANGE> Document upload section with camera/gallery options
-  const renderDocumentUpload = (field) => {
-    const isPhoto = ["vehicleFront", "vehicleBack", "vehicleInterior"].includes(
-      field
-    );
+  const renderDocumentUpload = (field, hasDemo = false) => {
     return (
-      <View key={field} style={styles.docItem}>
+      <View style={styles.docUploadContainer}>
         <View style={styles.docHeader}>
           <Text style={styles.docLabel}>{getDocLabel(field)}</Text>
           {docs[field] && (
@@ -509,17 +576,20 @@ export default function AddVehicle({ navigation }) {
           style={[
             styles.uploadBox,
             errors[field] && styles.uploadBoxError,
-            docs[field] && styles.uploadBoxFilled,
+            docs[field] && styles.uploadBoxSuccess,
           ]}
-          onPress={() => showImagePickerOptions(field)}
+          onPress={() => showImagePickerOptions(field, hasDemo)}
         >
           {docs[field] ? (
-            <Image source={{ uri: docs[field].uri }} style={styles.uploadImg} />
+            <Image
+              source={{ uri: docs[field].uri }}
+              style={styles.uploadedImage}
+            />
           ) : (
             <View style={styles.uploadPlaceholder}>
-              <Ionicons name="cloud-upload-outline" size={32} color="#999" />
-              <Text style={styles.uploadHint}>Tap to upload</Text>
-              <Text style={styles.uploadSubHint}>Camera or Gallery</Text>
+              <Ionicons name="cloud-upload-outline" size={40} color="#9ca3af" />
+              <Text style={styles.uploadHintText}>Tap to upload</Text>
+              <Text style={styles.uploadSubText}>Camera or Gallery</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -530,114 +600,166 @@ export default function AddVehicle({ navigation }) {
   };
 
   return (
-    <>
-      <BackWithLogo />
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Add Your Vehicle</Text>
-
+    <SafeAreaView style={styles.safeArea}>
+      <BackWithLogo isLogo={false} title={"Add Your Vehicle"} />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {!isRcVerified ? (
-          <View style={styles.card}>
-            <Text style={styles.label}>RC Number</Text>
-            <View style={styles.row}>
+          <View style={styles.rcCard}>
+            <View style={styles.rcIconContainer}>
+              <Ionicons name="car-outline" size={48} color={Colors.primary} />
+            </View>
+            <Text style={styles.rcTitle}>Verify RC Number</Text>
+            <Text style={styles.rcSubtitle}>
+              Enter your vehicle's registration number
+            </Text>
+
+            <Text style={styles.inputLabel}>RC Number</Text>
+            <View style={styles.rcInputRow}>
               <TextInput
-                style={styles.input}
+                style={styles.rcInput}
                 placeholder="DL01AB1234"
                 value={rcNumber}
                 onChangeText={setRcNumber}
                 autoCapitalize="characters"
+                placeholderTextColor="#9ca3af"
               />
               <TouchableOpacity
-                style={styles.verifyBtn}
+                style={[
+                  styles.verifyButton,
+                  isVerifyingRc && styles.verifyButtonDisabled,
+                ]}
                 onPress={handleVerifyRC}
                 disabled={isVerifyingRc}
               >
                 {isVerifyingRc ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.verifyText}>Verify</Text>
+                  <Text style={styles.verifyButtonText}>Verify</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <>
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-              <Text style={styles.verifiedText}>RC Verified</Text>
+            <View style={styles.verifiedCard}>
+              <Ionicons name="shield-checkmark" size={32} color="#10b981" />
+              <View style={styles.verifiedTextContainer}>
+                <Text style={styles.verifiedTitle}>RC Verified</Text>
+                <Text style={styles.verifiedSubtitle}>
+                  Vehicle details loaded successfully
+                </Text>
+              </View>
             </View>
 
-            <Text style={styles.section}>Vehicle Type</Text>
-            <View style={styles.pickerBox}>
-              <Picker selectedValue={vehicleType} onValueChange={setVehicleType}>
-                <Picker.Item label="Select Type" value="" />
-                {VEHICLE_TYPES.map((t) => (
-                  <Picker.Item key={t} label={t} value={t} />
-                ))}
-              </Picker>
-            </View>
-            {errors.vehicleType && (
-              <Text style={styles.error}>{errors.vehicleType}</Text>
-            )}
+            {/* Vehicle Type */}
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Vehicle Information</Text>
 
-            <Text style={styles.label}>Vehicle Number</Text>
-            <TextInput
-              style={styles.input}
-              value={vehicleNumber}
-              editable={false}
-            />
+              <Text style={styles.inputLabel}>Vehicle Type *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={vehicleType}
+                  onValueChange={setVehicleType}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Select Vehicle Type" value="" />
+                  {VEHICLE_TYPES.map((type) => (
+                    <Picker.Item key={type} label={type} value={type} />
+                  ))}
+                </Picker>
+              </View>
+              {renderError("vehicleType")}
 
-            <Text style={styles.label}>Permit Expiry</Text>
-            <TouchableOpacity
-              style={styles.dateBox}
-              onPress={() =>
-                setShowDatePicker({ key: "permitExpiry", visible: true })
-              }
-            >
-              <Text
-                style={!dates.permitExpiry && styles.placeholder}
+              <Text style={styles.inputLabel}>Vehicle Number</Text>
+              <TextInput
+                style={[styles.textInput, styles.disabledInput]}
+                value={vehicleNumber}
+                editable={false}
+              />
+
+              <Text style={styles.inputLabel}>Permit Expiry Date *</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() =>
+                  setShowDatePicker({ key: "permitExpiry", visible: true })
+                }
               >
-                {dates.permitExpiry
-                  ? new Date(dates.permitExpiry).toLocaleDateString("en-GB")
-                  : "Select Date"}
-              </Text>
-              <Ionicons name="calendar" size={20} color={Colors.primary} />
-            </TouchableOpacity>
-            {errors.permitExpiry && (
-              <Text style={styles.error}>{errors.permitExpiry}</Text>
-            )}
-
-            {/* <CHANGE> Documents section with all 6 document fields */}
-            <Text style={styles.section}>Documents</Text>
-            <View style={styles.docsGrid}>
-              {["rcBook", "insurance", "permit"].map((field) =>
-                renderDocumentUpload(field)
-              )}
+                <Text
+                  style={
+                    !dates.permitExpiry
+                      ? styles.placeholderText
+                      : styles.dateText
+                  }
+                >
+                  {dates.permitExpiry
+                    ? new Date(dates.permitExpiry).toLocaleDateString("en-GB")
+                    : "Select Date"}
+                </Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={22}
+                  color={Colors.primary}
+                />
+              </TouchableOpacity>
+              {renderError("permitExpiry")}
             </View>
 
-            {/* <CHANGE> Vehicle photos section with grid layout */}
-            <Text style={styles.section}>Vehicle Photos</Text>
-            <View style={styles.photoGrid}>
-              {["vehicleFront", "vehicleBack", "vehicleInterior"].map(
-                (field) => renderDocumentUpload(field)
-              )}
+            {/* RC Photos - Side by Side */}
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>RC Book Photos</Text>
+              <View style={styles.rcPhotosGrid}>
+                <View style={styles.halfWidth}>
+                  {renderDocumentUpload("rcFront", false)}
+                </View>
+                <View style={styles.halfWidth}>
+                  {renderDocumentUpload("rcBack", false)}
+                </View>
+              </View>
+            </View>
+
+            {/* Other Documents */}
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Additional Documents</Text>
+              {renderDocumentUpload("insurance", false)}
+              {renderDocumentUpload("permit", false)}
+            </View>
+
+            {/* Vehicle Photos with Demo */}
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Vehicle Photos *</Text>
+              <Text style={styles.sectionSubtitle}>
+                Clear photos help us verify your vehicle faster
+              </Text>
+              {renderDocumentUpload("vehicleFront", true)}
+              {renderDocumentUpload("vehicleBack", true)}
+              {renderDocumentUpload("vehicleInterior", true)}
             </View>
 
             <TouchableOpacity
-              style={[styles.submitBtn, loading && { opacity: 0.7 }]}
+              style={[
+                styles.submitButton,
+                loading && styles.submitButtonDisabled,
+              ]}
               onPress={handleSubmit}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={styles.submitText}>Submit & Continue</Text>
+                <>
+                  <Text style={styles.submitButtonText}>Submit & Continue</Text>
+                  <Ionicons name="arrow-forward" size={20} color="#fff" />
+                </>
               )}
             </TouchableOpacity>
           </>
         )}
       </ScrollView>
 
-      {/* <CHANGE> Demo Image Modal */}
+      {/* Demo Image Modal */}
       <Modal
         visible={demoModal.visible}
         transparent
@@ -647,15 +769,16 @@ export default function AddVehicle({ navigation }) {
         }
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.demoModalCard}>
-            <View style={styles.demoHeader}>
-              <Text style={styles.demoTitle}>{demoModal.title}</Text>
+          <View style={styles.demoModalContainer}>
+            <View style={styles.demoModalHeader}>
+              <Text style={styles.demoModalTitle}>{demoModal.title}</Text>
               <TouchableOpacity
                 onPress={() =>
                   setDemoModal({ visible: false, image: null, title: "" })
                 }
+                style={styles.closeButton}
               >
-                <Ionicons name="close" size={28} color="#333" />
+                <Ionicons name="close-circle" size={32} color="#6b7280" />
               </TouchableOpacity>
             </View>
 
@@ -667,18 +790,25 @@ export default function AddVehicle({ navigation }) {
               />
             )}
 
-            <Text style={styles.demoHint}>
-              This is an example of a properly formatted photo. Make sure your
-              photo is clear and follows this format.
-            </Text>
+            <View style={styles.demoHintContainer}>
+              <Ionicons
+                name="information-circle"
+                size={24}
+                color={Colors.primary}
+              />
+              <Text style={styles.demoHintText}>
+                This is an example of a properly formatted photo. Ensure your
+                photo is clear, well-lit, and follows this format.
+              </Text>
+            </View>
 
             <TouchableOpacity
-              style={styles.demoCloseBtn}
+              style={styles.demoCloseButton}
               onPress={() =>
                 setDemoModal({ visible: false, image: null, title: "" })
               }
             >
-              <Text style={styles.demoCloseBtnText}>Got It</Text>
+              <Text style={styles.demoCloseButtonText}>Got It</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -687,33 +817,33 @@ export default function AddVehicle({ navigation }) {
       {/* Name Mismatch Modal */}
       <Modal visible={showNameMismatchAlert} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Ionicons
-              name="alert-circle"
-              size={60}
-              color="#f59e0b"
-              style={{ alignSelf: "center" }}
-            />
-            <Text style={styles.modalTitle}>Name Mismatch Detected</Text>
-            <Text style={{ textAlign: "center", marginVertical: 16, color: "#666" }}>
-              RC Owner:{" "}
-              <Text style={{ fontWeight: "bold" }}>{rcData?.owner_name}</Text>
+          <View style={styles.alertModalContainer}>
+            <View style={styles.alertIconContainer}>
+              <Ionicons name="alert-circle" size={64} color="#f59e0b" />
+            </View>
+            <Text style={styles.alertModalTitle}>Name Mismatch Detected</Text>
+            <View style={styles.mismatchInfoBox}>
+              <Text style={styles.mismatchLabel}>RC Owner Name:</Text>
+              <Text style={styles.mismatchValue}>{rcData?.owner_name}</Text>
+            </View>
+            <Text style={styles.alertModalMessage}>
+              The name on your Aadhaar doesn't match the RC owner name. Is this
+              your vehicle?
             </Text>
-            <Text style={{ textAlign: "center", marginBottom: 24 }}>
-              Is this your vehicle?
-            </Text>
-            <View style={styles.btnRow}>
+            <View style={styles.alertButtonRow}>
               <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: "#10b981" }]}
+                style={[styles.alertButton, styles.alertButtonSuccess]}
                 onPress={() => handleNameMismatchResponse(true)}
               >
-                <Text style={styles.btnText}>Yes, it's mine</Text>
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <Text style={styles.alertButtonText}>Yes, it's mine</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[styles.alertButton, styles.alertButtonPrimary]}
                 onPress={() => handleNameMismatchResponse(false)}
               >
-                <Text style={styles.btnText}>No, different owner</Text>
+                <Ionicons name="person" size={20} color="#fff" />
+                <Text style={styles.alertButtonText}>Different owner</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -722,140 +852,179 @@ export default function AddVehicle({ navigation }) {
 
       {/* Aadhaar Modal */}
       <Modal visible={showAadhaarModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Ionicons
-              name="card-outline"
-              size={64}
-              color={Colors.primary}
-              style={{ alignSelf: "center", marginBottom: 20 }}
-            />
-            <Text style={styles.modalTitle}>
-              {isOwnerAadhaarFlow ? "Verify Owner Aadhaar" : "Verify Your Aadhaar"}
-            </Text>
-            {isOwnerAadhaarFlow && rcData && (
-              <View style={styles.ownerInfoBox}>
-                <Text style={styles.ownerInfoText}>
-                  RC Owner:{" "}
-                  <Text style={{ fontWeight: "700" }}>{rcData.owner_name}</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalOverlay}>
+            <ScrollView
+              contentContainerStyle={styles.scrollModalContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.aadhaarModalContainer}>
+                <View style={styles.aadhaarIconContainer}>
+                  <Ionicons name="card" size={22} color={Colors.primary} />
+                </View>
+                <Text style={styles.aadhaarModalTitle}>
+                  {isOwnerAadhaarFlow
+                    ? "Verify Owner's Aadhaar"
+                    : "Verify Your Aadhaar"}
                 </Text>
-              </View>
-            )}
-            <Text style={styles.inputLabel}>Aadhaar Number</Text>
-            <TextInput
-              placeholder="1234 5678 9012"
-              placeholderTextColor="#aaa"
-              value={ownerAadhaar.replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3")}
-              onChangeText={(text) => {
-                const digits = text.replace(/\D/g, "").slice(0, 12);
-                setOwnerAadhaar(digits);
-              }}
-              keyboardType="numeric"
-              maxLength={14}
-              style={styles.aadhaarInput}
-              autoFocus
-            />
-            <View style={styles.btnRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  setShowAadhaarModal(false);
-                  setOwnerAadhaar("");
-                }}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  ownerAadhaar.length !== 12 && { opacity: 0.5 },
-                ]}
-                onPress={handleGenerateAadhaarOTP}
-                disabled={ownerAadhaar.length !== 12 || isVerifying}
-              >
-                {isVerifying ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.btnText}>Send OTP</Text>
+                {isOwnerAadhaarFlow && rcData && (
+                  <View style={styles.ownerInfoCard}>
+                    <Text style={styles.ownerInfoLabel}>RC Owner Name</Text>
+                    <Text style={styles.ownerInfoValue}>
+                      {rcData.owner_name}
+                    </Text>
+                  </View>
                 )}
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.hintText}>
-              OTP will be sent to mobile linked with Aadhaar
-            </Text>
+                <Text style={styles.aadhaarInputLabel}>Aadhaar Number</Text>
+                <TextInput
+                  placeholder="1234 5678 9012"
+                  placeholderTextColor="#9ca3af"
+                  value={ownerAadhaar.replace(
+                    /(\d{4})(\d{4})(\d{4})/,
+                    "$1 $2 $3"
+                  )}
+                  onChangeText={(text) => {
+                    const digits = text.replace(/\D/g, "").slice(0, 12);
+                    setOwnerAadhaar(digits);
+                  }}
+                  keyboardType="numeric"
+                  maxLength={14}
+                  style={styles.aadhaarInput}
+                  autoFocus
+                />
+                <Text style={styles.aadhaarHintText}>
+                  OTP will be sent to the mobile number linked with this Aadhaar
+                </Text>
+                <View style={styles.aadhaarButtonRow}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setShowAadhaarModal(false);
+                      setAlertVisible(false);
+                      setOwnerAadhaar("");
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryButton,
+                      (ownerAadhaar.length !== 12 || isVerifying) &&
+                        styles.primaryButtonDisabled,
+                    ]}
+                    onPress={handleGenerateAadhaarOTP}
+                    disabled={ownerAadhaar.length !== 12 || isVerifying}
+                  >
+                    {isVerifying ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Send OTP</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* OTP Modal */}
       <Modal visible={showOtpModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Enter OTP</Text>
-            <View style={styles.otpRow}>
-              {otp.map((_, i) => (
-                <TextInput
-                  key={i}
-                  ref={(ref) => (otpRefs.current[i] = ref)}
-                  value={otp[i]}
-                  onChangeText={(v) => {
-                    if (/^\d?$/.test(v)) {
-                      const newOtp = [...otp];
-                      newOtp[i] = v;
-                      setOtp(newOtp);
-                      if (v && i < 5) otpRefs.current[i + 1]?.focus();
-                    }
-                  }}
-                  onKeyPress={({ nativeEvent }) => {
-                    if (
-                      nativeEvent.key === "Backspace" &&
-                      !otp[i] &&
-                      i > 0
-                    ) {
-                      otpRefs.current[i - 1]?.focus();
-                    }
-                  }}
-                  keyboardType="numeric"
-                  maxLength={1}
-                  style={styles.otpBox}
-                />
-              ))}
-            </View>
-            <Text style={{ textAlign: "center", marginVertical: 16 }}>
-              {timer > 0 ? (
-                `Resend in ${timer}s`
-              ) : (
-                <TouchableOpacity onPress={handleGenerateAadhaarOTP}>
-                  <Text style={{ color: Colors.primary, fontWeight: "600" }}>
-                    Resend OTP
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </Text>
-            <View style={styles.btnRow}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  setShowOtpModal(false);
-                  setShowAadhaarModal(true);
-                }}
-              >
-                <Text style={styles.cancelBtnText}>Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleVerifyAadhaarOtp}
-                disabled={isVerifying}
-              >
-                {isVerifying ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>Verify</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalOverlay}>
+            <ScrollView
+              contentContainerStyle={styles.scrollModalContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.otpModalContainer}>
+                <View style={styles.otpIconContainer}>
+                  <Ionicons
+                    name="mail-outline"
+                    size={56}
+                    color={Colors.primary}
+                  />
+                </View>
+                <Text style={styles.otpModalTitle}>Enter OTP</Text>
+                <Text style={styles.otpSubtitle}>
+                  We've sent a 6-digit code to your Aadhaar-linked mobile
+                </Text>
+                <View style={styles.otpInputRow}>
+                  {otp.map((digit, index) => (
+                    <TextInput
+                      key={index}
+                      ref={(ref) => (otpRefs.current[index] = ref)}
+                      value={digit}
+                      onChangeText={(value) => {
+                        if (/^\d?$/.test(value)) {
+                          const newOtp = [...otp];
+                          newOtp[index] = value;
+                          setOtp(newOtp);
+                          if (value && index < 5) {
+                            otpRefs.current[index + 1]?.focus();
+                          }
+                        }
+                      }}
+                      onKeyPress={({ nativeEvent }) => {
+                        if (
+                          nativeEvent.key === "Backspace" &&
+                          !otp[index] &&
+                          index > 0
+                        ) {
+                          otpRefs.current[index - 1]?.focus();
+                        }
+                      }}
+                      keyboardType="numeric"
+                      maxLength={1}
+                      style={styles.otpInputBox}
+                    />
+                  ))}
+                </View>
+                <View style={styles.otpTimerContainer}>
+                  {timer > 0 ? (
+                    <Text style={styles.otpTimerText}>
+                      Resend OTP in {timer}s
+                    </Text>
+                  ) : (
+                    <TouchableOpacity onPress={handleGenerateAadhaarOTP}>
+                      <Text style={styles.resendOtpText}>Resend OTP</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={styles.otpButtonRow}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setShowOtpModal(false);
+                      setShowAadhaarModal(true);
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryButton,
+                      isVerifying && styles.primaryButtonDisabled,
+                    ]}
+                    onPress={handleVerifyAadhaarOtp}
+                    disabled={isVerifying}
+                  >
+                    {isVerifying ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Verify OTP</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {showDatePicker.visible && (
@@ -863,11 +1032,11 @@ export default function AddVehicle({ navigation }) {
           mode="date"
           value={new Date()}
           minimumDate={new Date()}
-          onChange={(e, date) => {
-            if (e.type === "set" && date) {
+          onChange={(event, selectedDate) => {
+            if (event.type === "set" && selectedDate) {
               setDates((prev) => ({
                 ...prev,
-                [showDatePicker.key]: date.toISOString().split("T")[0],
+                [showDatePicker.key]: selectedDate.toISOString().split("T")[0],
               }));
             }
             setShowDatePicker({ key: null, visible: false });
@@ -880,339 +1049,604 @@ export default function AddVehicle({ navigation }) {
         {...alertConfig}
         onClose={() => setAlertVisible(false)}
       />
-    </>
+    </SafeAreaView>
   );
 }
 
-// <CHANGE> Enhanced styles with grid layouts and improved document upload UI
 const styles = {
-  container: {
-    padding: 20,
-    backgroundColor: "#f9f9f9",
-    paddingBottom: 80,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 20,
-    color: "#222",
-  },
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 16,
-    elevation: 5,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  input: {
+  safeArea: {
     flex: 1,
-    borderWidth: 1.5,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: "#f9fafb",
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  scrollModalContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  mainTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 24,
+    letterSpacing: -0.5,
+  },
+
+  // RC Verification Card
+  rcCard: {
     backgroundColor: "#fff",
-    fontSize: 16,
+    borderRadius: 20,
+    padding: 28,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
   },
-  verifyBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginLeft: 12,
+  rcIconContainer: {
+    alignSelf: "center",
+    backgroundColor: Colors.primary + "15",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
   },
-  verifyText: {
-    color: "#fff",
+  rcTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  rcSubtitle: {
+    fontSize: 15,
+    color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 15,
     fontWeight: "600",
+    color: "#374151",
+    marginBottom: 8,
   },
-  verifiedBadge: {
+  rcInputRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  rcInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 16,
+    fontSize: 16,
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+  },
+  verifyButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: 100,
+  },
+  verifyButtonDisabled: {
+    opacity: 0.6,
+  },
+  verifyButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  // Verified Card
+  verifiedCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#d1fae5",
-    padding: 14,
-    borderRadius: 12,
-    marginVertical: 16,
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: "#a7f3d0",
   },
-  verifiedText: {
+  verifiedTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  verifiedTitle: {
+    fontSize: 17,
+    fontWeight: "700",
     color: "#065f46",
-    fontWeight: "600",
-    marginLeft: 8,
-    fontSize: 16,
   },
-  section: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginTop: 24,
-    marginBottom: 12,
-    color: "#222",
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: "#333",
-  },
-  pickerBox: {
-    borderWidth: 1.5,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    marginBottom: 8,
-  },
-  dateBox: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    alignItems: "center",
-  },
-  placeholder: {
-    color: "#aaa",
+  verifiedSubtitle: {
+    fontSize: 14,
+    color: "#047857",
+    marginTop: 2,
   },
 
-  // <CHANGE> Document and photo grid styles
-  docsGrid: {
-    marginBottom: 24,
+  // Form Section
+  formSection: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
-  photoGrid: {
-    marginBottom: 24,
+  sectionTitle: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 6,
   },
-  docItem: {
+  sectionSubtitle: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginBottom: 16,
+  },
+  pickerContainer: {
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    backgroundColor: "#f9fafb",
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  picker: {
+    height: 50,
+  },
+  textInput: {
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 16,
+    fontSize: 16,
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+    marginBottom: 16,
+  },
+  disabledInput: {
+    backgroundColor: "#f3f4f6",
+    color: "#6b7280",
+  },
+  datePickerButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 16,
+    backgroundColor: "#f9fafb",
+    marginBottom: 8,
+  },
+  placeholderText: {
+    color: "#9ca3af",
+    fontSize: 16,
+  },
+  dateText: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
+  // RC Photos Grid
+  rcPhotosGrid: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  halfWidth: {
+    flex: 1,
+  },
+
+  // Document Upload
+  docUploadContainer: {
     marginBottom: 20,
   },
   docHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   docLabel: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#333",
+    color: "#374151",
   },
   uploadedBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
+    backgroundColor: "#d1fae5",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
   },
   uploadedText: {
     fontSize: 12,
-    color: "#10b981",
+    color: "#065f46",
     fontWeight: "600",
   },
   uploadBox: {
-    height: 140,
+    height: 160,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "#ddd",
-    borderRadius: 12,
+    borderColor: "#d1d5db",
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#fafafa",
+    overflow: "hidden",
   },
   uploadBoxError: {
     borderColor: "#ef4444",
+    backgroundColor: "#fef2f2",
   },
-  uploadBoxFilled: {
+  uploadBoxSuccess: {
     borderStyle: "solid",
-    borderColor: "#e5e7eb",
+    borderColor: "#10b981",
+    backgroundColor: "#fff",
   },
-  uploadImg: {
+  uploadedImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 10,
   },
   uploadPlaceholder: {
     alignItems: "center",
     justifyContent: "center",
   },
-  uploadHint: {
-    color: "#666",
+  uploadHintText: {
     fontSize: 15,
     fontWeight: "600",
-    marginTop: 8,
+    color: "#6b7280",
+    marginTop: 10,
   },
-  uploadSubHint: {
-    color: "#999",
+  uploadSubText: {
     fontSize: 13,
+    color: "#9ca3af",
     marginTop: 4,
   },
+  errorText: {
+    color: "#ef4444",
+    fontSize: 13,
+    marginTop: 6,
+    fontWeight: "500",
+  },
 
-  // <CHANGE> Demo modal styles
-  demoModalCard: {
+  // Submit Button
+  submitButton: {
+    backgroundColor: Colors.primary,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    padding: 18,
+    borderRadius: 16,
+    marginTop: 10,
+    elevation: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  // Modal Overlay
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    padding: 6,
+    marginBottom:22,
+  },
+
+  // Demo Modal
+  demoModalContainer: {
     backgroundColor: "#fff",
     borderRadius: 24,
-    padding: 28,
-    elevation: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
+    padding: 24,
+    maxHeight: "85%",
   },
-  demoHeader: {
+  demoModalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  demoTitle: {
+  demoModalTitle: {
     fontSize: 20,
-    fontWeight: "bold",
-    color: "#222",
+    fontWeight: "700",
+    color: "#111827",
+    flex: 1,
+  },
+  closeButton: {
+    padding: 4,
   },
   demoImage: {
     width: "100%",
-    height: 300,
-    borderRadius: 12,
-    marginBottom: 16,
+    height: 320,
+    borderRadius: 16,
+    marginBottom: 20,
   },
-  demoHint: {
+  demoHintContainer: {
+    flexDirection: "row",
+    backgroundColor: Colors.primary + "10",
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    marginBottom: 20,
+  },
+  demoHintText: {
+    flex: 1,
     fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 16,
+    color: "#374151",
     lineHeight: 20,
   },
-  demoCloseBtn: {
+  demoCloseButton: {
     backgroundColor: Colors.primary,
-    padding: 14,
-    borderRadius: 30,
+    padding: 16,
+    borderRadius: 14,
     alignItems: "center",
   },
-  demoCloseBtnText: {
+  demoCloseButtonText: {
     color: "#fff",
-    fontWeight: "600",
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: "700",
   },
 
-  submitBtn: {
-    backgroundColor: Colors.primary,
-    padding: 18,
-    borderRadius: 30,
-    alignItems: "center",
-    marginTop: 30,
-  },
-  submitText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "bold",
-  },
-  error: {
-    color: "red",
-    fontSize: 13,
-    marginTop: 4,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.8)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalCard: {
+  // Alert Modal
+  alertModalContainer: {
     backgroundColor: "#fff",
     borderRadius: 24,
     padding: 28,
-    elevation: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
   },
-  modalTitle: {
+  alertIconContainer: {
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  alertModalTitle: {
     fontSize: 22,
-    fontWeight: "bold",
+    fontWeight: "700",
+    color: "#111827",
     textAlign: "center",
-    marginBottom: 16,
-    color: "#222",
+    marginBottom: 20,
   },
-  ownerInfoBox: {
-    backgroundColor: "#f0fdf4",
-    padding: 12,
+  mismatchInfoBox: {
+    backgroundColor: "#fef3c7",
+    padding: 16,
     borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#86efac",
+    borderColor: "#fde68a",
   },
-  ownerInfoText: {
+  mismatchLabel: {
+    fontSize: 13,
+    color: "#92400e",
+    marginBottom: 4,
+  },
+  mismatchValue: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#78350f",
+  },
+  alertModalMessage: {
+    fontSize: 15,
+    color: "#6b7280",
     textAlign: "center",
-    color: "#166534",
-    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 24,
   },
-  inputLabel: {
+  alertButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  alertButton: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    padding: 16,
+    borderRadius: 14,
+  },
+  alertButtonSuccess: {
+    backgroundColor: "#10b981",
+  },
+  alertButtonPrimary: {
+    backgroundColor: Colors.primary,
+  },
+  alertButtonText: {
+    color: "#fff",
     fontSize: 15,
+    fontWeight: "700",
+  },
+
+  // Aadhaar Modal
+  aadhaarModalContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+  },
+  aadhaarIconContainer: {
+    alignSelf: "center",
+    backgroundColor: Colors.primary + "15",
+    width: 34,
+    height: 34,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  aadhaarModalTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  ownerInfoCard: {
+    backgroundColor: "#f0fdf4",
+    padding: 6,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#bbf7d0",
+  },
+  ownerInfoLabel: {
+    fontSize: 10,
+    color: "#166534",
+    marginBottom: 6,
+  },
+  ownerInfoValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#14532d",
+  },
+  aadhaarInputLabel: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
+    color: "#374151",
+    marginBottom: 10,
   },
   aadhaarInput: {
     borderWidth: 2,
     borderColor: Colors.primary + "40",
-    backgroundColor: "#f8faff",
-    borderRadius: 12,
-    padding: 18,
-    fontSize: 22,
+    backgroundColor: "#f8fafc",
+    borderRadius: 14,
+    padding: 8,
+    fontSize: 14,
     fontWeight: "600",
-    letterSpacing: 6,
     textAlign: "center",
-    color: "#1e40af",
+    color: "#111827",
   },
-  hintText: {
-    textAlign: "center",
+  aadhaarHintText: {
+    fontSize: 12,
     color: "#6b7280",
-    fontSize: 13,
-    marginTop: 20,
-    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 12,
+    marginBottom: 20,
+    lineHeight: 18,
   },
-  cancelBtn: {
-    flex: 1,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    borderRadius: 30,
-    alignItems: "center",
-  },
-  cancelBtnText: {
-    color: Colors.primary,
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  primaryBtn: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-    padding: 14,
-    borderRadius: 30,
-    alignItems: "center",
-  },
-  btnText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  btnRow: {
+  aadhaarButtonRow: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 20,
   },
-  otpRow: {
+  cancelButton: {
+    flex: 1,
+    padding: 7,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButtonText: {
+    color: Colors.primary,
+    fontSize: 12,
+
+    fontWeight: "700",
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: Colors.primary,
+    padding: 7,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryButtonDisabled: {
+    opacity: 0.5,
+  },
+  primaryButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // OTP Modal
+  otpModalContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+  },
+  otpIconContainer: {
+    alignSelf: "center",
+    backgroundColor: Colors.primary + "15",
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  otpModalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  otpSubtitle: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  otpInputRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginVertical: 20,
+    marginBottom: 20,
+    gap: 8,
   },
-  otpBox: {
-    width: 50,
-    height: 50,
+  otpInputBox: {
+    flex: 1,
+    aspectRatio: 1,
     borderWidth: 2,
-    borderColor: "#ddd",
-    borderRadius: 12,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
     textAlign: "center",
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+  },
+  otpTimerContainer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  otpTimerText: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  resendOtpText: {
+    fontSize: 15,
+    color: Colors.primary,
+    fontWeight: "700",
+  },
+  otpButtonRow: {
+    flexDirection: "row",
+    gap: 12,
   },
 };
