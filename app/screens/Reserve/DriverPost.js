@@ -5,12 +5,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  ScrollView,
+ScrollView,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import mini from "../../assets/mini.png";
 import sedan from "../../assets/sedan.png";
 import suv from "../../assets/suv.png";
+import inova from "../../assets/inova.png"
 import { useNavigation } from "@react-navigation/native";
 import { Plus } from "lucide-react-native";
 
@@ -38,10 +39,10 @@ export default function DriverPost({
   };
 
   const vehicleImage =
-    vehicleType === "mini" ? mini : vehicleType === "sedan" ? sedan : suv;
-  const capacityMap = { mini: 4, sedan: 4, suv: 5 };
-  const VehicleName = vehicleType === "mini" ? "Maruti WagonR" : vehicleType === "sedan" ? "Maruti Swift Dzire" : "Maruti Ertiga SUV";
-  const capacity = capacityMap[vehicleType] || 0;
+    vehicleType === "mini" ? mini : vehicleType === "sedan" ? sedan : vehicleType === "suv"? suv:inova;
+  const capacityMap = { mini: 4, sedan: 4, suv: 6 };
+  const VehicleName = vehicleType === "mini" ? "Maruti WagonR" : vehicleType === "sedan" ? "Maruti Swift Dzire" : vehicleType === "suv" ? "Maruti Ertiga SUV":"Innova Crysta";
+  const capacity = capacityMap[vehicleType] || 6;
 
   // Badges Logic
   const badgeLabels = {
@@ -80,7 +81,7 @@ export default function DriverPost({
       {/* Top Row */}
       <View style={styles.topRow}>
         <View style={styles.row}>
-          <Image source={vehicleImage} style={styles.carImage} />
+          <Image source={vehicleImage} style={styles.carImage} resizeMode="contain" />
           <View>
             <Text style={styles.vehicleName}>{VehicleName || vehicleName}</Text>
             <Text style={{fontSize:10}}>Any Other Similar AC Taxi</Text>
@@ -315,7 +316,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
       fontFamily: "SFProDisplay-Bold",
 
-    color: "#d32f2f",
+    color: "#000",
   },
 
   commission: {

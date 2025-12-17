@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import logo from "../../assets/taxisafar-logo.png";
 import onboardImage from "../../assets/onboard.png"; // phone + driver image
 
@@ -20,13 +20,15 @@ export default function OnboardScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* Logo */}
-      <Image source={logo} style={styles.logo} resizeMode="contain" />
-      <View style={styles.dashedLine} />
-      {/* Tagline */}
-      <Text style={styles.tagline}>
-        India’s Smart B2B & B2C AI{" "}
-        <Text style={styles.highlight}>Taxi Solution</Text>
-      </Text>
+      <View style={{ position: "relative", top: verticalScale(20) }}>
+        <Image source={logo} style={styles.logo} resizeMode="contain" />
+<View style={styles.dashedLine} />
+        {/* Tagline */}
+        <Text style={styles.tagline}>
+          India’s Smart B2B & B2C AI{" "}
+          <Text style={styles.highlight}>Taxi Solution</Text>
+        </Text>
+      </View>
 
       {/* Main Illustration */}
       <Image
@@ -85,19 +87,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   dashedLine: {
-    width: "80%",
+    
     height: 1,
     backgroundColor: "transparent",
     borderTopWidth: 1,
-    borderTopColor: "#9CA3AF",
-    borderStyle: "dashed",
+    borderTopColor: "#000",
+    // borderStyle: "dashed",
     opacity: 0.8,
   },
 
   logo: {
-    width: 180,
-    height: 60,
-    marginBottom: 2,
+    width:verticalScale(230),
+    height: verticalScale(70),
   },
 
   tagline: {
@@ -117,13 +118,13 @@ const styles = StyleSheet.create({
 
   mainImage: {
     width: "100%",
-    height: 440,
-    marginBottom: 20,
+    height: verticalScale(380),
+    // marginBottom: 20,
   },
 
   featuresBox: {
     borderWidth: 1,
-    borderStyle: "dashed",
+    // borderStyle: "dashed",
     borderColor: "#999",
     borderRadius: 12,
     padding: 14,

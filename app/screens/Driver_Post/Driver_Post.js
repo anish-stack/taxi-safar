@@ -49,6 +49,7 @@ const DriverPost = () => {
 
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactType, setContactType] = useState("");
+  const [company, setCompany] = useState(null);
 
   // Date & Time
   const [pickupDate, setPickupDate] = useState(new Date());
@@ -126,65 +127,111 @@ const DriverPost = () => {
     }
   };
 
-const fetchRidePostedById = async () => {
+const fetchCompany = async () => {
   try {
-    const response = await axios.get(`${API_URL_APP}/api/v1/post-rides/${rideId}`, {
+    setLoading(true);
+    const res = await axios.get(`${API_URL_APP}/api/v1/my-company`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    const data = res.data?.data;
+    console.log("Company data:", data);
 
-    if (response.data.success) {
-      const ride = response.data.data;
-
-      // Trip Details
-      setTripType(ride.tripType || "one-way");
-      setVehicle(ride.vehicleType || "");
-      setAcceptMode(ride.acceptBookingType || "instant");
-      setContactType(ride.contactType || "");
-
-      // Date & Time
-      setPickupDate(new Date(ride.pickupDate));
-      const [hours, minutes] = ride.pickupTime?.split(":") || ["00", "00"];
-      const pickupTimeDate = new Date();
-      pickupTimeDate.setHours(parseInt(hours), parseInt(minutes));
-      setPickupTime(pickupTimeDate);
-
-      // Locations
-      setPickupLocation(ride.pickupAddress || "");
-      setPickupCoordinates(ride.pickupLocation || null);
-      setDropLocation(ride.dropAddress || "");
-      setDropCoordinates(ride.dropLocation || null);
-
-      // Pricing
-      setTotalAmount(ride.totalAmount?.toString() || "");
-      setCommission(ride.commissionAmount?.toString() || "");
-      setDriverEarning(ride.driverEarning || 0);
-      setExtraKm(ride.extraKmCharge?.toString() || "");
-      setExtraHour(ride.extraMinCharge?.toString() || "");
-
-      // Requirements
-      const reqs = ride.extraRequirements || {};
-      setRequirements({
-        onlydiesel: reqs.onlyDiesel || false,
-        withcarrier: reqs.carrier || false,
-        ac: reqs.ac || false,
-        musicsystem: reqs.musicSystem || false,
-        allinclusive: reqs.allInclusive || false,
-        allexclusive: reqs.allExclusive || false,
-        foodallowed: reqs.foodAllowed || false,
-      });
-
-      // Notes & Payment
-      setNotes(ride.notes || "");
-      setPaymentMethod(ride.paymentMethod || "cash");
-
+    if (data && Object.keys(data).length > 0) {
+      setCompany(data);
+      // Proceed with whatever you need when company exists
     } else {
-      Alert.alert("Error", "Failed to fetch ride details");
+      // No company found → Show simple native alert
+      Alert.alert(
+        "Company Required",
+        "Please add company details first.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Add Company",
+            onPress: () => navigation.navigate("company-details"),
+          },
+        ],
+        { cancelable: false }
+      );
     }
-  } catch (error) {
-    console.error("Fetch ride error:", error);
-    // Alert.alert("Error", "Something went wrong while fetching ride data");
+  } catch (err) {
+    console.log("Fetch error:", err?.response?.data || err.message);
+    Alert.alert("Error", "Failed to load company details", [
+      { text: "OK" },
+    ]);
+  } finally {
+    setLoading(false);
   }
 };
+  useEffect(() => {
+    fetchCompany();
+  }, [token]);
+
+  const fetchRidePostedById = async () => {
+    if(!rideId) return
+    try {
+      const response = await axios.get(
+        `${API_URL_APP}/api/v1/post-rides/${rideId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        const ride = response.data.data;
+
+        // Trip Details
+        setTripType(ride.tripType || "one-way");
+        setVehicle(ride.vehicleType || "");
+        setAcceptMode(ride.acceptBookingType || "instant");
+        setContactType(ride.contactType || "");
+
+        // Date & Time
+        setPickupDate(new Date(ride.pickupDate));
+        const [hours, minutes] = ride.pickupTime?.split(":") || ["00", "00"];
+        const pickupTimeDate = new Date();
+        pickupTimeDate.setHours(parseInt(hours), parseInt(minutes));
+        setPickupTime(pickupTimeDate);
+
+        // Locations
+        setPickupLocation(ride.pickupAddress || "");
+        setPickupCoordinates(ride.pickupLocation || null);
+        setDropLocation(ride.dropAddress || "");
+        setDropCoordinates(ride.dropLocation || null);
+
+        // Pricing
+        setTotalAmount(ride.totalAmount?.toString() || "");
+        setCommission(ride.commissionAmount?.toString() || "");
+        setDriverEarning(ride.driverEarning || 0);
+        setExtraKm(ride.extraKmCharge?.toString() || "");
+        setExtraHour(ride.extraMinCharge?.toString() || "");
+
+        // Requirements
+        const reqs = ride.extraRequirements || {};
+        setRequirements({
+          onlydiesel: reqs.onlyDiesel || false,
+          withcarrier: reqs.carrier || false,
+          ac: reqs.ac || false,
+          musicsystem: reqs.musicSystem || false,
+          allinclusive: reqs.allInclusive || false,
+          allexclusive: reqs.allExclusive || false,
+          foodallowed: reqs.foodAllowed || false,
+        });
+
+        // Notes & Payment
+        setNotes(ride.notes || "");
+        setPaymentMethod(ride.paymentMethod || "cash");
+      } else {
+        Alert.alert("Error", "Failed to fetch ride details");
+      }
+    } catch (error) {
+      console.error("Fetch ride error:", error);
+      // Alert.alert("Error", "Something went wrong while fetching ride data");
+    }
+  };
 
   useEffect(() => {
     fetchRidePostedById();
@@ -339,117 +386,121 @@ const fetchRidePostedById = async () => {
   };
 
   const resetForm = () => {
-  // Trip Details
-  setTripType("one-way");
-  setVehicle("");
-  setAcceptMode("instant");
-  setContactType("");
+    // Trip Details
+    setTripType("one-way");
+    setVehicle("");
+    setAcceptMode("instant");
+    setContactType("");
 
-  // Date & Time
-  setPickupDate(new Date());
-  setPickupTime(new Date());
-  setShowDatePicker(false);
-  setShowTimePicker(false);
+    // Date & Time
+    setPickupDate(new Date());
+    setPickupTime(new Date());
+    setShowDatePicker(false);
+    setShowTimePicker(false);
 
-  // Locations
-  setPickupLocation("");
-  setPickupCoordinates(null);
-  setDropLocation("");
-  setDropCoordinates(null);
-  setPickupSuggestions([]);
-  setDropSuggestions([]);
-  setPickupLoading(false);
-  setDropLoading(false);
+    // Locations
+    setPickupLocation("");
+    setPickupCoordinates(null);
+    setDropLocation("");
+    setDropCoordinates(null);
+    setPickupSuggestions([]);
+    setDropSuggestions([]);
+    setPickupLoading(false);
+    setDropLoading(false);
 
-  // Pricing
-  setTripDays("");
-  setTotalAmount("");
-  setCommission("");
-  setDriverEarning(0);
-  setExtraKm("");
-  setExtraHour("");
+    // Pricing
+    setTripDays("");
+    setTotalAmount("");
+    setCommission("");
+    setDriverEarning(0);
+    setExtraKm("");
+    setExtraHour("");
 
-  // Preferences
-  setRequirements({
-    onlydiesel: false,
-    withcarrier: false,
-    ac: false,
-    musicsystem: false,
-    allinclusive: false,
-    allexclusive: false,
-    foodallowed: false,
-  });
+    // Preferences
+    setRequirements({
+      onlydiesel: false,
+      withcarrier: false,
+      ac: false,
+      musicsystem: false,
+      allinclusive: false,
+      allexclusive: false,
+      foodallowed: false,
+    });
 
-  // Notes & Payment
-  setNotes("");
-  setPaymentMethod("cash");
+    // Notes & Payment
+    setNotes("");
+    setPaymentMethod("cash");
 
-  // UI States
-  setShowSuccess(false);
-  setLoading(false);
-  setSuccessData(null);
-};
-
- const postBooking = async () => {
-  if (!validateForm()) return;
-
-  setLoading(true);
-  try {
-    const requestData = {
-      tripType,
-      vehicleType: vehicle,
-      pickupDate: formatDateForBackend(pickupDate),
-      pickupTime: formatTimeForBackend(pickupTime),
-      pickupAddress: pickupLocation,
-      pickupLocation: pickupCoordinates,
-      dropAddress: dropLocation,
-      dropLocation: dropCoordinates,
-      totalAmount: parseFloat(totalAmount),
-      commissionAmount: parseFloat(commission) || 0,
-      driverEarning: parseFloat(driverEarning),
-      extraKmCharge: parseFloat(extraKm) || 0,
-      extraMinCharge: parseFloat(extraHour) || 0,
-      acceptBookingType: acceptMode,
-      extraRequirements: Object.entries(requirements)
-        .filter(([_, value]) => value)
-        .map(([key]) => key),
-      notes: notes.trim(),
-      paymentMethod,
-      contactType,
-    };
-
-    let response;
-    if (rideId) {
-      // EDIT mode → PUT
-      response = await axios.put(`${API_URL_APP}/api/v1/update-post-ride/${rideId}`, requestData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    
-
-    } else {
-      // CREATE mode → POST
-      response = await axios.post(`${API_URL_APP}/api/v1/post-ride`, requestData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-              resetForm()
-    }
-
-    if (response.data.success) {
-      setSuccessData(response.data.data);
-      setShowSuccess(true);
-    } else {
-      Alert.alert("Error", response.data.message || "Failed to submit ride");
-    }
-
-  } catch (error) {
-    console.error("Ride submit error:", error);
-    Alert.alert("Error", "Something went wrong while submitting ride");
-  } finally {
+    // UI States
+    setShowSuccess(false);
     setLoading(false);
-  }
-};
+    setSuccessData(null);
+  };
 
+  const postBooking = async () => {
+    if (!validateForm()) return;
 
+    setLoading(true);
+    try {
+      const requestData = {
+        tripType,
+        vehicleType: vehicle,
+        pickupDate: formatDateForBackend(pickupDate),
+        pickupTime: formatTimeForBackend(pickupTime),
+        pickupAddress: pickupLocation,
+        pickupLocation: pickupCoordinates,
+        dropAddress: dropLocation,
+        dropLocation: dropCoordinates,
+        totalAmount: parseFloat(totalAmount),
+        commissionAmount: parseFloat(commission) || 0,
+        driverEarning: parseFloat(driverEarning),
+        extraKmCharge: parseFloat(extraKm) || 0,
+        companyDetails:company?._id,
+        extraMinCharge: parseFloat(extraHour) || 0,
+        acceptBookingType: acceptMode,
+        extraRequirements: Object.entries(requirements)
+          .filter(([_, value]) => value)
+          .map(([key]) => key),
+        notes: notes.trim(),
+        paymentMethod,
+        contactType,
+      };
+
+      let response;
+      if (rideId) {
+        // EDIT mode → PUT
+        response = await axios.put(
+          `${API_URL_APP}/api/v1/update-post-ride/${rideId}`,
+          requestData,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+      } else {
+        // CREATE mode → POST
+        response = await axios.post(
+          `${API_URL_APP}/api/v1/post-ride`,
+          requestData,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        resetForm();
+      }
+
+      if (response.data.success) {
+        setSuccessData(response.data.data);
+        setShowSuccess(true);
+      } else {
+        Alert.alert("Error", response.data.message || "Failed to submit ride");
+      }
+    } catch (error) {
+      console.error("Ride submit error:", error);
+      Alert.alert("Error", "Something went wrong while submitting ride");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Success Screen
   if (showSuccess) {
@@ -483,8 +534,8 @@ const fetchRidePostedById = async () => {
               style={styles.doneButton}
               onPress={() => {
                 setShowSuccess(false);
-                
-                navigation.navigate("MyTrip")
+
+                navigation.navigate("MyTrip");
               }}
             >
               <Text style={styles.doneButtonText}>Done</Text>
@@ -1051,7 +1102,7 @@ const fetchRidePostedById = async () => {
                       contactType === "call" && styles.contactOptionTextActive,
                     ]}
                   >
-                  Call + Chat
+                    Call + Chat
                   </Text>
                   <Text style={styles.contactDesc}>
                     Riders can Chat & call you directly

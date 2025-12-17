@@ -58,7 +58,7 @@ export default function RegisterScreen({ navigation }) {
 
   const [mobileVerified, setMobileVerified] = useState(false);
   const [showMobileOtpModal, setShowMobileOtpModal] = useState(false);
-  const [mobileOtp, setMobileOtp] = useState(["", "", "", "", "", ""]);
+  const [mobileOtp, setMobileOtp] = useState("");
   const [mobileTimer, setMobileTimer] = useState(0);
   const [isSendingMobileOtp, setIsSendingMobileOtp] = useState(false);
   const [isVerifyingMobileOtp, setIsVerifyingMobileOtp] = useState(false);
@@ -70,7 +70,7 @@ export default function RegisterScreen({ navigation }) {
   // === STATES ===
   const [currentStep, setCurrentStep] = useState(1);
   const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [mobile, setMobile] = useState("");
+  const [mobile, setMobile] = useState("7042129128");
   const [name, setName] = useState("");
   const [dob, setDob] = useState(null);
   const [email, setEmail] = useState("");
@@ -83,7 +83,7 @@ export default function RegisterScreen({ navigation }) {
   const [isAadhaarVerified, setIsAadhaarVerified] = useState(false);
   const [aadhaarRequestId, setAadhaarRequestId] = useState(null);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState("");
   const [timer, setTimer] = useState(30);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
@@ -150,10 +150,8 @@ export default function RegisterScreen({ navigation }) {
 
   // === REDIRECT HANDLER ===
   const handleRedirect = (redirect, message, driver) => {
-    console.log("redirect", redirect);
     let routeName = "";
     let params = {};
-    console.log("redirect", redirect);
     switch (redirect) {
       case "step-1":
         routeName = "Signup";
@@ -163,7 +161,22 @@ export default function RegisterScreen({ navigation }) {
         setName(driver.full_name || "");
         setDob(driver.dob ? new Date(driver.dob) : null);
         setGender(driver.gender || "");
-        setAddress(driver.address || {});
+        const addr = driver.address
+          ? [
+              driver.address.house,
+              driver.address.loc,
+              driver.address.vtc,
+              driver.address.subdist,
+              driver.address.dist,
+              driver.address.state,
+              driver.address.country,
+            ]
+              .filter(Boolean) // removes empty or undefined values
+              .join(", ")
+          : "";
+
+        setAddress(addr);
+
         if (driver.profile_image) {
           setProfileImage(`data:image/jpeg;base64,${driver.profile_image}`);
         }
@@ -321,7 +334,7 @@ export default function RegisterScreen({ navigation }) {
   // === VERIFY AADHAAR OTP ===
   const handleVerifyAadhaarOtp = async () => {
     if (isVerifying) return;
-    const otpValue = otp.join("");
+    const otpValue = otp
     if (otpValue.length !== 6)
       return showAlert("error", "Invalid OTP", "Enter 6-digit OTP");
 
@@ -344,11 +357,24 @@ export default function RegisterScreen({ navigation }) {
 
       if (response.data.success) {
         const { aadhaarData, isNewDriver, message, driver } = response.data;
-
+        console.log(aadhaarData);
         setName(aadhaarData.full_name || "");
         setDob(aadhaarData.dob ? new Date(aadhaarData.dob) : null);
         setGender(aadhaarData.gender || "");
-        setAddress(aadhaarData.address || {});
+        const addr = aadhaarData.address
+          ? [
+              aadhaarData.address.house,
+              aadhaarData.address.loc,
+              aadhaarData.address.vtc,
+              aadhaarData.address.subdist,
+              aadhaarData.address.dist,
+              aadhaarData.address.state,
+              aadhaarData.address.country,
+            ]
+              .filter(Boolean) // removes empty or undefined values
+              .join(", ")
+          : "";
+        setAddress(addr || {});
         if (aadhaarData.profile_image) {
           setProfileImage(
             `data:image/jpeg;base64,${aadhaarData.profile_image}`
@@ -525,7 +551,7 @@ export default function RegisterScreen({ navigation }) {
           setShowMobileOtpModal(true);
           setMobileTimer(30);
           setMobileOtp(["", "", "", "", "", ""]);
-          showAlert("success", "OTP Sent", "Check your SMS");
+          // showAlert("success", "OTP Sent", "Check your SMS");
         }
       }
     } catch (error) {
@@ -565,7 +591,8 @@ export default function RegisterScreen({ navigation }) {
   }, [showMobileOtpModal, mobileTimer]);
   // Verify Mobile OTP
   const handleVerifyMobileOtp = async () => {
-    const otp = mobileOtp.join("");
+    const otp = mobileOtp;
+    console.log(otp);
     if (otp.length !== 6)
       return showAlert("error", "Invalid", "Enter 6-digit OTP");
 
@@ -703,7 +730,7 @@ export default function RegisterScreen({ navigation }) {
     formData.append("mobile", mobile);
     formData.append("email", email);
     formData.append("gender", gender);
-    formData.append("aadhaarNumber", aadhaarNumber);  
+    formData.append("aadhaarNumber", aadhaarNumber);
     formData.append("dlNumber", licenseNumber);
     formData.append("address", JSON.stringify(address));
     if (fcmToken) formData.append("fcmToken", fcmToken);
@@ -800,76 +827,82 @@ export default function RegisterScreen({ navigation }) {
       onRequestClose={() => setShowOtpModal(false)}
     >
       <View style={styles.modalOverlay}>
-          <ScrollView
-      contentContainerStyle={styles.modalContentScroll}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-
+        <ScrollView
+          contentContainerStyle={styles.modalContentScroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.modalContent}>
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>Enter OTP</Text>
-          <Text style={styles.modalSubtitle}>
-            6-digit OTP sent to your mobile
-          </Text>
-          <View style={styles.otpContainer}>
-            {otp.map((digit, i) => (
-              <TextInput
-                key={i}
-                ref={otpRefs[i]}
-                style={styles.otpInput}
-                value={digit}
-                onChangeText={(v) => {
-                  if (v.length > 1) return;
-                  const newOtp = [...otp];
-                  newOtp[i] = v;
-                  setOtp(newOtp);
-                  if (v && i < 5) otpRefs[i + 1].current?.focus();
-                }}
-                onKeyPress={(e) =>
-                  e.nativeEvent.key === "Backspace" &&
-                  !otp[i] &&
-                  i > 0 &&
-                  otpRefs[i - 1].current?.focus()
-                }
-                keyboardType="number-pad"
-                maxLength={1}
-                selectTextOnFocus
-              />
-            ))}
-          </View>
-          <TouchableOpacity
-            style={[styles.verifyButton, isVerifying && { opacity: 0.7 }]}
-            onPress={handleVerifyAadhaarOtp}
-            disabled={isVerifying}
-          >
-            {isVerifying ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.verifyButtonText}>Verify OTP</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.resendContainer}
-            onPress={handleResendOtp}
-            disabled={timer > 0 || isResending}
-          >
-            <Text
-              style={[
-                styles.resendText,
-                (timer > 0 || isResending) && styles.resendTextDisabled,
-              ]}
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowOtpModal(false)}
             >
-              {isResending
-                ? "Sending..."
-                : timer > 0
-                ? `Resend in 00:${timer.toString().padStart(2, "0")}`
-                : "Resend OTP"}
+              <Text style={styles.modalCloseText}>✕</Text>
+            </TouchableOpacity>
+
+            {/* Modal Handle */}
+            <View style={styles.modalHandle} />
+              {timer > 0 ? (
+                <View style={styles.successBox}>
+                  <Text style={styles.successMessage}>
+                    OTP sent successfully
+                  </Text>
+                </View>
+              ) : null}
+
+            <Text style={styles.modalTitle}>Enter OTP</Text>
+            <Text style={styles.modalSubtitle}>
+              6-digit OTP sent to your mobile
             </Text>
-          </TouchableOpacity>
-        </View>
-    </ScrollView>
-    
+
+            {/* OTP Inputs */}
+            <View style={styles.otpContainer}>
+            
+                <TextInput
+                  style={styles.otpInput}
+                  value={otp}
+                  onChangeText={setOtp}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+             
+            </View>
+
+            {/* Verify OTP Button */}
+            <TouchableOpacity
+              style={[styles.verifyButton, isVerifying && { opacity: 0.7 }]}
+              onPress={handleVerifyAadhaarOtp}
+              disabled={isVerifying}
+            >
+              {isVerifying ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.verifyButtonText}>Verify OTP</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Resend OTP */}
+            <TouchableOpacity
+              style={styles.resendContainer}
+              onPress={handleResendOtp}
+              disabled={timer > 0 || isResending}
+            >
+              <Text
+                style={[
+                  styles.resendText,
+                  (timer > 0 || isResending) && styles.resendTextDisabled,
+                ]}
+              >
+                {isResending
+                  ? "Sending..."
+                  : timer > 0
+                  ? `Resend in 00:${timer.toString().padStart(2, "0")}`
+                  : "Resend OTP"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -928,7 +961,7 @@ export default function RegisterScreen({ navigation }) {
               </Text>
 
               <View style={styles.form}>
-                <Text style={styles.label}>Mobile Number *</Text>
+                <Text style={styles.label}>Mobile Number</Text>
                 <TextInput
                   placeholder="Enter 10-digit mobile"
                   value={mobile}
@@ -967,7 +1000,7 @@ export default function RegisterScreen({ navigation }) {
               </Text>
 
               <View style={styles.form}>
-                <Text style={styles.label}>Aadhaar Number *</Text>
+                <Text style={styles.label}>Aadhaar Number</Text>
                 <TextInput
                   placeholder="12-digit Aadhaar number"
                   value={aadhaarNumber}
@@ -1032,10 +1065,11 @@ export default function RegisterScreen({ navigation }) {
                 style={[styles.input, { backgroundColor: "#f0f0f0" }]}
               />
 
-              <Text style={styles.label}>Address (Optional)</Text>
+              <Text style={styles.label}>Address</Text>
               <TextInput
                 placeholder="Enter Your Address"
                 value={address}
+                multiline={true}
                 onChangeText={setAddress}
                 style={styles.input}
               />
@@ -1058,7 +1092,7 @@ export default function RegisterScreen({ navigation }) {
               /> */}
 
               {/* Aadhaar Upload */}
-              <Text style={styles.label}>Upload Aadhaar *</Text>
+              <Text style={styles.label}>Upload Aadhaar</Text>
               <View style={styles.documentRow}>
                 <TouchableOpacity
                   style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
@@ -1116,31 +1150,8 @@ export default function RegisterScreen({ navigation }) {
               <Text style={styles.title}>Upload Documents</Text>
               <Text style={styles.subtitle}>Complete your registration</Text>
 
-              {/* PAN */}
-              <Text style={styles.label}>PAN Card *</Text>
-              <TouchableOpacity
-                style={styles.uploadBox}
-                onPress={() => pickDocument("pan")}
-              >
-                {panDoc ? (
-                  <Image
-                    source={{ uri: panDoc.uri }}
-                    style={styles.docPreviewFull}
-                  />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="cloud-upload-outline"
-                      size={24}
-                      color={Colors.textSecondary}
-                    />
-                    <Text style={styles.uploadText}>Upload PAN</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {/* DL Verification */}
-              <Text style={styles.label}>Driving License Number *</Text>
+              {/* ================= DL VERIFICATION ================= */}
+              <Text style={styles.label}>Driving License Number</Text>
               <View style={styles.inputWithButton}>
                 <TextInput
                   placeholder="Enter DL Number"
@@ -1154,6 +1165,7 @@ export default function RegisterScreen({ navigation }) {
                     isDLVerified && { backgroundColor: "#f0f0f0" },
                   ]}
                 />
+
                 <TouchableOpacity
                   style={[
                     styles.verifyBtn,
@@ -1183,13 +1195,14 @@ export default function RegisterScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {/* DL Details */}
+              {/* ================= DL DETAILS ================= */}
               {isDLVerified && dlData && (
                 <>
                   <View style={styles.infoBox}>
                     <Text style={styles.infoLabel}>Name:</Text>
                     <Text style={styles.infoValue}>{dlData.name}</Text>
                   </View>
+
                   {dlData.permanent_address && (
                     <View style={styles.infoBox}>
                       <Text style={styles.infoLabel}>Address:</Text>
@@ -1201,10 +1214,11 @@ export default function RegisterScreen({ navigation }) {
                 </>
               )}
 
-              {/* DL Upload */}
+              {/* ================= DL UPLOAD ================= */}
               {isDLVerified && (
                 <>
-                  <Text style={styles.label}>Upload Driving License *</Text>
+                  <Text style={styles.label}>Upload Driving License</Text>
+
                   <View style={styles.documentRow}>
                     <TouchableOpacity
                       style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
@@ -1251,6 +1265,35 @@ export default function RegisterScreen({ navigation }) {
                 </>
               )}
 
+              {/* ================= PAN UPLOAD (AFTER DL VERIFIED) ================= */}
+              {isDLVerified && (
+                <>
+                  <Text style={styles.label}>PAN Card *</Text>
+
+                  <TouchableOpacity
+                    style={styles.uploadBox}
+                    onPress={() => pickDocument("pan")}
+                  >
+                    {panDoc ? (
+                      <Image
+                        source={{ uri: panDoc.uri }}
+                        style={styles.docPreviewFull}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="cloud-upload-outline"
+                          size={24}
+                          color={Colors.textSecondary}
+                        />
+                        <Text style={styles.uploadText}>Upload PAN</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* ================= SUBMIT ================= */}
               <TouchableOpacity
                 style={[
                   styles.nextButton,
@@ -1274,45 +1317,49 @@ export default function RegisterScreen({ navigation }) {
         {/* Mobile OTP Modal */}
         <Modal visible={showMobileOtpModal} transparent animationType="slide">
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { width: "90%" }]}>
+              {/* Close Button */}
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowMobileOtpModal(false)}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+
+              {/* Modal Handle */}
               <View style={styles.modalHandle} />
+              {mobileTimer > 0 ? (
+                <View style={styles.successBox}>
+                  <Text style={styles.successMessage}>
+                    OTP sent successfully on {mobile}
+                  </Text>
+                </View>
+              ) : null}
+
               <Text style={styles.modalTitle}>Verify Mobile Number</Text>
               <Text style={styles.modalSubtitle}>
-                Enter 6-digit OTP sent to +91 {mobile}
+                Enter 6-digit OTP 
               </Text>
 
+              {/* OTP Inputs */}
               <View style={styles.otpContainer}>
-                {mobileOtp.map((digit, i) => (
-                  <TextInput
-                    key={i}
-                    ref={mobileOtpRefs[i]}
-                    style={styles.otpInput}
-                    value={digit}
-                    onChangeText={(v) => {
-                      if (v.length > 1) return;
-                      const newOtp = [...mobileOtp];
-                      newOtp[i] = v;
-                      setMobileOtp(newOtp);
-                      if (v && i < 5) mobileOtpRefs[i + 1].current?.focus();
-                    }}
-                    onKeyPress={(e) =>
-                      e.nativeEvent.key === "Backspace" &&
-                      !mobileOtp[i] &&
-                      i > 0 &&
-                      mobileOtpRefs[i - 1].current?.focus()
-                    }
-                    keyboardType="number-pad"
-                    maxLength={1}
-                  />
-                ))}
+                <TextInput
+                  style={styles.otpInput}
+                  value={mobileOtp}
+                  onChangeText={setMobileOtp}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
               </View>
 
+              {/* Verify Button */}
               <TouchableOpacity
                 style={[
                   styles.verifyButton,
                   isVerifyingMobileOtp && { opacity: 0.7 },
                 ]}
                 onPress={handleVerifyMobileOtp}
+                disabled={isVerifyingMobileOtp}
               >
                 {isVerifyingMobileOtp ? (
                   <ActivityIndicator color="#fff" />
@@ -1321,6 +1368,7 @@ export default function RegisterScreen({ navigation }) {
                 )}
               </TouchableOpacity>
 
+              {/* Resend OTP */}
               <TouchableOpacity
                 style={styles.resendContainer}
                 onPress={handleSendMobileOtp}
@@ -1341,9 +1389,7 @@ export default function RegisterScreen({ navigation }) {
           </View>
         </Modal>
 
- 
-         {renderOtpModal()}
-  
+        {renderOtpModal()}
 
         {/* Camera View */}
         {cameraOpen && (
@@ -1626,7 +1672,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    marginBottom:200,
+    marginBottom: 200,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center", // ← center में
     alignItems: "center",
@@ -1637,7 +1683,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 29,
     width: "100%",
-   width: 280,
+    width: 280,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
@@ -1695,9 +1741,37 @@ const styles = StyleSheet.create({
   resendText: { color: Colors.textPrimary, fontSize: 15, fontWeight: "500" },
   resendTextDisabled: { color: Colors.textSecondary },
   modalContentScroll: {
-  flexGrow: 1,
-  justifyContent: "center",
-  alignItems: "center",
-  padding: 20,
-}
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCloseButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    padding: 8,
+  },
+  successBox: {
+    width: "90%",
+    backgroundColor: "#28a745", // success green
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginTop: 10,
+    marginLeft: 20,
+    // alignSelf: "stretch",
+  },
+  successMessage: {
+    color: "#ffffff", // white text
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  modalCloseText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
 });

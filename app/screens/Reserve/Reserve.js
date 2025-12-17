@@ -18,6 +18,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+
 import {
   ChevronLeft,
   Search,
@@ -39,19 +41,20 @@ const SLIDER_WIDTH = SCREEN_WIDTH - 80; // padding 40 each side
 const MAX_PRICE = 100000;
 const MIN_PRICE = 0;
 
-export default function ReserveScreen() {
+export default function ReserveScreen({ route }) {
+  const { filter } = route.params || {};
   const [activeTab, setActiveTab] = useState("All Trip");
   const [taxiSafarTrips, setTaxiSafarTrips] = useState([]);
   const [driverPosts, setDriverPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [filterVisible, setFilterVisible] = useState(false);
+  const [filterVisible, setFilterVisible] = useState(filter ? true : false);
   const [page, setPage] = useState(1);
   const [hasMoreData, setHasMoreData] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const { token } = loginStore();
-  const navigation = useNavigation()
+  const navigation = useNavigation();
 
   const [filters, setFilters] = useState({
     tripType: "all",
@@ -61,7 +64,7 @@ export default function ReserveScreen() {
 
   const [tempFilters, setTempFilters] = useState(filters);
 
-  const tabs = ["All Trip","B2B Bookings", "B2C Bookings"];
+  const tabs = ["All Trip", "B2B Bookings", "B2C Bookings"];
 
   // === Custom Range Slider Logic ===
   const minThumbRef = useRef(new Animated.Value(0)).current;
@@ -318,11 +321,17 @@ export default function ReserveScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.9}  onPress={()=>navigation.goBack()}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => navigation.goBack()}
+        >
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reserved Trip</Text>
-        <TouchableOpacity activeOpacity={0.9} onPress={()=>navigation.navigate("chat")}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => navigation.navigate("chat")}
+        >
           <MessageCircle size={24} color="#000" />
         </TouchableOpacity>
       </View>
@@ -382,9 +391,7 @@ export default function ReserveScreen() {
         contentContainerStyle={styles.listContent}
       />
 
-      <TouchableOpacity style={styles.addButton}>
-        <Plus size={28} color="#FFF" />
-      </TouchableOpacity>
+   
 
       {/* Filter Modal */}
       <Modal visible={filterVisible} transparent animationType="slide">
@@ -399,6 +406,38 @@ export default function ReserveScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Trip Type */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "#ddd",
+                  marginHorizontal:12,
+                  borderRadius: 22,
+                  marginTop:13,
+                  paddingHorizontal: 12,
+                  height: 48,
+                  backgroundColor: "#fff",
+                }}
+              >
+                <Search size={20} color="#999" />
+
+                <TextInput
+                  style={{
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 14,
+                    
+                    color: "#111",
+                    paddingVertical: 0, // important for Android
+                  }}
+                  placeholder="Search by area"
+                  placeholderTextColor="#999"
+                  value={searchText}
+                  onChangeText={setSearchText}
+                />
+              </View>
+
               <Text style={styles.filterLabel}>Trip Type</Text>
               <View style={styles.chipContainer}>
                 {["all", "oneWay", "roundTrip"].map((type) => (
@@ -636,7 +675,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: "90%",
-    paddingBottom: 20,
+    paddingBottom: verticalScale(40),
   },
   modalHeader: {
     flexDirection: "row",
@@ -651,7 +690,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 20,
-    marginTop: 20,
+    marginTop: 10,
     marginBottom: 10,
   },
   chipContainer: {
@@ -666,7 +705,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "#F1F1F1",
   },
-  chipActive: { backgroundColor: "#DC2626" },
+  chipActive: { backgroundColor: "#000" },
   chipText: { color: "#666", fontSize: 14 },
   chipTextActive: { color: "#FFF", fontWeight: "600" },
 
@@ -676,7 +715,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     marginBottom: 10,
   },
-  priceText: { fontSize: 16, fontWeight: "600", color: "#DC2626" },
+  priceText: { fontSize: 16, fontWeight: "600", color: "#000" },
 
   sliderContainer: {
     height: 50,
@@ -692,7 +731,7 @@ const styles = StyleSheet.create({
   },
   activeTrack: {
     height: 6,
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     borderRadius: 3,
     position: "absolute",
   },
@@ -702,7 +741,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#FFF",
     borderWidth: 3,
-    borderColor: "#DC2626",
+    borderColor: "#000",
     position: "absolute",
     top: 11,
   },
@@ -725,7 +764,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     alignItems: "center",
   },
   applyText: { fontSize: 16, color: "#FFF", fontWeight: "600" },

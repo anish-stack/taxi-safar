@@ -76,7 +76,6 @@ export default function Header({
     const newStatus = !localStatus;
     const previousStatus = localStatus;
 
-    console.log(`🔄 Toggle: ${previousStatus ? "ONLINE" : "OFFLINE"} → ${newStatus ? "ONLINE" : "OFFLINE"}`);
 
     // Optimistically update UI
     setLocalStatus(newStatus);

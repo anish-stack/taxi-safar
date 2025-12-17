@@ -128,7 +128,7 @@ export default function CreateQuotationForm({ navigation, route }) {
       const data = res.data?.data;
       if (data && Object.keys(data).length > 0) {
         setCompany(data);
-        setHasGST(data.has_gst || false);
+      setHasGST(!!data.gst_no);
         setAccountHolderName(data.company_name || "");
         if (driver?.BankDetails) {
           setBankName(driver.BankDetails.bank_name || "");

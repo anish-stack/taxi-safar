@@ -12,8 +12,9 @@ import axios from "axios";
 import useDriverStore from "../../store/driver.store";
 import messaging from "@react-native-firebase/messaging";
 import { useNavigation } from "@react-navigation/native";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 
-const OPTIONS = ["All Rides", "Driver Post Rides ", "Taxi Safar Rides"];
+const OPTIONS = ["All Rides", "B2B Bookings", "B2C Bookings"];
 
 export default function RideFilterDropdown({
   selectedOption = "All Rides",
@@ -56,15 +57,17 @@ export default function RideFilterDropdown({
 
   useEffect(() => {
     if (driver?._id) fetchUnreadMessages();
-  }, [driver]);
+  }, []);
 
   return (
     <View style={styles.container}>
       {/* LEFT : Dropdown Pill */}
       <View style={styles.wrapper}>
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill,{width:selectedOption === "All Rides" ?  110:verticalScale(120)
+}]}
           activeOpacity={0.85}
+
           onPress={() => setIsOpen(!isOpen)}
         >
           <Text style={styles.pillText} numberOfLines={1}>
@@ -72,8 +75,8 @@ export default function RideFilterDropdown({
           </Text>
           <Icon
             name={isOpen ? "chevron-up" : "chevron-down"}
-            size={18}
-            style={{ marginRight: 12 }}
+            size={verticalScale(12)}
+            style={{ marginRight: moderateScale(12) }}
             color="#000"
           />
         </TouchableOpacity>
@@ -114,7 +117,7 @@ export default function RideFilterDropdown({
       <View style={styles.iconGroup}>
         <TouchableOpacity
           style={styles.iconBtn}
-          onPress={() => navigation.navigate("Reserve")}
+          onPress={() => navigation.navigate("Reserve",{filter:true})}
         >
           <Icon name="search-outline" size={20} color="#000" />
         </TouchableOpacity>
@@ -166,7 +169,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     paddingHorizontal: 12,
     height: 30,
-    width: 100,
   },
 
   pillText: {

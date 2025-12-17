@@ -12,6 +12,9 @@ const driverSchema = new mongoose.Schema(
       maxlength: 100,
       index: true,
     },
+    address:{
+        type: String
+    },
     driver_contact_number: {
       type: String,
       required: true,

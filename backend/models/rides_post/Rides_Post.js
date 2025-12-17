@@ -8,8 +8,12 @@ const ridesPostSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    contactType:{
-      type:String
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompanyDetails",
+    },
+    contactType: {
+      type: String,
     },
     // Trip Details
     tripType: {

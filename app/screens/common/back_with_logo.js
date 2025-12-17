@@ -1,62 +1,115 @@
 import React from "react";
-import { View, TouchableOpacity, Image, StyleSheet,Text } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import {
+  View,
+  TouchableOpacity,
+  Image,
+  StyleSheet,
+  Text,
+  Platform,
+} from "react-native";
+import Ionicons from "react-native-vector-icons/Ionicons";
+import { useNavigation } from "@react-navigation/native";
+
 import logo from "../../assets/taxisafar-logo.png";
 import { Colors } from "../../constant/ui";
-import { useNavigation } from "@react-navigation/native";
 
 export default function BackWithLogo({
   isBackGround = true,
   isLogo = true,
-  title,
+  title = "",
+  isPlusHow = false,
+  plusOnPress,
 }) {
   const navigation = useNavigation();
+
   return (
     <View
       style={[
-        styles.headerContainer,
-        { backgroundColor: isBackGround ? Colors.white : "transparent" },
+        styles.container,
+        isBackGround && styles.background,
       ]}
     >
+      {/* Back Button */}
       <TouchableOpacity
-        style={styles.backButton}
+        style={styles.iconBtn}
         onPress={() => navigation.goBack()}
         activeOpacity={0.7}
       >
-        <Icon name="arrow-back" size={24} color={Colors.black} />
+        <Ionicons name="arrow-back" size={22} color={Colors.black} />
       </TouchableOpacity>
-      {isLogo ? (
-        <Image source={logo} style={styles.logo} resizeMode="contain" />
+
+      {/* Center Logo / Title */}
+      <View style={styles.centerContent}>
+        {isLogo ? (
+          <Image source={logo} style={styles.logo} resizeMode="contain" />
+        ) : (
+          <Text numberOfLines={1} style={styles.title}>
+            {title}
+          </Text>
+        )}
+      </View>
+
+      {/* Right Action */}
+      {isPlusHow ? (
+        <TouchableOpacity
+          style={[styles.iconBtn, styles.addBtn]}
+          onPress={plusOnPress}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={24} color="#fff" />
+        </TouchableOpacity>
       ) : (
-        <Text style={styles.titleText}>{title}</Text>
+        <View style={styles.placeholder} />
       )}
-      <View style={{ width: 24 }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
+  container: {
+    height: 66,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+
+  background: {
+    backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+   
   },
-  backButton: {
-    padding: 6,
-    borderRadius: 50,
+
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
   },
-   titleText: {
+
+  addBtn: {
+    backgroundColor: Colors.black,
+  },
+
+  centerContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  title: {
     fontSize: 18,
     fontWeight: "600",
     color: Colors.black,
-    textAlign: "center",
   },
+
   logo: {
-    width: 120,
-    height: 40,
+    width: 110,
+    height: 36,
+  },
+
+  placeholder: {
+    width: 40,
   },
 });

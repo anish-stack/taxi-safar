@@ -19,6 +19,7 @@ exports.postRide = async (req, res) => {
       tripType,
       vehicleType,
       pickupDate,
+      companyDetails,
       pickupTime,
       pickupAddress,
       contactType,
@@ -230,6 +231,7 @@ exports.postRide = async (req, res) => {
       acceptBookingType,
       extraRequirements: extraReqObj,
       notes,
+      companyId:companyDetails,
       paymentMethod,
       paymentStatus: "pending",
       rideStatus: "pending",
@@ -713,9 +715,7 @@ exports.searchNearbyRides = async (req, res) => {
 
     // Fetch driver
     const driver = await Driver.findById(driverId)
-      .select(
-        "driver_name current_location lastLocationUpdate current_vehicle_id currentRadius"
-      )
+      .select("driver_name current_location lastLocationUpdate current_vehicle_id currentRadius")
       .populate("current_vehicle_id");
 
     if (!driver) {
@@ -729,14 +729,13 @@ exports.searchNearbyRides = async (req, res) => {
     if (!driver.current_location || !driver.current_location.coordinates) {
       return res.status(400).json({
         success: false,
-        message:
-          "Driver location missing. Please update location to search nearby rides.",
+        message: "Driver location missing. Please update location to search nearby rides.",
       });
     }
 
     const [longitude, latitude] = driver.current_location.coordinates;
 
-    if (!longitude || !latitude) {
+    if (!longitude || !latitude || isNaN(longitude) || isNaN(latitude)) {
       return res.status(400).json({
         success: false,
         message: "Driver location is invalid.",
@@ -746,42 +745,44 @@ exports.searchNearbyRides = async (req, res) => {
     const maxDistanceMeters = (driver.currentRadius || 5) * 1000;
     const currentVehicleType = driver.current_vehicle_id?.vehicle_type || null;
 
-    // Count rides
-    const totalRides = await RidesPost.countDocuments();
-    console.log("rides", totalRides);
-    if (totalRides === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No rides exist in database.",
-        reason: "No rides created yet",
-        data: [],
-      });
-    }
+    // Get current date and time (in server's timezone or UTC — adjust as needed)
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0); // Start of today
 
-    const allRides = await RidesPost.find({ rideStatus: "pending" });
+    // Format current time as "HH:mm" string for comparison
+    const currentTimeStr = now.toTimeString().slice(0, 5); // e.g., "14:30"
 
-    //  ✅ Required console logs (ONLY with keyword "driver post")
-    console.log("driver post → pending rides count:", allRides.length);
+    // Build dynamic query for future/current pickup
+    const dateTimeFilter = {
+      $or: [
+        // 1. Future dates (tomorrow or later)
+        { pickupDate: { $gt: today } },
 
-    allRides.forEach((r) =>
-      console.log(
-        "driver post → pickup coordinates:",
-        r.pickupLocation.coordinates
-      )
-    );
-    console.log("longitude, latitude", longitude, latitude);
+        // 2. Today + pickup time >= current time
+        {
+          pickupDate: today,
+          pickupTime: { $gte: currentTimeStr },
+        },
+      ],
+    };
 
-    // Count rides matching vehicle type
-    const vehicleMatchCount = await RidesPost.countDocuments({
-      vehcleType: currentVehicleType,
-    });
-
-    // Count pending rides
+    // Count total pending rides (for debug)
     const pendingRidesCount = await RidesPost.countDocuments({
       rideStatus: "pending",
+      ...dateTimeFilter,
     });
 
-    // MAIN QUERY — Nearby rides
+    const vehicleMatchCount = await RidesPost.countDocuments({
+      vehcleType: currentVehicleType,
+      rideStatus: "pending",
+      ...dateTimeFilter,
+    });
+
+    console.log("driver post → pending rides (future/current):", pendingRidesCount);
+    console.log("driver post → rides matching vehicle type:", vehicleMatchCount);
+
+    // Main query: Nearby + pending + correct vehicle + future/current pickup
     const rides = await RidesPost.find({
       pickupLocation: {
         $near: {
@@ -793,31 +794,36 @@ exports.searchNearbyRides = async (req, res) => {
         },
       },
       rideStatus: "pending",
-      driverPostId: { $ne: driverId },
+      driverPostId: { $ne: driverId }, // Exclude own posts
       vehcleType: currentVehicleType,
+      ...dateTimeFilter, // ← This filters past rides
     })
-      .populate(
-        "driverPostId",
-        "driver_name driver_contact_number average_rating"
-      )
-      .limit(20);
+      .populate("driverPostId", "driver_name driver_contact_number average_rating")
+      .sort({ pickupDate: 1, pickupTime: 1 }) // Optional: sort by soonest first
+      .limit(20)
+      .lean();
 
-    // Only needed console
-    console.log("driver post → nearby rides found:", rides.length);
+    console.log("driver post → nearby rides found (future/current):", rides.length);
 
-    // If no rides found
+    // Log pickup coordinates for debugging
+    rides.forEach((r) =>
+      console.log("driver post → pickup coordinates:", r.pickupLocation.coordinates)
+    );
+
     if (rides.length === 0) {
       return res.status(200).json({
         success: true,
         message: "No nearby rides found.",
         reason: {
           vehicleTypeMatch: vehicleMatchCount,
-          pendingRides: pendingRidesCount,
+          pendingRidesFutureOrToday: pendingRidesCount,
+          currentTime: now.toISOString(),
+          currentTimeLocal: currentTimeStr,
           possibleCauses: [
-            "Ride is outside your radius",
+            "All matching rides are in the past",
+            "Ride is outside your search radius",
             "No pending rides for your vehicle type",
-            "Driver posted their own ride (excluded)",
-            "Ride pickup location not near your coordinates",
+            "You posted the ride yourself (excluded)",
           ],
         },
         driver_location: driver.current_location.coordinates,
@@ -828,20 +834,22 @@ exports.searchNearbyRides = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Nearby rides fetched successfully.",
       driver_location: driver.current_location.coordinates,
       radius_used_in_meters: maxDistanceMeters,
+      current_time: now.toISOString(),
       count: rides.length,
       data: rides,
     });
   } catch (error) {
+    console.error("Error in searchNearbyRides:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
-      error: error.message,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
-
 // Get ride statistics
 exports.getRideStatistics = async (req, res) => {
   try {

@@ -181,7 +181,7 @@ const vehicleSchema = new mongoose.Schema(
       },
       register_date: {
         type: Date,
-        required: true,
+      
       },
       fit_upto: {
         type: Date,
@@ -229,7 +229,8 @@ const vehicleSchema = new mongoose.Schema(
       },
       expiry_date: {
         type: Date,
-        required: true,
+        default:new Date(),
+        // required: true,
         index: true,
       },
       verified: {

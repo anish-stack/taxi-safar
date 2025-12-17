@@ -27,6 +27,7 @@ import { getData } from "../../../utils/storage";
 import { UniversalAlert } from "../../common/UniversalAlert";
 import useSettings from "../../../hooks/Settings";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 
 export default function AddVehicle({ navigation }) {
   const route = useRoute();
@@ -44,10 +45,10 @@ export default function AddVehicle({ navigation }) {
   // Aadhaar States
   const [ownerAadhaar, setOwnerAadhaar] = useState("");
   const [showAadhaarModal, setShowAadhaarModal] = useState(false);
-  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(true);
   const [showNameMismatchAlert, setShowNameMismatchAlert] = useState(false);
   const [isOwnerAadhaarFlow, setIsOwnerAadhaarFlow] = useState(false);
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState("");
   const [aadhaarRequestId, setAadhaarRequestId] = useState(null);
   const [timer, setTimer] = useState(0);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -61,6 +62,8 @@ export default function AddVehicle({ navigation }) {
     insuranceExpiry: null,
     permitExpiry: null,
   });
+
+  console.log("vehicleNumber", vehicleNumber);
 
   const [docs, setDocs] = useState({
     rcFront: null,
@@ -84,9 +87,9 @@ export default function AddVehicle({ navigation }) {
     vehicleInterior: require("../../../assets/demo/interior.jpg"),
   };
 
-  // const isByPass =
-  //   data?.data?.ByPassApi === true || data?.ByPassApi === true ? true : false;
-    const isByPass =true
+  const isByPass =
+    data?.data?.ByPassApi === true || data?.ByPassApi === true ? true : false;
+  // const isByPass =true
 
   const [showDatePicker, setShowDatePicker] = useState({
     key: null,
@@ -105,15 +108,23 @@ export default function AddVehicle({ navigation }) {
     onPrimaryPress: () => setAlertVisible(false),
   });
 
-  const showAlert = (type, title, message, onClose = null) => {
+  const showAlert = (type, title, message, onPrimaryPress = null) => {
     setAlertConfig({
       type,
       title,
       message,
       primaryButton: "OK",
-      onPrimaryPress: onClose || (() => setAlertVisible(false)),
+      // अगर onPrimaryPress दिया है, तो पहले वो चलाओ, फिर alert बंद करो
+      onPrimaryPress: () => {
+        if (onPrimaryPress) {
+          onPrimaryPress(); // जैसे Aadhaar modal खोलना
+        }
+        setAlertVisible(false); // हमेशा alert बंद करो OK press पर
+      },
+      // optional: cancel button अगर चाहो तो
+      // showCancel: false,
     });
-    setAlertVisible(true);
+    setAlertVisible(true); // alert दिखाओ
   };
 
   useEffect(() => {
@@ -132,9 +143,7 @@ export default function AddVehicle({ navigation }) {
 
   useEffect(() => {
     if (rcData && !isRcVerified) {
-      setTimeout(() => {
-        checkDriverAadhaarMatch();
-      }, 1000);
+      checkDriverAadhaarMatch();
     }
   }, [rcData]);
 
@@ -143,6 +152,7 @@ export default function AddVehicle({ navigation }) {
       const stored = await getData("aadhaar_verified_data");
       if (!stored) {
         setIsOwnerAadhaarFlow(true);
+        console.log("Yaha se open hu");
         setShowAadhaarModal(true);
         return;
       }
@@ -163,7 +173,9 @@ export default function AddVehicle({ navigation }) {
       setShowNameMismatchAlert(true);
     } catch {
       setIsOwnerAadhaarFlow(true);
-      setShowAadhaarModal(true);
+      console.log("Yaha se open hu catch se");
+
+      // setShowAadhaarModal(true);
     }
   };
 
@@ -232,7 +244,7 @@ export default function AddVehicle({ navigation }) {
         console.log("❌ RC verification failed:", res.data.message);
 
         showAlert("error", "Failed", res.data.message || "Invalid RC", () => {
-          console.log("🔐 Opening Aadhaar modal (API failure)");
+          console.log("Opening Aadhaar modal (API failure)");
           checkDriverAadhaarMatch();
           setShowAadhaarModal(true);
         });
@@ -255,11 +267,11 @@ export default function AddVehicle({ navigation }) {
         errorData?.message || "RC verification failed",
         shouldOpenAadhaarModal
           ? () => {
-              console.log("🔐 Opening Aadhaar modal (aadharModel = true)");
+              console.log("Opening Aadhaar modal after user taps OK");
               checkDriverAadhaarMatch();
               setShowAadhaarModal(true);
             }
-          : undefined
+          : null // अगर कोई callback नहीं तो सिर्फ alert बंद होगा OK पर
       );
     } finally {
       setIsVerifyingRc(false);
@@ -267,6 +279,16 @@ export default function AddVehicle({ navigation }) {
     }
   };
 
+  console.log("🎉 RC verified successfully", rcData?.rc_number);
+
+  useEffect(() => {
+    if (rcData?.rc_number) {
+      setVehicleNumber(rcData.rc_number || "");
+    } else {
+      console.log(rcData);
+      console.log("Bhai error hu");
+    }
+  }, [rcData]);
   const fillFormFromRC = async (rcInfo) => {
     setVehicleNumber(rcInfo.rc_number || "");
 
@@ -322,7 +344,7 @@ export default function AddVehicle({ navigation }) {
   };
 
   const handleVerifyAadhaarOtp = async () => {
-    const otpValue = otp.join("");
+    const otpValue = otp;
     if (otpValue.length !== 6)
       return showAlert("error", "Invalid OTP", "Enter 6 digits");
 
@@ -458,7 +480,7 @@ export default function AddVehicle({ navigation }) {
       rcFront: "RC Front",
       rcBack: "RC Back",
       insurance: "Insurance Certificate",
-      permit: "Permit Document",
+      permit: "Authorization 1Year Permit",
       vehicleFront: "Vehicle Front Photo",
       vehicleBack: "Vehicle Back Photo",
       vehicleInterior: "Interior (Seat Covers)",
@@ -566,7 +588,7 @@ export default function AddVehicle({ navigation }) {
           <Text style={styles.docLabel}>{getDocLabel(field)}</Text>
           {docs[field] && (
             <View style={styles.uploadedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+              <Ionicons name="checkmark-circle" size={10} color="#10b981" />
               <Text style={styles.uploadedText}>Uploaded</Text>
             </View>
           )}
@@ -658,7 +680,7 @@ export default function AddVehicle({ navigation }) {
             <View style={styles.formSection}>
               <Text style={styles.sectionTitle}>Vehicle Information</Text>
 
-              <Text style={styles.inputLabel}>Vehicle Type *</Text>
+              <Text style={styles.inputLabel}>Vehicle Type</Text>
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={vehicleType}
@@ -680,7 +702,9 @@ export default function AddVehicle({ navigation }) {
                 editable={false}
               />
 
-              <Text style={styles.inputLabel}>Permit Expiry Date *</Text>
+              <Text style={styles.inputLabel}>
+                Authorization 1Year Permit Expiry Date{" "}
+              </Text>
               <TouchableOpacity
                 style={styles.datePickerButton}
                 onPress={() =>
@@ -729,7 +753,7 @@ export default function AddVehicle({ navigation }) {
 
             {/* Vehicle Photos with Demo */}
             <View style={styles.formSection}>
-              <Text style={styles.sectionTitle}>Vehicle Photos *</Text>
+              <Text style={styles.sectionTitle}>Vehicle Photos</Text>
               <Text style={styles.sectionSubtitle}>
                 Clear photos help us verify your vehicle faster
               </Text>
@@ -878,7 +902,9 @@ export default function AddVehicle({ navigation }) {
                     </Text>
                   </View>
                 )}
-                <Text style={styles.aadhaarInputLabel}>Aadhaar Number</Text>
+                <Text style={styles.aadhaarInputLabel}>
+                  Enter Rc Owner Aadhaar Number
+                </Text>
                 <TextInput
                   placeholder="1234 5678 9012"
                   placeholderTextColor="#9ca3af"
@@ -942,7 +968,9 @@ export default function AddVehicle({ navigation }) {
               contentContainerStyle={styles.scrollModalContent}
               keyboardShouldPersistTaps="handled"
             >
+              
               <View style={styles.otpModalContainer}>
+                
                 <View style={styles.otpIconContainer}>
                   <Ionicons
                     name="mail-outline"
@@ -954,36 +982,21 @@ export default function AddVehicle({ navigation }) {
                 <Text style={styles.otpSubtitle}>
                   We've sent a 6-digit code to your Aadhaar-linked mobile
                 </Text>
+                 {timer > 0 ? (
+                              <View style={[styles.successBox,{flex:1,alignItems:"center",justifyContent:"center",alignSelf:"center"}]}>
+                                <Text style={styles.successMessage}>
+                                  OTP sent successfully
+                                </Text>
+                              </View>
+                            ) : null}
                 <View style={styles.otpInputRow}>
-                  {otp.map((digit, index) => (
-                    <TextInput
-                      key={index}
-                      ref={(ref) => (otpRefs.current[index] = ref)}
-                      value={digit}
-                      onChangeText={(value) => {
-                        if (/^\d?$/.test(value)) {
-                          const newOtp = [...otp];
-                          newOtp[index] = value;
-                          setOtp(newOtp);
-                          if (value && index < 5) {
-                            otpRefs.current[index + 1]?.focus();
-                          }
-                        }
-                      }}
-                      onKeyPress={({ nativeEvent }) => {
-                        if (
-                          nativeEvent.key === "Backspace" &&
-                          !otp[index] &&
-                          index > 0
-                        ) {
-                          otpRefs.current[index - 1]?.focus();
-                        }
-                      }}
-                      keyboardType="numeric"
-                      maxLength={1}
-                      style={styles.otpInputBox}
-                    />
-                  ))}
+                  <TextInput
+                    value={otp}
+                    onChangeText={setOtp}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    style={styles.otpInputBox}
+                  />
                 </View>
                 <View style={styles.otpTimerContainer}>
                   {timer > 0 ? (
@@ -1206,7 +1219,7 @@ const styles = {
     overflow: "hidden",
   },
   picker: {
-    height: 50,
+    height: verticalScale(40),
   },
   textInput: {
     borderWidth: 2,
@@ -1272,12 +1285,12 @@ const styles = {
     alignItems: "center",
     gap: 6,
     backgroundColor: "#d1fae5",
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 20,
   },
   uploadedText: {
-    fontSize: 12,
+    fontSize: 8,
     color: "#065f46",
     fontWeight: "600",
   },
@@ -1358,7 +1371,7 @@ const styles = {
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     padding: 6,
-    marginBottom:22,
+    marginBottom: 22,
   },
 
   // Demo Modal
@@ -1523,6 +1536,23 @@ const styles = {
     fontWeight: "700",
     color: "#14532d",
   },
+   successBox: {
+    width: "60%",
+    backgroundColor: "#28a745", // success green
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginTop: 4,
+    marginBottom:10,
+    marginLeft: 0,
+    // alignSelf: "stretch",
+  },
+  successMessage: {
+    color: "#ffffff", // white text
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   aadhaarInputLabel: {
     fontSize: 13,
     fontWeight: "600",
@@ -1611,18 +1641,18 @@ const styles = {
     fontSize: 14,
     color: "#6b7280",
     textAlign: "center",
-    marginBottom: 24,
+    // marginBottom: 24,
     lineHeight: 20,
   },
   otpInputRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    // flexDirection: "row",
+    // justifyContent: "space-between",
     marginBottom: 20,
     gap: 8,
   },
   otpInputBox: {
     flex: 1,
-    aspectRatio: 1,
+    
     borderWidth: 2,
     borderColor: "#e5e7eb",
     borderRadius: 14,

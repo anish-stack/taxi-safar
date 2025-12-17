@@ -36,7 +36,6 @@ import useDriverStore from "../../store/driver.store";
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
-
 const formatTime12Hour = (time) => {
   if (!time) return "07:00 PM";
 
@@ -49,8 +48,6 @@ const formatTime12Hour = (time) => {
 
   return `${hour12}:${minute} ${period}`;
 };
-
-
 
 const ReserveRideDetailsRedesigned = () => {
   const route = useRoute();
@@ -210,7 +207,7 @@ const ReserveRideDetailsRedesigned = () => {
           <Text style={styles.headerTitle}>Trip Details</Text>
           <Text style={styles.headerSubtitle}>
             {formatDate(rideData.pickupDate)} •{" "}
-            {formatTime(rideData.pickupTime)}
+            {formatTime12Hour(rideData.pickupTime)}
           </Text>
         </View>
         <View style={{ width: 24 }} />
@@ -351,7 +348,6 @@ const ReserveRideDetailsRedesigned = () => {
               </Text>
               <Text style={styles.timeValue}>
                 {formatTime12Hour(rideData.pickupTime)}
-                
               </Text>
             </View>
 
@@ -378,7 +374,7 @@ const ReserveRideDetailsRedesigned = () => {
                   {formatDate(rideData.pickupDate)}
                 </Text>
                 <Text style={styles.timeValue}>
-                                 {formatTime12Hour(rideData.pickupTime)}
+                  {formatTime12Hour(rideData.pickupTime)}
                 </Text>
               </View>
             )}
@@ -422,7 +418,7 @@ const ReserveRideDetailsRedesigned = () => {
               </View>
             </>
           )}
- <View style={styles.tripTypeBadge}>
+          <View style={styles.tripTypeBadge}>
             <Text style={styles.tripTypeText}>
               {isRoundTrip ? "Round Trip" : "One way Trip"} - {distance} km
             </Text>
@@ -444,16 +440,24 @@ const ReserveRideDetailsRedesigned = () => {
             <Text style={styles.infoLabel}>Trip Duration</Text>
             <Text style={styles.infoValue}>{duration} hours</Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Extra km Charges</Text>
-            <Text style={styles.infoValue}>₹{rideData.extraKmCharge} / km</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Extra Time Charges</Text>
-            <Text style={styles.infoValue}>
-              ₹{rideData.extraMinCharge} / minutes
-            </Text>
-          </View>
+          {rideData.extraKmCharge === 0 ? null : (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Extra km Charges</Text>
+              <Text style={styles.infoValue}>
+                ₹{rideData.extraKmCharge} / km
+              </Text>
+            </View>
+          )}
+
+          {rideData.extraMinCharge === 0 ? null : (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Extra Time Charges</Text>
+              <Text style={styles.infoValue}>
+                ₹{rideData.extraMinCharge} / Hours
+              </Text>
+            </View>
+          )}
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Tolls & Inter State Charges</Text>
             <Text style={styles.infoValue}>Included</Text>
@@ -485,7 +489,11 @@ const ReserveRideDetailsRedesigned = () => {
 
       {/* Bottom Button */}
       <View style={styles.bottomButton}>
-        <TouchableOpacity style={styles.acceptButton} activeOpacity={0.8} onPress={()=> initChat()} >
+        <TouchableOpacity
+          style={styles.acceptButton}
+          activeOpacity={0.8}
+          onPress={() => initChat()}
+        >
           <Text style={styles.acceptButtonText}>Accept Post Trip</Text>
         </TouchableOpacity>
       </View>
@@ -668,14 +676,14 @@ const styles = StyleSheet.create({
   priceAmountGreen: {
     fontSize: 16,
     fontFamily: "SFProDisplay-Bold",
-    color: "#FF3B30",
+    color: "#388E3C",
   },
   priceLabel: {
     fontSize: 11,
     fontFamily: "SFProDisplay-Regular",
     color: "#000",
     marginTop: 4,
-    fontWeight:"900",
+    fontWeight: "900",
   },
 
   // Dates
@@ -701,7 +709,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   dateDivider: {
-    flexDirection:"row",
+    flexDirection: "row",
     alignItems: "center",
     marginHorizontal: 16,
   },
@@ -712,7 +720,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#C7C7CC",
   },
   dividerLine: {
-
     width: 74,
     height: 1,
     backgroundColor: "#C7C7CC",

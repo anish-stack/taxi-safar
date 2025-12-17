@@ -417,7 +417,7 @@ export default function Profile() {
             label="My Wallet"
             onPress={() => navigation.navigate("wallet")}
           />
-          <MenuItem
+          {/* <MenuItem
             icon={
               <MaterialCommunityIcons
                 name="tune-variant"
@@ -427,7 +427,7 @@ export default function Profile() {
             }
             label="Preferences"
             onPress={() => navigation.navigate("preferences")}
-          />
+          /> */}
 
           <MenuItem
             icon={<Ionicons name="car-outline" size={22} color="black" />}

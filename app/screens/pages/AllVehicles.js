@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Image,
   Alert,
 } from "react-native";
@@ -61,7 +62,7 @@ export default function AllVehicles({ navigation }) {
 
   useEffect(() => {
     handleFetchVehicle();
-  }, []);
+  }, [navigation]);
 
   // 🔁 Open modal
   const openVehicleModal = (vehicle) => {
@@ -73,8 +74,6 @@ export default function AllVehicles({ navigation }) {
     }, 300);
   };
 
-
-
   // 🔄 Toggle active / inactive from modal
   const toggleActiveVehicle = async (vehicle) => {
     try {
@@ -85,11 +84,10 @@ export default function AllVehicles({ navigation }) {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-        handleFetchVehicle();
-
+      handleFetchVehicle();
     } catch (err) {
-        const msg = err.response.data.message 
-        Alert.alert(msg)
+      const msg = err.response.data.message;
+      Alert.alert(msg);
       console.error("Toggle Active Error:", err.response.data);
     } finally {
       setModalLoading(false);
@@ -106,11 +104,11 @@ export default function AllVehicles({ navigation }) {
 
     return (
       <TouchableOpacity
-        onPress={() => openVehicleModal(item)}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
+       
         style={[styles.card, item.is_active && styles.activeCard]}
       >
-        {/* Status Badge */}
+        {/* ---------------- Header (Status + Switch) ---------------- */}
         <View style={styles.cardHeader}>
           <View
             style={[
@@ -133,9 +131,17 @@ export default function AllVehicles({ navigation }) {
               {item.is_active ? "Active" : "Inactive"}
             </Text>
           </View>
+
+          {/* Active / Inactive Switch */}
+          <Switch
+            value={item.is_active}
+            onValueChange={() => toggleActiveVehicle(item)}
+            trackColor={{ false: "#E5E7EB", true: "#A7F3D0" }}
+            thumbColor={item.is_active ? "#10B981" : "#9CA3AF"}
+          />
         </View>
 
-        {/* Vehicle Image and Info */}
+        {/* ---------------- Vehicle Info ---------------- */}
         <View style={styles.cardContent}>
           <View style={styles.vehicleImageContainer}>
             <Image
@@ -158,6 +164,7 @@ export default function AllVehicles({ navigation }) {
                 />
                 <Text style={styles.detailText}>{item.fuel_type}</Text>
               </View>
+
               <View style={styles.detailItem}>
                 <Ionicons name="people-outline" size={14} color="#6B7280" />
                 <Text style={styles.detailText}>
@@ -168,10 +175,31 @@ export default function AllVehicles({ navigation }) {
           </View>
         </View>
 
-        {/* View Details Arrow */}
-        <View style={styles.viewDetailsContainer}>
-          <Text style={styles.viewDetailsText}>View Details</Text>
-          <Ionicons name="chevron-forward" size={18} color="#6B7280" />
+        {/* ---------------- Footer (Preferences + View Details) ---------------- */}
+        <View style={styles.footerRow}>
+          {/* Preferences Button */}
+          <TouchableOpacity
+            style={styles.preferencesBtn}
+            onPress={() => navigation.navigate("preferences")}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="tune-variant"
+              size={22}
+              color="#111"
+            />
+            <Text style={styles.preferencesText}>Preferences</Text>
+          </TouchableOpacity>
+
+          {/* View Details */}
+          <TouchableOpacity
+            style={styles.viewDetailsContainer}
+            onPress={() => openVehicleModal(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.viewDetailsText}>View Details</Text>
+            <Ionicons name="chevron-forward" size={18} color="#6B7280" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -183,21 +211,15 @@ export default function AllVehicles({ navigation }) {
         title="My Vehicles"
         navigation={navigation}
         isLogo={false}
-      />
-
-      {/* ➕ Add Vehicle */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() =>
+        isPlusHow={true}
+        plusOnPress={() =>
           navigation.navigate("addVehcile", {
             driverId: driver?._id,
-            mobile:driver.driver_contact_number,
+            mobile: driver.driver_contact_number,
             fromAll: true,
           })
         }
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
+      />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -318,38 +340,6 @@ export default function AllVehicles({ navigation }) {
                     value={selectedVehicle.insurance?.verified ? "Yes" : "No"}
                   />
                 </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    selectedVehicle.is_active
-                      ? styles.deactivateBtn
-                      : styles.activateBtn,
-                  ]}
-                  onPress={() => toggleActiveVehicle(selectedVehicle)}
-                  disabled={modalLoading}
-                >
-                  {modalLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name={
-                          selectedVehicle.is_active
-                            ? "close-circle-outline"
-                            : "checkmark-circle-outline"
-                        }
-                        size={20}
-                        color="#fff"
-                      />
-                      <Text style={styles.actionText}>
-                        {selectedVehicle.is_active
-                          ? "Deactivate Vehicle"
-                          : "Make Active"}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
               </ScrollView>
             )}
           </View>
@@ -528,6 +518,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
+    paddingBottom: 40,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
@@ -629,5 +620,38 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 16,
+  },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+
+  preferencesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#F9FAFB",
+  },
+
+  preferencesText: {
+    fontSize: 13,
+    color: "#111",
+    fontWeight: "500",
+  },
+
+  viewDetailsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+
+  viewDetailsText: {
+    fontSize: 13,
+    color: "#6B7280",
   },
 });

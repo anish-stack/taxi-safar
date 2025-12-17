@@ -1,5 +1,5 @@
 // screens/HomeScreen.js
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -32,6 +32,15 @@ const FILTER_OPTIONS = [
   "Taxi Safar Rides"
 ];
 
+// Memoized Card Components
+const MemoizedDriverPostCard = React.memo(DriverPostCard, (prev, next) => {
+  return prev.trip._id === next.trip._id && prev.trip._uniqueId === next.trip._uniqueId;
+});
+
+const MemoizedTaxiSafarTripCard = React.memo(TaxiSafarTripCard, (prev, next) => {
+  return prev.trip._id === next.trip._id && prev.trip._uniqueId === next.trip._uniqueId;
+});
+
 export default function HomeScreen({ route }) {
   const { driver, fetchDriverDetails } = useDriverStore();
   const { token } = loginStore();
@@ -59,6 +68,11 @@ export default function HomeScreen({ route }) {
 
   const intervalRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
+  const fetchTimeoutRef = useRef(null);
+  const lastFetchTimeRef = useRef(0);
+
+  // Debounce delay in milliseconds
+  const DEBOUNCE_DELAY = 300;
 
   // Initialize services when driver goes online
   useEffect(() => {
@@ -77,7 +91,7 @@ export default function HomeScreen({ route }) {
         init();
       }
     }
-  }, [driver?.is_online]);
+  }, [driver?.is_online, setIsDriverOnline, startFloatingWidget, startPoolingService]);
 
   // Request overlay permission on mount
   useEffect(() => {
@@ -85,11 +99,41 @@ export default function HomeScreen({ route }) {
   }, [requestOverlayPermission]);
 
   /**
+   * Debounced fetch function
+   */
+  const debouncedFetchRides = useCallback(
+    (taxiPageNum = 1, driverPageNum = 1, isRefresh = false) => {
+      // Clear existing timeout
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+
+      // Check if we're fetching too frequently
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTimeRef.current;
+      
+      // If it's been less than debounce delay and not a refresh, debounce it
+      if (timeSinceLastFetch < DEBOUNCE_DELAY && !isRefresh) {
+        fetchTimeoutRef.current = setTimeout(() => {
+          fetchRides(taxiPageNum, driverPageNum, isRefresh);
+        }, DEBOUNCE_DELAY);
+      } else {
+        // Execute immediately
+        fetchRides(taxiPageNum, driverPageNum, isRefresh);
+      }
+    },
+    []
+  );
+
+  /**
    * Fetch rides from both APIs
    */
   const fetchRides = useCallback(
     async (taxiPageNum = 1, driverPageNum = 1, isRefresh = false) => {
       if (!token) return;
+
+      // Update last fetch time
+      lastFetchTimeRef.current = Date.now();
 
       try {
         if (!isRefresh && !loading) setLoading(true);
@@ -111,18 +155,6 @@ export default function HomeScreen({ route }) {
             ).then((res) => res.json())
           ),
         ]);
-
-        console.log("📊 Taxi Safar Response:", {
-          success: taxiRes?.success,
-          count: taxiRes?.data?.length || 0,
-          sample: taxiRes?.data?.[0]?._id,
-        });
-
-        console.log("📊 Driver Post Response:", {
-          success: driverRes?.success,
-          count: driverRes?.data?.length || 0,
-          sample: driverRes?.data?.[0]?._id,
-        });
 
         // ✅ Process Taxi Safar rides - add UNIQUE identifier
         const newTaxiTrips = (taxiRes?.success && Array.isArray(taxiRes.data) 
@@ -147,9 +179,6 @@ export default function HomeScreen({ route }) {
             _rideType: "driver", // ← Driver Post identifier
             _uniqueId: `driver-${item._id}`, // ← Extra unique ID for safety
           }));
-
-        console.log("✅ Processed Taxi Trips:", newTaxiTrips.length);
-        console.log("✅ Processed Driver Posts:", newDriverPosts.length);
 
         // Deduplicate function
         const deduplicate = (existing, incoming) =>
@@ -197,7 +226,7 @@ export default function HomeScreen({ route }) {
         setRefreshing(false);
       }
     },
-    [token, loading]
+    [token, loading,selectedFilter]
   );
 
   /**
@@ -211,7 +240,7 @@ export default function HomeScreen({ route }) {
     setHasMoreDriver(true);
     requestOverlayPermission?.();
     fetchRides(1, 1, true);
-  }, [fetchRides, requestOverlayPermission]);
+  }, []);
 
   /**
    * Load more Taxi Safar rides
@@ -219,9 +248,9 @@ export default function HomeScreen({ route }) {
   const loadMoreTaxi = useCallback(() => {
     if (hasMoreTaxi && !loading && !refreshing && taxiSafarTrips.length > 0) {
       console.log(`📄 Loading more Taxi rides - Page ${taxiPage}`);
-      fetchRides(taxiPage, driverPage);
+      debouncedFetchRides(taxiPage, driverPage);
     }
-  }, [hasMoreTaxi, loading, refreshing, taxiSafarTrips.length, taxiPage, driverPage]);
+  }, [hasMoreTaxi, loading, refreshing, taxiSafarTrips.length, taxiPage, driverPage, debouncedFetchRides]);
 
   /**
    * Load more Driver Post rides
@@ -229,9 +258,9 @@ export default function HomeScreen({ route }) {
   const loadMoreDriver = useCallback(() => {
     if (hasMoreDriver && !loading && !refreshing && driverPosts.length > 0) {
       console.log(`📄 Loading more Driver posts - Page ${driverPage}`);
-      fetchRides(taxiPage, driverPage);
+      debouncedFetchRides(taxiPage, driverPage);
     }
-  }, [hasMoreDriver, loading, refreshing, driverPosts.length, taxiPage, driverPage]);
+  }, [hasMoreDriver, loading, refreshing, driverPosts.length, taxiPage, driverPage, debouncedFetchRides]);
 
   /**
    * Initial fetch and app state handling
@@ -257,13 +286,17 @@ export default function HomeScreen({ route }) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
+        if (fetchTimeoutRef.current) {
+          clearTimeout(fetchTimeoutRef.current);
+          fetchTimeoutRef.current = null;
+        }
         subscription?.remove();
       };
-    }, [token, fetchDriverDetails])
+    }, [fetchDriverDetails])
   );
 
   /**
-   * Cleanup interval on unmount
+   * Cleanup interval and timeout on unmount
    */
   useEffect(() => {
     return () => {
@@ -271,53 +304,51 @@ export default function HomeScreen({ route }) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
+      }
     };
   }, []);
 
   /**
-   * ✅ FIXED: Get filtered rides based on selected filter
+   * ✅ OPTIMIZED: Get filtered rides using useMemo
    */
-  const getFilteredRides = useCallback(() => {
-    console.log(`🔍 Filtering rides - Selected: "${selectedFilter}"`);
-    console.log(`📊 Available: ${taxiSafarTrips.length} taxi, ${driverPosts.length} driver`);
+const filteredRides = useMemo(() => {
+  console.log(`🔍 Filtering rides - Selected: "${selectedFilter}"`);
+  console.log(`📊 Available: ${taxiSafarTrips.length} taxi, ${driverPosts.length} driver`);
 
-    // Filter: Only Driver Post rides
-    if (selectedFilter === "Driver Post Rides") {
-      const filtered = driverPosts.filter(item => 
-        item && item._rideType === "driver"
-      );
-      console.log(`✅ Driver Post Filter: ${filtered.length} rides`);
-      return filtered;
-    }
+  let ridesToShow = [];
 
-    // Filter: Only Taxi Safar rides
-    if (selectedFilter === "Taxi Safar Rides") {
-      const filtered = taxiSafarTrips.filter(item => 
-        item && item._rideType === "taxi"
-      );
-      console.log(`✅ Taxi Safar Filter: ${filtered.length} rides`);
-      return filtered;
-    }
+  if (selectedFilter === "B2B Bookings") {
+    ridesToShow = driverPosts.filter(item => item?._rideType === "driver");
+    console.log(`✅ B2B Filter: ${ridesToShow.length} driver post rides`);
+  } 
+  else if (selectedFilter === "B2C Bookings") {
+    ridesToShow = taxiSafarTrips.filter(item => item?._rideType === "taxi");
+    console.log(`✅ B2C Filter: ${ridesToShow.length} taxi safar rides`);
+  } 
+  else {
+    // Default case: "All Rides" or any unknown filter → show everything
+    const taxiRides = taxiSafarTrips.filter(item => item?._rideType === "taxi");
+    const driverRides = driverPosts.filter(item => item?._rideType === "driver");
+    
+    ridesToShow = [...taxiRides, ...driverRides];
+    
+    console.log(`✅ All Rides: ${ridesToShow.length} total (${taxiRides.length} taxi + ${driverRides.length} driver)`);
+  }
 
-    // Filter: All rides (merged and sorted)
-    const allRides = [
-      ...taxiSafarTrips.filter(item => item && item._rideType === "taxi"),
-      ...driverPosts.filter(item => item && item._rideType === "driver"),
-    ];
+  // Sort all results by newest first
+  const sorted = ridesToShow.sort((a, b) => {
+    const dateA = a.createdAt || a.date || 0;
+    const dateB = b.createdAt || b.date || 0;
+    return new Date(dateB) - new Date(dateA);
+  });
 
-    // Sort by date (newest first)
-    const sorted = allRides.sort((a, b) => {
-      const dateA = a.createdAt || a.date || 0;
-      const dateB = b.createdAt || b.date || 0;
-      return new Date(dateB) - new Date(dateA);
-    });
-
-    console.log(`✅ All Rides Filter: ${sorted.length} rides (${taxiSafarTrips.length} taxi + ${driverPosts.length} driver)`);
-    return sorted;
-  }, [selectedFilter, taxiSafarTrips, driverPosts]);
-
+  return sorted;
+}, [selectedFilter, taxiSafarTrips, driverPosts]);
   /**
-   * ✅ FIXED: Render appropriate card based on _rideType
+   * ✅ OPTIMIZED: Render appropriate card based on _rideType
    */
   const renderRideCard = useCallback(({ item, index }) => {
     // Safety check
@@ -328,18 +359,69 @@ export default function HomeScreen({ route }) {
 
     // Check ride type and render appropriate card
     if (item._rideType === "taxi") {
-      return <TaxiSafarTripCard trip={item} />;
+      return <MemoizedTaxiSafarTripCard trip={item} />;
     } else if (item._rideType === "driver") {
-      return <DriverPostCard trip={item} />;
+      return <MemoizedDriverPostCard trip={item} />;
     } else {
-      // Fallback: if _rideType is missing, try to determine from data structure
+      // Fallback: if _rideType is missing
       console.warn(`⚠️ Missing _rideType for item ${item._id}`);
-      // You can add additional checks here based on your data structure
-      return <DriverPostCard trip={item} />;
+      return <MemoizedDriverPostCard trip={item} />;
     }
   }, []);
 
-  const filteredRides = getFilteredRides();
+  /**
+   * ✅ OPTIMIZED: Memoized key extractor
+   */
+  const keyExtractor = useCallback(
+    (item, index) => item?._uniqueId || item?._id || `fallback-${index}`,
+    []
+  );
+
+  /**
+   * ✅ OPTIMIZED: Memoized empty component
+   */
+  const ListEmptyComponent = useMemo(() => (
+    <View style={styles.emptySection}>
+      <Text style={styles.emptyText}>
+        {selectedFilter === "All Rides" 
+          ? "No rides available"
+          : selectedFilter === "Driver Post Rides"
+          ? "No driver posts available"
+          : "No Taxi Safar rides available"}
+      </Text>
+      <Text style={styles.emptySubtext}>
+        New rides appear in real-time
+      </Text>
+    </View>
+  ), [selectedFilter]);
+
+  /**
+   * ✅ OPTIMIZED: Memoized footer component
+   */
+  const ListFooterComponent = useMemo(() => {
+    if (loading && filteredRides.length > 0) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color="#DC2626" />
+        </View>
+      );
+    }
+    return null;
+  }, [loading, filteredRides.length]);
+
+  /**
+   * ✅ OPTIMIZED: Debounced onEndReached handler
+   */
+  const handleEndReached = useCallback(() => {
+    if (selectedFilter === "All Rides") {
+      if (hasMoreTaxi) loadMoreTaxi();
+      if (hasMoreDriver) loadMoreDriver();
+    } else if (selectedFilter === "Driver Post Rides" && hasMoreDriver) {
+      loadMoreDriver();
+    } else if (selectedFilter === "Taxi Safar Rides" && hasMoreTaxi) {
+      loadMoreTaxi();
+    }
+  }, [selectedFilter, hasMoreTaxi, hasMoreDriver, loadMoreTaxi, loadMoreDriver]);
 
   // Loading state
   if (loading && taxiSafarTrips.length === 0 && driverPosts.length === 0) {
@@ -377,31 +459,9 @@ export default function HomeScreen({ route }) {
         <FlatList
           data={filteredRides}
           renderItem={renderRideCard}
-          keyExtractor={(item, index) => item?._uniqueId || item?._id || `fallback-${index}`}
-          ListEmptyComponent={() => (
-            <View style={styles.emptySection}>
-              <Text style={styles.emptyText}>
-                {selectedFilter === "All Rides" 
-                  ? "No rides available"
-                  : selectedFilter === "Driver Post Rides"
-                  ? "No driver posts available"
-                  : "No Taxi Safar rides available"}
-              </Text>
-              <Text style={styles.emptySubtext}>
-                New rides appear in real-time
-              </Text>
-            </View>
-          )}
-          onEndReached={() => {
-            if (selectedFilter === "All Rides") {
-              if (hasMoreTaxi) loadMoreTaxi();
-              if (hasMoreDriver) loadMoreDriver();
-            } else if (selectedFilter === "Driver Post Rides" && hasMoreDriver) {
-              loadMoreDriver();
-            } else if (selectedFilter === "Taxi Safar Rides" && hasMoreTaxi) {
-              loadMoreTaxi();
-            }
-          }}
+          keyExtractor={keyExtractor}
+          ListEmptyComponent={ListEmptyComponent}
+          onEndReached={handleEndReached}
           onEndReachedThreshold={SCROLL_THRESHOLD}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
@@ -413,13 +473,17 @@ export default function HomeScreen({ route }) {
               tintColor="#DC2626"
             />
           }
-          ListFooterComponent={
-            loading && filteredRides.length > 0 ? (
-              <View style={styles.footerLoader}>
-                <ActivityIndicator size="small" color="#DC2626" />
-              </View>
-            ) : null
-          }
+          ListFooterComponent={ListFooterComponent}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          initialNumToRender={10}
+          updateCellsBatchingPeriod={50}
+          getItemLayout={(data, index) => ({
+            length: 200, // Approximate height of each item
+            offset: 200 * index,
+            index,
+          })}
         />
       </View>
     </Layout>
@@ -429,8 +493,6 @@ export default function HomeScreen({ route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-
-
   },
   centerContainer: {
     flex: 1,

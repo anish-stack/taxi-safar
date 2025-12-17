@@ -138,7 +138,7 @@ const Preferences = () => {
             <MaterialCommunityIcons
               name={vehicle.icon}
               size={28}
-              color={value ? "#DC2626" : "#9CA3AF"}
+              color={value ? "green" : "#9CA3AF"}
             />
           </View>
 
@@ -152,14 +152,14 @@ const Preferences = () => {
 
           <View style={styles.toggleControl}>
             {isUpdating ? (
-              <ActivityIndicator size="small" color="#DC2626" />
+              <ActivityIndicator size="small" color="green" />
             ) : (
               <Switch
                 value={value}
                 onValueChange={(v) => updatePreference(vehicle.key, v)}
                 disabled={isUpdating}
-                trackColor={{ false: "#E5E7EB", true: "#FCA5A5" }}
-                thumbColor={value ? "#DC2626" : "#9CA3AF"}
+                trackColor={{ false: "#E5E7EB", true: "green" }}
+                thumbColor={value ? "green" : "#9CA3AF"}
               />
             )}
           </View>
@@ -189,24 +189,7 @@ const Preferences = () => {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Vehicle Category Info */}
-        <View style={styles.categoryCard}>
-          <View style={styles.categoryHeader}>
-            <MaterialCommunityIcons
-              name="car-info"
-              size={24}
-              color="#DC2626"
-            />
-            <Text style={styles.categoryTitle}>Your Vehicle</Text>
-          </View>
-          <Text style={styles.categoryValue}>
-            {vehicleCategory.toUpperCase() || "Not Set"}
-          </Text>
-          <Text style={styles.categoryDescription}>
-            You can accept rides for your vehicle category and smaller
-          </Text>
-        </View>
-
+    
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <MaterialCommunityIcons
@@ -225,18 +208,7 @@ const Preferences = () => {
         {/* Vehicle Toggles */}
         <View style={styles.vehicleList}>{vehicleTypes.map(renderToggle)}</View>
 
-        {/* Info Card */}
-        <View style={styles.infoCard}>
-          <MaterialCommunityIcons
-            name="information-outline"
-            size={20}
-            color="#DC2626"
-          />
-          <Text style={styles.infoText}>
-            Changes take effect immediately. You'll only receive ride requests
-            for enabled categories.
-          </Text>
-        </View>
+
       </ScrollView>
 
       {/* Toast Message */}
@@ -401,8 +373,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   iconCircleActive: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#DC2626",
+    backgroundColor: "#D3EBDC",
+    borderColor: "green",
   },
   iconCircleInactive: {
     backgroundColor: "#F9FAFB",

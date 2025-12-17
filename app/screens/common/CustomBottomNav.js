@@ -10,6 +10,8 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+
 const TABS = [
   {
     name: "Home",
@@ -61,7 +63,7 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {
       <View
         style={[
           styles.centerButtonWrapper,
-          { bottom: bottomInset + (Platform.OS === "ios" ? 25 : 10) },
+          { bottom: bottomInset + (Platform.OS === "ios" ? verticalScale(25) : verticalScale(10)) },
         ]}
       >
         <TouchableOpacity
@@ -76,7 +78,7 @@ const CustomBottomTabs = ({ state, bottomInset = 0 }) => {
       </View>
 
       {/* Bottom Tab Bar */}
-      <View style={[styles.tabBar, { paddingBottom: bottomInset - 32 }]}>
+      <View style={[styles.tabBar, { paddingBottom:verticalScale(bottomInset - 50) }]}>
         {TABS.map((tab, index) => {
           if (tab.isCenter)
             return <View key={index} style={styles.centerSpace} />;

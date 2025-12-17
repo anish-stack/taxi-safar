@@ -867,21 +867,24 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       `Location: [${longitude}, ${latitude}] | Radius: ${searchRadiusKm}km | Vehicle: ${vehicleType}`
     );
 
-    // Cache key for nearby rides
     const nearbyRidesCacheKey = `nearby:rides:${driverId}:${vehicleType}:${searchRadiusKm}`;
 
-    // ✅ Check cache first
+    // Check cache first
     const cachedNearbyRides = await publisher.get(nearbyRidesCacheKey);
     if (cachedNearbyRides) {
-      console.log(`✅ Cache HIT for nearby rides`);
+      console.log(`Cache HIT for nearby rides`);
       return res.status(200).json(JSON.parse(cachedNearbyRides));
     }
+
+    // Current date at start of day (00:00:00) in UTC or local — adjust as needed
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0); // Start of today
 
     const nearbyRides = await TaxiSafariRide.find({
       trip_status: "searching",
       vehicle_type: vehicleType,
-      scheduled_time: { $gte: new Date() },
       created_by: { $ne: driverId },
+      departure_date: { $gte: todayStart }, // Only today and future dates
       pickup_location: {
         $near: {
           $geometry: {
@@ -901,14 +904,18 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
 
     const rideCount = nearbyRides.length;
 
-    console.log(`Found ${rideCount} nearby ride(s) matching criteria.`);
+    console.log(`Found ${rideCount} nearby ride(s) with valid departure date.`);
 
     if (rideCount === 0) {
       const [totalPending, matchingVehicleType] = await Promise.all([
-        TaxiSafariRide.countDocuments({ trip_status: "searching" }),
+        TaxiSafariRide.countDocuments({ 
+          trip_status: "searching",
+          departure_date: { $gte: todayStart } // Also filter counts by date
+        }),
         TaxiSafariRide.countDocuments({
           trip_status: "searching",
           vehicle_type: vehicleType,
+          departure_date: { $gte: todayStart }
         }),
       ]);
 
@@ -917,8 +924,8 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
         message: "No nearby rides available at the moment.",
         debug: {
           your_vehicle_type: vehicleType,
-          total_searching_rides: totalPending,
-          rides_matching_your_vehicle: matchingVehicleType,
+          total_searching_rides_today_or_later: totalPending,
+          rides_matching_your_vehicle_today_or_later: matchingVehicleType,
           search_radius_km: searchRadiusKm,
           your_location: [longitude, latitude],
         },
@@ -931,7 +938,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
         data: [],
       };
 
-      // 💾 Cache even empty results (shorter TTL)
+      // Cache empty result for shorter time
       await publisher.setEx(nearbyRidesCacheKey, 300, JSON.stringify(response));
 
       return res.status(200).json(response);
@@ -946,7 +953,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
       data: nearbyRides,
     };
 
-    // 💾 Cache results
+    // Cache successful results longer
     await publisher.setEx(nearbyRidesCacheKey, 600, JSON.stringify(response));
 
     return res.status(200).json(response);
@@ -960,7 +967,6 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
     });
   }
 };
-
 
 // Accept Ride with Redis Cache Invalidation
 exports.acceptRide = async (req, res) => {

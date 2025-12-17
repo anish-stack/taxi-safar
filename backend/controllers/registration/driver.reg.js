@@ -325,6 +325,7 @@ exports.registerDriver = async (req, res) => {
       driver.driver_email = email || undefined;
       driver.driver_gender = gender || undefined;
       driver.aadhar_number = aadhaarNumber;
+      driver.address=address
       driver.fcm_token = fcmToken || undefined;
       driver.device_id = deviceId || undefined;
       driver.referral_id_applied = referralIdApplied || undefined;
@@ -354,6 +355,7 @@ exports.registerDriver = async (req, res) => {
         account_status: "pending",
         is_online: false,
         is_on_ride: false,
+        address,
         profile_photo: "",
         average_rating: 1.0,
         total_rides: 0,
@@ -953,7 +955,7 @@ exports.addVehicleDetails = async (req, res) => {
       insuranceExpiry,
       permitExpiry,
     } = body;
-
+    console.log(rcData);
     if (!vehicleType || !vehicleNumber) {
       cleanupFiles(files);
       return res.status(400).json({
@@ -990,6 +992,9 @@ exports.addVehicleDetails = async (req, res) => {
     const vehicleInterior = files.find(
       (f) => f.fieldname === "vehicleInterior"
     );
+
+    const parseData = JSON.stringify(rcData);
+    console.log(parseData);
 
     const requiredFiles = {
       rcFrontFile,
@@ -1076,7 +1081,7 @@ exports.addVehicleDetails = async (req, res) => {
 
       registration_certificate: {
         rc_number: rcData.rc_number,
-        register_date: registrationDate || rcData.registration_date,
+        register_date: new Date(rcData.registration_date) || registrationDate,
         fit_upto: rcData.fit_up_to,
         rc_status: rcData.rc_status || "ACTIVE",
         verified: true,
@@ -1096,7 +1101,7 @@ exports.addVehicleDetails = async (req, res) => {
       insurance: {
         company_name: rcData.insurance_company,
         policy_number: rcData.insurance_policy_number,
-        expiry_date: insuranceExpiry || rcData.insurance_upto,
+        expiry_date: new Date(rcData.insurance_upto) || insuranceExpiry,
         verified: true,
         verified_at: new Date(),
         verified_via: "rc_api",
@@ -1157,7 +1162,6 @@ exports.addVehicleDetails = async (req, res) => {
     });
   }
 };
-
 
 // Helper to delete local files
 function cleanupFiles(files) {
@@ -1597,7 +1601,10 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       success: true,
       driver,
       bypassOtp: true,
-      message: "Welcome back! Your Aadhaar is already verified.",
+      message: `Welcome back! We've already verified your Aadhaar, and it’s registered with the mobile number ******${driver?.driver_contact_number.substring(
+        6,
+        10
+      )}.`,
     });
   } catch (error) {
     console.error("🔥 Error in Aadhaar OTP process:", error);
@@ -1976,7 +1983,8 @@ exports.verifyDrivingLicense = async (req, res) => {
 
 exports.verifyRcDetails = async (req, res) => {
   try {
-    const { rcNumber, deviceId, isByPass ,driverId,mobile,formAll } = req.body;
+    const { rcNumber, deviceId, isByPass, driverId, mobile, formAll } =
+      req.body;
 
     if (!rcNumber) {
       return res.status(400).json({
@@ -1985,7 +1993,7 @@ exports.verifyRcDetails = async (req, res) => {
       });
     }
 
-    const driverDetails = await Driver.findById(driverId)
+    const driverDetails = await Driver.findById(driverId);
     const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
       .sort({ createdAt: -1 })
       .lean();
@@ -2053,10 +2061,9 @@ exports.verifyRcDetails = async (req, res) => {
 
     // ---------------- Aadhaar match ---------------
 
-
-    const aadhaarName = driverDetails?.driver_name || aadhaarRecord.aadhar_verification_data.full_name
-      .toLowerCase()
-      .trim();
+    const aadhaarName =
+      driverDetails?.driver_name ||
+      aadhaarRecord.aadhar_verification_data.full_name.toLowerCase().trim();
     const rcOwnerName = rcInfo.owner_name.toLowerCase().trim();
 
     if (aadhaarName !== rcOwnerName) {
@@ -2641,52 +2648,109 @@ exports.updatePrefrences = async (req, res) => {
       accept_suv_rides,
     } = req.body;
 
-    console.log("🔄 Update preferences:", req.body);
-
-    const driver = await Driver.findById(userId);
+    const driver = await Driver.findById(userId).populate("current_vehicle_id","vehicle_type");
     if (!driver) {
       return res.status(404).json({
         success: false,
-        message: "Driver not found",
+        message: "Driver not found.",
       });
     }
 
-    if (typeof accept_mini_rides === "boolean") {
-      driver.preferences.accept_mini_rides = accept_mini_rides;
+    /* ------------------------------------------------
+       1️⃣ Build FINAL preference state (MERGED)
+       (This fixes your issue)
+    ------------------------------------------------ */
+    const finalPreferences = {
+      accept_mini_rides:
+        typeof accept_mini_rides === "boolean"
+          ? accept_mini_rides
+          : driver.preferences.accept_mini_rides,
+
+      accept_sedan_rides:
+        typeof accept_sedan_rides === "boolean"
+          ? accept_sedan_rides
+          : driver.preferences.accept_sedan_rides,
+
+      accept_suv_rides:
+        typeof accept_suv_rides === "boolean"
+          ? accept_suv_rides
+          : driver.preferences.accept_suv_rides,
+    };
+
+    /* ------------------------------------------------
+       2️⃣ Allowed preferences by vehicle type
+    ------------------------------------------------ */
+    let allowedKeys = [];
+    let errorMessage = "";
+
+    if (driver.current_vehicle_id?.vehicle_type === "mini") {
+      allowedKeys = ["accept_mini_rides"];
+      errorMessage =
+        "Mini drivers must keep Mini rides enabled to receive bookings.";
     }
 
-    if (typeof accept_sedan_rides === "boolean") {
-      driver.preferences.accept_sedan_rides = accept_sedan_rides;
+    if (driver.current_vehicle_id?.vehicle_type === "sedan") {
+      allowedKeys = ["accept_mini_rides", "accept_sedan_rides"];
+      errorMessage =
+        "Sedan drivers must enable at least one option: Mini or Sedan.";
     }
 
-    if (typeof accept_suv_rides === "boolean") {
-      driver.preferences.accept_suv_rides = accept_suv_rides;
+    if (driver.current_vehicle_id?.vehicle_type === "suv") {
+      allowedKeys = [
+        "accept_mini_rides",
+        "accept_sedan_rides",
+        "accept_suv_rides",
+      ];
+      errorMessage =
+        "Please enable at least one ride type to receive bookings.";
     }
+
+    /* ------------------------------------------------
+       3️⃣ Validate FINAL state (important)
+    ------------------------------------------------ */
+    const hasAtLeastOneEnabled = allowedKeys.some(
+      (key) => finalPreferences[key] === true
+    );
+
+    if (!hasAtLeastOneEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: errorMessage,
+      });
+    }
+
+    /* ------------------------------------------------
+       4️⃣ Save only allowed preferences
+    ------------------------------------------------ */
+    allowedKeys.forEach((key) => {
+      driver.preferences[key] = finalPreferences[key];
+    });
 
     await driver.save();
 
     return res.status(200).json({
       success: true,
-      message: "Preferences updated successfully",
+      message: "Your ride preferences have been updated successfully.",
       preferences: driver.preferences,
     });
   } catch (error) {
     console.error("❌ Update Preferences Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Something went wrong",
+      message:
+        "Something went wrong while updating preferences. Please try again.",
     });
   }
 };
+
+
 
 exports.getPreferencesViaVehicleCategory = async (req, res) => {
   try {
     const userId = req.user.id;
 
     // 1️⃣ Fetch driver & active vehicle
-    const driver = await Driver.findById(userId).populate(
-      "current_vehicle_id"
-    );
+    const driver = await Driver.findById(userId).populate("current_vehicle_id");
 
     if (!driver) {
       return res.status(404).json({
@@ -2704,7 +2768,6 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
 
     const vehicle = driver.current_vehicle_id;
     const category = (vehicle.vehicle_type || "").toUpperCase();
-
     if (!category) {
       return res.status(400).json({
         success: false,
@@ -2716,12 +2779,9 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
 
     // 2️⃣ Driver saved preferences
     let preferences = {
-      accept_mini_rides:
-        driver.preferences?.accept_mini_rides ?? false,
-      accept_sedan_rides:
-        driver.preferences?.accept_sedan_rides ?? false,
-      accept_suv_rides:
-        driver.preferences?.accept_suv_rides ?? false,
+      accept_mini_rides: driver.preferences?.accept_mini_rides ?? false,
+      accept_sedan_rides: driver.preferences?.accept_sedan_rides ?? false,
+      accept_suv_rides: driver.preferences?.accept_suv_rides ?? false,
     };
 
     const updatedFields = {};
@@ -2735,27 +2795,24 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
       }
       preferences.accept_sedan_rides = false;
       preferences.accept_suv_rides = false;
-    } 
-    else if (category === "SEDAN") {
+    } else if (category === "SEDAN") {
       // SEDAN → accept_mini_rides and accept_sedan_rides
       if (!preferences.accept_sedan_rides) {
         preferences.accept_sedan_rides = true;
-                preferences.accept_mini_rides = true;
+        preferences.accept_mini_rides = true;
 
         updatedFields["preferences.accept_sedan_rides"] = true;
       }
       // MINI stays as driver saved (could be on/off)
       preferences.accept_suv_rides = false;
-    } 
-    else if (category === "SUV") {
+    } else if (category === "SUV") {
       // SUV → accept_mini_rides + accept_sedan_rides + accept_suv_rides
       if (!preferences.accept_suv_rides) {
         preferences.accept_suv_rides = true;
         updatedFields["preferences.accept_suv_rides"] = true;
       }
       // MINI & SEDAN stay as driver saved
-    } 
-    else {
+    } else {
       // OTHER → all allowed, do not force ON
     }
 
@@ -2776,10 +2833,7 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "❌ getPreferencesViaVehicleCategory error:",
-      error
-    );
+    console.error("❌ getPreferencesViaVehicleCategory error:", error);
     return res.status(500).json({
       success: false,
       message:
@@ -2796,6 +2850,3 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
-
-
-

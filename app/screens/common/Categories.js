@@ -24,6 +24,21 @@ export default function Categories({ isRefresh }) {
 
   const MAX_VISIBLE = 4;
 
+  // Dynamic calculations for responsiveness
+  const horizontalPadding = 12;
+  const totalPadding = horizontalPadding * 2;
+  const availableWidth = SCREEN_WIDTH - totalPadding;
+  
+  // We want to show MAX_VISIBLE (4) cards + View More if needed
+  // Add small gap between cards (approx 8-10 to match your design)
+  const gap = 10;
+  const totalGaps = (MAX_VISIBLE) * gap; // gaps between 5 items (4 + view more)
+  
+  const cardWidth = (availableWidth - totalGaps) / (MAX_VISIBLE + 1); // +1 for potential View More
+
+  // Clamp width to reasonable min/max to avoid too tiny or too large on extreme devices
+  const finalCardWidth = Math.min(Math.max(cardWidth, 60), 80);
+
   const fetchCategories = async () => {
     try {
       setLoading(true);
@@ -60,7 +75,6 @@ export default function Categories({ isRefresh }) {
     setTimeout(() => setActiveId(null), 300);
   };
 
-  // Show first 4 + View More if needed
   const visibleCategories =
     categories.length > MAX_VISIBLE
       ? [
@@ -82,9 +96,12 @@ export default function Categories({ isRefresh }) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingHorizontal: horizontalPadding },
+        ]}
       >
-        {visibleCategories.map((item) => {
+        {visibleCategories.map((item, index) => {
           const isViewMore = item._id === "view_more";
 
           return (
@@ -94,8 +111,10 @@ export default function Categories({ isRefresh }) {
               activeOpacity={0.8}
               style={[
                 styles.card,
+                { width: finalCardWidth },
                 isViewMore && styles.viewMoreCard,
                 activeId === item._id && styles.activeCard,
+                index > 0 && { marginLeft: gap }, // Add gap after first item
               ]}
             >
               <View style={styles.iconWrapper}>
@@ -127,32 +146,27 @@ export default function Categories({ isRefresh }) {
 
 const styles = StyleSheet.create({
   container: {
-      marginTop:10,
-
-  marginBottom:10,
+    marginTop: 10,
+    marginBottom: 10,
     backgroundColor: "#fff",
   },
   scrollContent: {
-    paddingHorizontal: 12,
     alignItems: "center",
-    gap: 3, // matches Figma gap
   },
   loadingContainer: {
     paddingVertical: 20,
     alignItems: "center",
   },
   card: {
-    width: 64,
     height: 70,
     backgroundColor: "#F2F5F6",
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 2,
-   
   },
   activeCard: {
-    backgroundColor: "#FFF5F5", 
+    backgroundColor: "#FFF5F5",
     transform: [{ scale: 0.95 }],
   },
   viewMoreCard: {
