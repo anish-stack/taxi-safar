@@ -98,6 +98,21 @@ vehiclePhotoUploadQueue.process(async (job) => {
       };
     };
 
+    // Helper function to safely parse dates
+    const parseDate = (dateValue) => {
+      if (!dateValue) return undefined;
+      
+      const date = new Date(dateValue);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        log('DATE_PARSE_WARNING', `Invalid date value: ${dateValue}`);
+        return undefined;
+      }
+      
+      return date;
+    };
+
     // Step 2: Upload RC Front
     currentStep = 'UPLOAD_RC_FRONT';
     log(currentStep, 'Uploading RC front', { filePath: filePaths.rcFront });
@@ -183,8 +198,8 @@ vehiclePhotoUploadQueue.process(async (job) => {
       // Registration Certificate
       registration_certificate: {
         rc_number: rcData.rc_number,
-        register_date: rcData.registration_date ? new Date(rcData.registration_date) : undefined,
-        fit_upto: rcData.fit_up_to ? new Date(rcData.fit_up_to) : undefined,
+        register_date: parseDate(rcData.registration_date),
+        fit_upto: parseDate(rcData.fit_up_to),
         rc_status: rcData.rc_status || "ACTIVE",
         verified: true,
         verified_at: new Date(),
@@ -197,7 +212,7 @@ vehiclePhotoUploadQueue.process(async (job) => {
       insurance: {
         company_name: rcData.insurance_company,
         policy_number: rcData.insurance_policy_number,
-        expiry_date: rcData.insurance_upto ? new Date(rcData.insurance_upto) : new Date(),
+        expiry_date: parseDate(rcData.insurance_upto) || new Date(),
         verified: true,
         verified_at: new Date(),
         verified_via: "rc_api",
@@ -208,9 +223,9 @@ vehiclePhotoUploadQueue.process(async (job) => {
       permit: {
         permit_number: rcData.permit_number,
         permit_type: rcData.permit_type,
-        valid_from: rcData.permit_valid_from ? new Date(rcData.permit_valid_from) : undefined,
-        valid_upto: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : undefined,
-        expiry_date: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : new Date(),
+        valid_from: parseDate(rcData.permit_valid_from),
+        valid_upto: parseDate(rcData.permit_valid_upto),
+        expiry_date: parseDate(rcData.permit_valid_upto) || new Date(),
         verified: true,
         verified_at: new Date(),
         document: uploadedFiles.permit,
@@ -257,14 +272,14 @@ vehiclePhotoUploadQueue.process(async (job) => {
       
       // Tax Details
       tax_details: {
-        tax_upto: rcData.tax_upto ? new Date(rcData.tax_upto) : undefined,
-        tax_paid_upto: rcData.tax_paid_upto ? new Date(rcData.tax_paid_upto) : undefined,
+        tax_upto: parseDate(rcData.tax_upto),
+        tax_paid_upto: parseDate(rcData.tax_paid_upto),
       },
       
       // PUCC Details
       pucc_details: {
         pucc_number: rcData.pucc_number,
-        pucc_upto: rcData.pucc_upto ? new Date(rcData.pucc_upto) : undefined,
+        pucc_upto: parseDate(rcData.pucc_upto),
       },
       
       rc_verification_data: rcData,

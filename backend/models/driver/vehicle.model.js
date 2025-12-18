@@ -181,7 +181,6 @@ const vehicleSchema = new mongoose.Schema(
       },
       register_date: {
         type: Date,
-      
       },
       fit_upto: {
         type: Date,
@@ -203,14 +202,14 @@ const vehicleSchema = new mongoose.Schema(
         enum: ["manual", "quickekyc_api", "other"],
         default: "quickekyc_api",
       },
-     front: {
-    public_id: String,
-    url: String
-  },
-  back: {
-    public_id: String,
-    url: String
-  },
+      front: {
+        public_id: String,
+        url: String,
+      },
+      back: {
+        public_id: String,
+        url: String,
+      },
       document: {
         public_id: { type: String, trim: true },
         url: { type: String, trim: true },
@@ -229,7 +228,7 @@ const vehicleSchema = new mongoose.Schema(
       },
       expiry_date: {
         type: Date,
-        default:new Date(),
+        default: new Date(),
         // required: true,
         index: true,
       },
@@ -292,9 +291,11 @@ const vehicleSchema = new mongoose.Schema(
     tax_details: {
       tax_upto: {
         type: Date,
+        default: new Date(),
       },
       tax_paid_upto: {
         type: Date,
+        default: new Date(),
       },
     },
 
@@ -479,9 +480,9 @@ vehicleSchema.methods.approve = async function (adminId) {
   this.approved_by = adminId;
   this.approved_at = new Date();
 
-//   if (!this.hasExpiredDocuments()) {
-//     this.is_active = true;
-//   }
+  //   if (!this.hasExpiredDocuments()) {
+  //     this.is_active = true;
+  //   }
 
   return await this.save();
 };
@@ -492,7 +493,7 @@ vehicleSchema.methods.reject = async function (adminId, reason) {
   this.approved_by = adminId;
   this.rejected_at = new Date();
   this.rejection_reason = reason;
-//   this.is_active = false;
+  //   this.is_active = false;
 
   return await this.save();
 };
@@ -501,7 +502,7 @@ vehicleSchema.methods.reject = async function (adminId, reason) {
 vehicleSchema.methods.softDelete = async function () {
   this.is_deleted = true;
   this.deleted_at = new Date();
-//   this.is_active = false;
+  //   this.is_active = false;
 
   return await this.save();
 };
