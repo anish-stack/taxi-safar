@@ -2021,8 +2021,9 @@ exports.verifyRcDetails = async (req, res) => {
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
       {
+          key: process.env.QUICKEKYC_API_KEY,
         id_number: rcNumber.toUpperCase(),
-        key: process.env.QUICKEKYC_API_KEY,
+      
       },
       {
         headers: { "Content-Type": "application/json" },
@@ -2033,7 +2034,7 @@ exports.verifyRcDetails = async (req, res) => {
     console.log("⬅️ RC API Response:", JSON.stringify(response.data, null, 2));
 
     if (response.data.status !== "success" || !response.data.data) {
-      console.error("❌ RC API Failure");
+      console.error("❌ RC API Failure",response.data);
       return res.status(400).json({
         success: false,
         message: response.data.message || "RC verification failed.",
