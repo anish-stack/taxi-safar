@@ -334,7 +334,7 @@ export default function RegisterScreen({ navigation }) {
   // === VERIFY AADHAAR OTP ===
   const handleVerifyAadhaarOtp = async () => {
     if (isVerifying) return;
-    const otpValue = otp
+    const otpValue = otp;
     if (otpValue.length !== 6)
       return showAlert("error", "Invalid OTP", "Enter 6-digit OTP");
 
@@ -788,11 +788,16 @@ export default function RegisterScreen({ navigation }) {
         () => navigation.navigate("addVehcile", { driverId })
       );
     } catch (error) {
-      showAlert(
-        "error",
-        "Failed",
-        error.response?.data?.message || "Registration failed"
-      );
+      const apiMessage =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        (Array.isArray(error?.response?.data?.errors)
+          ? error.response.data.errors[0]
+          : null) ||
+        error?.message ||
+        "Registration failed";
+
+      showAlert("error", "Failed", apiMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -843,13 +848,11 @@ export default function RegisterScreen({ navigation }) {
 
             {/* Modal Handle */}
             <View style={styles.modalHandle} />
-              {timer > 0 ? (
-                <View style={styles.successBox}>
-                  <Text style={styles.successMessage}>
-                    OTP sent successfully
-                  </Text>
-                </View>
-              ) : null}
+            {timer > 0 ? (
+              <View style={styles.successBox}>
+                <Text style={styles.successMessage}>OTP sent successfully</Text>
+              </View>
+            ) : null}
 
             <Text style={styles.modalTitle}>Enter OTP</Text>
             <Text style={styles.modalSubtitle}>
@@ -858,15 +861,13 @@ export default function RegisterScreen({ navigation }) {
 
             {/* OTP Inputs */}
             <View style={styles.otpContainer}>
-            
-                <TextInput
-                  style={styles.otpInput}
-                  value={otp}
-                  onChangeText={setOtp}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-             
+              <TextInput
+                style={styles.otpInput}
+                value={otp}
+                onChangeText={setOtp}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
             </View>
 
             {/* Verify OTP Button */}
@@ -1337,9 +1338,7 @@ export default function RegisterScreen({ navigation }) {
               ) : null}
 
               <Text style={styles.modalTitle}>Verify Mobile Number</Text>
-              <Text style={styles.modalSubtitle}>
-                Enter 6-digit OTP 
-              </Text>
+              <Text style={styles.modalSubtitle}>Enter 6-digit OTP</Text>
 
               {/* OTP Inputs */}
               <View style={styles.otpContainer}>

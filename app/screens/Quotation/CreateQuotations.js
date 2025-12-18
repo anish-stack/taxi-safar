@@ -129,7 +129,7 @@ export default function CreateQuotationForm({ navigation, route }) {
       const data = res.data?.data;
       if (data && Object.keys(data).length > 0) {
         setCompany(data);
-      setHasGST(!!data.gst_no);
+        setHasGST(!!data.gst_no);
         setAccountHolderName(data.company_name || "");
         if (driver?.BankDetails) {
           setBankName(driver.BankDetails.bank_name || "");
@@ -417,8 +417,7 @@ export default function CreateQuotationForm({ navigation, route }) {
       //       .join(" → ")} → ${dropPlace}`
       //   : `${pickupPlace} to ${dropPlace}`;
 
-
-         const pickupDropPlace =`${pickupPlace} to ${dropPlace}`;
+      const pickupDropPlace = `${pickupPlace} to ${dropPlace}`;
 
       const payload = {
         // Customer
@@ -593,12 +592,12 @@ export default function CreateQuotationForm({ navigation, route }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 50}
       >
-      <BackWithLogo
-  isLogo={false}
-  title={`${id ? "Edit" : "Create"} ${
-    documentType === "quotation" ? "Quotation" : "Tax Invoice"
-  }`}
-/>
+        <BackWithLogo
+          isLogo={false}
+          title={`${id ? "Edit" : "Create"} ${
+            documentType === "quotation" ? "Quotation" : "Tax Invoice"
+          }`}
+        />
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {company && (
@@ -658,7 +657,6 @@ export default function CreateQuotationForm({ navigation, route }) {
                   documentType === "quotation" && styles.activeToggle,
                 ]}
                 onPress={() => setDocumentType("quotation")}
-                // disabled={!!id && documentType === "invoice"} // Prevent changing invoice back
               >
                 <Text
                   style={[
