@@ -94,7 +94,7 @@ const vehicleSchema = new mongoose.Schema(
     seating_capacity: {
       type: Number,
       min: 1,
-      max: 50,
+      max: 5000,
     },
 
     manufacturing_date: {

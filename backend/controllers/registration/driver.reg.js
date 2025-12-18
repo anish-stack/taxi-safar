@@ -2355,12 +2355,12 @@ exports.sendOtp = async (req, res) => {
 
     // Send OTP via SMS
     await sendDltMessage(number, otp);
-
     return res.status(200).json({
       success: true,
       otp_sent: true,
       message: "OTP sent successfully",
     });
+
   } catch (error) {
     console.error("sendOtp error:", error);
     return res.status(500).json({

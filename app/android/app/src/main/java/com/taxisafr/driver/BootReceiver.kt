@@ -1,3 +1,5 @@
+package com.taxisafr.driver
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -26,12 +28,17 @@ class BootReceiver : BroadcastReceiver() {
             val prefs = context.getSharedPreferences("DriverPrefs", Context.MODE_PRIVATE)
             val wasOnline = prefs.getBoolean("driver_online", false)
             val driverId = prefs.getString("driver_id", null)
+            val token = prefs.getString("driver_token", null)
+            val baseUrl = prefs.getString("base_url", "https://test.taxi.olyox.in")
 
-            if (wasOnline && !driverId.isNullOrEmpty()) {
+            if (wasOnline && !driverId.isNullOrEmpty() && !token.isNullOrEmpty()) {
                 Log.d(TAG, "Scheduling RidePoolingService via WorkManager for driver: $driverId")
 
+                // IMPORTANT: Use "driverId" not "driver_id" to match Worker
                 val data = Data.Builder()
-                    .putString("driver_id", driverId)
+                    .putString("driverId", driverId)  // Changed from "driver_id"
+                    .putString("token", token)         // Added token
+                    .putString("baseUrl", baseUrl)     // Added baseUrl
                     .build()
 
                 val workRequest = OneTimeWorkRequestBuilder<StartRidePoolingServiceWorker>()
@@ -40,7 +47,7 @@ class BootReceiver : BroadcastReceiver() {
 
                 WorkManager.getInstance(context).enqueue(workRequest)
             } else {
-                Log.d(TAG, "Driver was not online, skipping service start")
+                Log.d(TAG, "Driver was not online or missing credentials, skipping service start")
             }
 
         } catch (e: Exception) {

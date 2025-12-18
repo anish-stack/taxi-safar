@@ -1,5 +1,8 @@
+package com.taxisafr.driver
+
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 
@@ -14,15 +17,15 @@ class StartRidePoolingServiceWorker(
         val baseUrl = inputData.getString("baseUrl") ?: "https://test.taxi.olyox.in"
 
         if (!driverId.isNullOrBlank() && !token.isNullOrBlank()) {
-            val intent = Intent(applicationContext, RidePoolingService::class.java).apply {
-                putExtra("driverId", driverId)
-                putExtra("token", token)
-                putExtra("baseUrl", baseUrl)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(intent)
+            val serviceIntent = Intent(applicationContext, RidePoolingService::class.java)
+            serviceIntent.putExtra("driverId", driverId)
+            serviceIntent.putExtra("token", token)
+            serviceIntent.putExtra("baseUrl", baseUrl)
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(serviceIntent)
             } else {
-                applicationContext.startService(intent)
+                applicationContext.startService(serviceIntent)
             }
         }
         return Result.success()
