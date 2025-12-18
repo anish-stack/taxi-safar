@@ -894,76 +894,73 @@ const log = (step, message, data = null) => {
 
 exports.addVehicleDetails = async (req, res) => {
   let uploadedFiles = {};
+  let currentStep = "INIT";
 
   try {
+    currentStep = "API_START";
+    log(currentStep, "Request received", {
+      params: req.params,
+      bodyKeys: Object.keys(req.body || {}),
+      files: (req.files || []).map(f => f.fieldname),
+    });
+
     const { driverId } = req.params;
     const files = req.files || [];
     const body = req.body || {};
 
-    console.log(
-      "📂 Uploaded files:",
-      files.map((f) => ({ field: f.fieldname, size: f.size }))
-    );
-
     /* ----------------------------
        1️⃣ Validate Driver
     -----------------------------*/
+    currentStep = "DRIVER_VALIDATION";
     if (!driverId) {
+      log(currentStep, "Driver ID missing");
       cleanupFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
+      return res.status(400).json({ success: false, message: "Driver ID is required" });
     }
 
     const driver = await Driver.findById(driverId);
     if (!driver) {
+      log(currentStep, "Driver not found", { driverId });
       cleanupFiles(files);
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
+      return res.status(404).json({ success: false, message: "Driver not found" });
     }
+
+    log(currentStep, "Driver validated", { driverId: driver._id });
 
     /* ----------------------------
        2️⃣ Parse RC Data
     -----------------------------*/
+    currentStep = "RC_PARSE";
     let rcData = null;
+
     if (body.rcData) {
       try {
-        rcData =
-          typeof body.rcData === "string"
-            ? JSON.parse(body.rcData)
-            : body.rcData;
+        rcData = typeof body.rcData === "string"
+          ? JSON.parse(body.rcData)
+          : body.rcData;
       } catch (err) {
+        log(currentStep, "RC JSON parse failed", err.message);
         cleanupFiles(files);
-        return res.status(400).json({
-          success: false,
-          message: "Invalid RC data format",
-        });
+        return res.status(400).json({ success: false, message: "Invalid RC data format" });
       }
     }
 
     if (!rcData) {
+      log(currentStep, "RC data missing");
       cleanupFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: "RC verification data is required",
-      });
+      return res.status(400).json({ success: false, message: "RC verification data is required" });
     }
+
+    log(currentStep, "RC data parsed successfully");
 
     /* ----------------------------
        3️⃣ Validate Required Fields
     -----------------------------*/
-    const {
-      vehicleType,
-      vehicleNumber,
-      registrationDate,
-      insuranceExpiry,
-      permitExpiry,
-    } = body;
-    console.log(rcData);
+    currentStep = "BODY_VALIDATION";
+    const { vehicleType, vehicleNumber, insuranceExpiry, permitExpiry } = body;
+
     if (!vehicleType || !vehicleNumber) {
+      log(currentStep, "Required fields missing", { vehicleType, vehicleNumber });
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
@@ -974,12 +971,14 @@ exports.addVehicleDetails = async (req, res) => {
     /* ----------------------------
        4️⃣ Check Duplicate Vehicle
     -----------------------------*/
+    currentStep = "DUPLICATE_CHECK";
     const existingVehicle = await Vehicle.findOne({
       vehicle_number: vehicleNumber.toUpperCase(),
       is_deleted: false,
     });
 
     if (existingVehicle) {
+      log(currentStep, "Duplicate vehicle found", { vehicleNumber });
       cleanupFiles(files);
       return res.status(409).json({
         success: false,
@@ -988,36 +987,26 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     /* ----------------------------
-       5️⃣ Extract Required Files
+       5️⃣ Validate Files
     -----------------------------*/
-    const rcFrontFile = files.find((f) => f.fieldname === "rcFront");
-    const rcBackFile = files.find((f) => f.fieldname === "rcBack");
-    const insuranceFile = files.find((f) => f.fieldname === "insurance");
-    const permitFile = files.find((f) => f.fieldname === "permit");
-    const vehicleFront = files.find((f) => f.fieldname === "vehicleFront");
-    const vehicleBack = files.find((f) => f.fieldname === "vehicleBack");
-    const vehicleInterior = files.find(
-      (f) => f.fieldname === "vehicleInterior"
-    );
-
-    const parseData = JSON.stringify(rcData);
-    console.log(parseData);
+    currentStep = "FILE_VALIDATION";
 
     const requiredFiles = {
-      rcFrontFile,
-      rcBackFile,
-      insuranceFile,
-      permitFile,
-      vehicleFront,
-      vehicleBack,
-      vehicleInterior,
+      rcFront: files.find(f => f.fieldname === "rcFront"),
+      rcBack: files.find(f => f.fieldname === "rcBack"),
+      insurance: files.find(f => f.fieldname === "insurance"),
+      permit: files.find(f => f.fieldname === "permit"),
+      vehicleFront: files.find(f => f.fieldname === "vehicleFront"),
+      vehicleBack: files.find(f => f.fieldname === "vehicleBack"),
+      vehicleInterior: files.find(f => f.fieldname === "vehicleInterior"),
     };
 
-    const missing = Object.keys(requiredFiles).filter(
-      (key) => !requiredFiles[key]
-    );
+    const missing = Object.entries(requiredFiles)
+      .filter(([_, file]) => !file)
+      .map(([key]) => key);
 
-    if (missing.length > 0) {
+    if (missing.length) {
+      log(currentStep, "Missing required files", missing);
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
@@ -1025,123 +1014,51 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
+    log(currentStep, "All required files present");
+
     /* ----------------------------
-       6️⃣ Upload to Cloudinary
+       6️⃣ Upload Files
     -----------------------------*/
-    uploadedFiles.rcFront = await uploadSingleImage(
-      rcFrontFile.path,
-      "vehicle_documents/rc/front"
-    );
-    uploadedFiles.rcBack = await uploadSingleImage(
-      rcBackFile.path,
-      "vehicle_documents/rc/back"
-    );
-    uploadedFiles.insurance = await uploadSingleImage(
-      insuranceFile.path,
-      "vehicle_documents/insurance"
-    );
-    uploadedFiles.permit = await uploadSingleImage(
-      permitFile.path,
-      "vehicle_documents/permit"
-    );
-    uploadedFiles.vehicleFront = await uploadSingleImage(
-      vehicleFront.path,
-      "vehicle_photos/front"
-    );
-    uploadedFiles.vehicleBack = await uploadSingleImage(
-      vehicleBack.path,
-      "vehicle_photos/back"
-    );
-    uploadedFiles.vehicleInterior = await uploadSingleImage(
-      vehicleInterior.path,
-      "vehicle_photos/interior"
-    );
+    currentStep = "CLOUDINARY_UPLOAD";
+    log(currentStep, "Uploading documents to Cloudinary");
+
+    uploadedFiles.rcFront = await uploadSingleImage(requiredFiles.rcFront.path, "vehicle_documents/rc/front");
+    uploadedFiles.rcBack = await uploadSingleImage(requiredFiles.rcBack.path, "vehicle_documents/rc/back");
+    uploadedFiles.insurance = await uploadSingleImage(requiredFiles.insurance.path, "vehicle_documents/insurance");
+    uploadedFiles.permit = await uploadSingleImage(requiredFiles.permit.path, "vehicle_documents/permit");
+    uploadedFiles.vehicleFront = await uploadSingleImage(requiredFiles.vehicleFront.path, "vehicle_photos/front");
+    uploadedFiles.vehicleBack = await uploadSingleImage(requiredFiles.vehicleBack.path, "vehicle_photos/back");
+    uploadedFiles.vehicleInterior = await uploadSingleImage(requiredFiles.vehicleInterior.path, "vehicle_photos/interior");
 
     cleanupFiles(files);
+    log(currentStep, "All files uploaded successfully");
 
     /* ----------------------------
        7️⃣ Create Vehicle
     -----------------------------*/
-    const vehicle = new Vehicle({
+    currentStep = "VEHICLE_CREATE";
+
+    const vehicle = await Vehicle.create({
       driver_id: driver._id,
       vehicle_type: vehicleType.toLowerCase(),
-      vehicle_brand: rcData.maker_description || "Unknown",
-      vehicle_name: rcData.maker_model || "Unknown",
+      vehicle_brand: rcData.maker_description,
+      vehicle_name: rcData.maker_model,
       vehicle_number: vehicleNumber.toUpperCase(),
-
-      chassis_number: rcData.vehicle_chasi_number,
-      engine_number: rcData.vehicle_engine_number,
-      fuel_type: rcData.fuel_type,
-      color: rcData.color,
-      seating_capacity: rcData.seat_capacity
-        ? Number(rcData.seat_capacity)
-        : null,
-      manufacturing_date: rcData.manufacturing_date_formatted,
-      registered_at: rcData.registered_at,
-
-      owner_details: {
-        owner_name: rcData.owner_name,
-        father_name: rcData.father_name,
-        present_address: rcData.present_address,
-        permanent_address: rcData.permanent_address,
-      },
-
-      registration_certificate: {
-        rc_number: rcData.rc_number,
-        register_date: new Date(rcData.registration_date) || registrationDate,
-        fit_upto: rcData.fit_up_to,
-        rc_status: rcData.rc_status || "ACTIVE",
-        verified: true,
-        verified_at: new Date(),
-        verified_via: "quickekyc_api",
-
-        front: {
-          url: uploadedFiles.rcFront.image,
-          public_id: uploadedFiles.rcFront.public_id,
-        },
-        back: {
-          url: uploadedFiles.rcBack.image,
-          public_id: uploadedFiles.rcBack.public_id,
-        },
-      },
-
-      insurance: {
-        company_name: rcData.insurance_company,
-        policy_number: rcData.insurance_policy_number,
-        expiry_date: new Date(rcData.insurance_upto) || insuranceExpiry,
-        verified: true,
-        verified_at: new Date(),
-        verified_via: "rc_api",
-        document: {
-          url: uploadedFiles.insurance.image,
-          public_id: uploadedFiles.insurance.public_id,
-        },
-      },
-
-      permit: {
-        expiry_date: permitExpiry,
-        verified: false,
-        document: {
-          url: uploadedFiles.permit.image,
-          public_id: uploadedFiles.permit.public_id,
-        },
-      },
-
-      vehicle_photos: {
-        front: uploadedFiles.vehicleFront,
-        back: uploadedFiles.vehicleBack,
-        interior: uploadedFiles.vehicleInterior,
-      },
-
       rc_verification_data: rcData,
       approval_status: "pending",
       is_active: false,
     });
 
-    await vehicle.save();
+    log(currentStep, "Vehicle created", { vehicleId: vehicle._id });
 
+    /* ----------------------------
+       8️⃣ Update Driver
+    -----------------------------*/
+    currentStep = "DRIVER_UPDATE";
     driver.current_vehicle_id = vehicle._id;
     await driver.save();
+
+    log(currentStep, "Driver updated with vehicle");
 
     return res.status(201).json({
       success: true,
@@ -1149,14 +1066,14 @@ exports.addVehicleDetails = async (req, res) => {
       driverId: driver._id,
       vehicleId: vehicle._id,
     });
+
   } catch (error) {
-    console.error("🔥 Add vehicle error:", error);
+    console.error(`\n🔥 ERROR at step: ${currentStep}`);
+    console.error(error);
 
     for (const file of Object.values(uploadedFiles)) {
       if (file?.public_id) {
-        try {
-          await deleteImage(file.public_id);
-        } catch {}
+        try { await deleteImage(file.public_id); } catch {}
       }
     }
 
@@ -1165,10 +1082,12 @@ exports.addVehicleDetails = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
+      step: currentStep,
       error: error.message,
     });
   }
 };
+
 
 // Helper to delete local files
 function cleanupFiles(files) {
@@ -1830,42 +1749,80 @@ exports.verifyAadhaarOtp = async (req, res) => {
   }
 };
 
+
+const normalizeName = (name = "") =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "") // remove dots, commas, symbols
+    .trim()
+    .replace(/\s+/g, " ");
+
+const splitName = (name = "") => normalizeName(name).split(" ");
+
+const expandInitials = (parts, fullParts) =>
+  parts.map(p => {
+    if (p.length === 1) {
+      return fullParts.find(fp => fp.startsWith(p)) || p;
+    }
+    return p;
+  });
+
+const nameMatchScore = (aadhaar, dl) => {
+  let aParts = splitName(aadhaar);
+  let dParts = splitName(dl);
+
+  // Expand initials
+  dParts = expandInitials(dParts, aParts);
+  aParts = expandInitials(aParts, dParts);
+
+  // First name must match
+  if (aParts[0] !== dParts[0]) return 0;
+
+  const common = aParts.filter(p => dParts.includes(p));
+  const maxLen = Math.max(aParts.length, dParts.length);
+
+  return common.length / maxLen; // 0 → 1
+};
+
+const isNameMatch = (aadhaarName, dlName) => {
+  const score = nameMatchScore(aadhaarName, dlName);
+
+  console.log("📊 Name Match Score:", score.toFixed(2));
+
+  return score >= 0.6; // 👈 SAFE THRESHOLD
+};
+
+/* -------------------------------------------------
+   🚘 VERIFY DRIVING LICENSE
+-------------------------------------------------- */
+
 exports.verifyDrivingLicense = async (req, res) => {
   try {
-    console.log("\n=================== DL VERIFY START ===================");
-    console.log("📥 Incoming Req Body:", req.body);
+    console.log("\n================ DL VERIFY START ================");
+    console.log("📥 Incoming Body:", req.body);
 
-    const { licenseNumber, dob, aadhaarName, deviceId, aadhaarNumber } =
-      req.body;
+    const { licenseNumber, dob, aadhaarName, deviceId } = req.body;
 
-    const settings = await AppSettings.findOne();
-    const ByPass = settings?.ByPassApi;
-
-    console.log("⚙️ BYPASS MODE:", ByPass);
-
-    // ------------------ VALIDATION ------------------
+    /* ---------------- VALIDATION ---------------- */
     if (!licenseNumber || !dob || !aadhaarName || !deviceId) {
-      console.log("❌ Missing required fields");
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields (DL number, DOB, Aadhaar name, deviceId, Aadhaar number).",
+          "Missing required fields (DL number, DOB, Aadhaar name, deviceId).",
       });
     }
 
-    // ------------------ AADHAAR CACHE CHECK ------------------
-    console.log("🔍 Checking Aadhaar cache for device:", deviceId);
+    /* ---------------- SETTINGS ---------------- */
+    const settings = await AppSettings.findOne();
+    const BYPASS = settings?.ByPassApi;
 
+    console.log("⚙️ BYPASS MODE:", BYPASS);
+
+    /* ---------------- AADHAAR CACHE ---------------- */
     const cached = await AadharDetails.findOne({ device_id: deviceId });
 
-    const isCacheValid =
-      cached && cached.aadhar_verification_data?.aadhaar_number;
-
-    console.log("📌 Aadhaar Cache Found:", !!cached);
-    console.log("📌 Aadhaar Cache Valid:", isCacheValid);
-
-    if (!isCacheValid) {
-      console.log("❌ Aadhaar not verified for this device");
+    if (!cached?.aadhar_verification_data?.aadhaar_number) {
+      console.log("❌ Aadhaar not verified");
       return res.status(400).json({
         success: false,
         message: "Aadhaar not verified. Please verify Aadhaar first.",
@@ -1873,41 +1830,35 @@ exports.verifyDrivingLicense = async (req, res) => {
     }
 
     const aadhaarData = cached.aadhar_verification_data;
-    console.log("✔️ Aadhaar Verified. Name:", aadhaarData?.full_name);
+    console.log("✔ Aadhaar Name:", aadhaarData.full_name);
 
-    // ------------------ BYPASS MODE ------------------
-    if (ByPass) {
-      console.log("🟢 BYPASS MODE ENABLED — Skipping DL API Call");
+    /* ---------------- BYPASS MODE ---------------- */
+    if (BYPASS) {
+      console.log("🟢 BYPASS ENABLED");
 
-      const BYPASS_DATA = {
-        license_number: "DLXXXXXXXXXX0000",
+      const fakeDL = {
+        license_number: "DLTEST000000",
+        name: aadhaarData.full_name,
         state: "Uttar Pradesh",
-        name: "TEST USER",
-        permanent_address: "Fake Address, Lucknow",
+        permanent_address: "Test Address",
         permanent_zip: "226001",
-        profile_image: "",
       };
 
-      cached.dl_data = BYPASS_DATA;
+      cached.dl_data = fakeDL;
       cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
       cached.isDlisExpired = false;
       await cached.save();
 
       return res.status(200).json({
         success: true,
-        message: "Driving License verified successfully! (BYPASS MODE)",
-        dlData: BYPASS_DATA,
-        address: {
-          address: BYPASS_DATA.permanent_address,
-          pincode: BYPASS_DATA.permanent_zip,
-        },
-        fromCache: false,
+        message: "DL verified successfully (BYPASS MODE)",
+        dlData: fakeDL,
         bypassUsed: true,
       });
     }
 
-    // ------------------ REAL API CALL (ONLY IF NOT BYPASS) ------------------
-    console.log("🔵 Calling QuickEKYC DL API...");
+    /* ---------------- DL API CALL ---------------- */
+    console.log("🔵 Calling QuickEKYC DL API");
 
     const apiPayload = {
       key: process.env.QUICKEKYC_API_KEY,
@@ -1915,42 +1866,32 @@ exports.verifyDrivingLicense = async (req, res) => {
       dob: new Date(dob).toISOString().split("T")[0],
     };
 
-    console.log("📤 API Payload:", apiPayload);
-
     const apiResponse = await axios.post(
       "https://api.quickekyc.com/api/v1/driving-license/driving-license",
       apiPayload,
-      { headers: { "Content-Type": "application/json" }, timeout: 20000 }
+      { timeout: 20000 }
     );
 
-    console.log("📥 API Response:", apiResponse.data);
-
     if (apiResponse.data.status !== "success") {
-      console.log("❌ DL API Failed:", apiResponse.data.message);
       return res.status(400).json({
         success: false,
-        message:
-          apiResponse.data.message ||
-          "Failed to verify Driving License. Please try again.",
+        message: apiResponse.data.message || "DL verification failed",
       });
     }
 
     const dlInfo = apiResponse.data.data;
 
-    // ------------------ NAME MATCH ------------------
-    const normalizeName = (name = "") =>
-      name.toLowerCase().trim().replace(/\s+/g, " "); // 👈 convert multiple spaces to single
-
-    const aadhaarNameNormalized = normalizeName(aadhaarData?.full_name);
-    const dlNameNormalized = normalizeName(dlInfo?.name);
-
+    /* ---------------- NAME MATCH ---------------- */
     console.log(
-      "🔍 Checking Name Match:",
-      aadhaarNameNormalized,
-      dlNameNormalized
+      "🔍 Comparing Names:",
+      aadhaarData.full_name,
+      "↔",
+      dlInfo.name
     );
 
-    if (aadhaarNameNormalized !== dlNameNormalized) {
+    const matched = isNameMatch(aadhaarData.full_name, dlInfo.name);
+
+    if (!matched) {
       console.log("❌ Name mismatch");
       return res.status(400).json({
         success: false,
@@ -1959,13 +1900,15 @@ exports.verifyDrivingLicense = async (req, res) => {
       });
     }
 
-    // ------------------ SAVE CACHE ------------------
+    console.log("✅ Name matched successfully");
+
+    /* ---------------- SAVE CACHE ---------------- */
     cached.dl_data = dlInfo;
     cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
     cached.isDlisExpired = false;
     await cached.save();
 
-    console.log("🎉 DL Verification Completed Successfully");
+    console.log("🎉 DL VERIFIED SUCCESSFULLY");
 
     return res.status(200).json({
       success: true,
@@ -1979,7 +1922,7 @@ exports.verifyDrivingLicense = async (req, res) => {
       bypassUsed: false,
     });
   } catch (error) {
-    console.error("🔥 DL Verification Error:", error);
+    console.error("🔥 DL VERIFY ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Something went wrong while verifying Driving License.",
