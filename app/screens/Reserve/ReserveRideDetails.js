@@ -61,7 +61,7 @@ const ReserveRideDetailsRedesigned = () => {
   const [distance, setDistance] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mapRegion, setMapRegion] = useState(null);
-  const [company,setCompany] = useState(null)
+  const [company, setCompany] = useState(null);
   const estimateDuration = (distanceKm) =>
     parseFloat((distanceKm / 50).toFixed(2));
 
@@ -159,23 +159,8 @@ const ReserveRideDetailsRedesigned = () => {
     }
   };
 
-  console.log(rideData?.companyId)
-  const fetchCompanyDetails = async()=>{
-    try {
-      const response = await axios.get(`http://192.168.1.11:3100/api/v1/company-details/${rideData?.companyId}`)
-      if(response.data.success){
-      setCompany(response.data.data)
-      }else{
-        setCompany(null)
-      }
-    } catch (error) {
-      console.log("ok",error.response.data)
-    }
-  }
-
   useEffect(() => {
     fetchRideDetails();
-    fetchCompanyDetails()
   }, [rideId]);
 
   const getExtraRequirements = (req) => {
@@ -278,28 +263,28 @@ const ReserveRideDetailsRedesigned = () => {
 
           <View style={styles.driverRow}>
             <View style={styles.driverInfo}>
-              {rideData?.driverPostId?.profile_image ? (
+              {rideData?.companyId?.logo ? (
                 <Image
-                  source={{ uri: rideData.driverPostId.profile_image }}
+                  source={{ uri: rideData?.companyId?.logo?.url }}
                   style={styles.avatar}
                 />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Text style={styles.avatarText}>
-                    {(rideData?.driverPostId?.driver_name || "D").charAt(0)}
+                    {(rideData?.companyId?.company_name || "D").charAt(0)}
                   </Text>
                 </View>
               )}
 
               <View style={styles.driverDetails}>
                 <Text style={styles.driverName}>
-                  {rideData?.driverPostId?.driver_name || "Driver"}
+                  {rideData?.companyId?.company_name || "Driver"}
                 </Text>
                 <View style={styles.ratingRow}>
                   <Star size={14} color="#FFA500" fill="#FFA500" />
                   <Text style={styles.ratingText}>
-                    {rideData?.driverPostId?.average_rating || "4.8"} (
-                    {rideData?.driverPostId?.total_reviews || "127"})
+                    {rideData?.companyId?.average_rating || "4.8"} (
+                    {rideData?.companyId?.average_success_rides || "127"})
                   </Text>
                 </View>
               </View>

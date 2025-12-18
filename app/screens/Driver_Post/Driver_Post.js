@@ -99,11 +99,47 @@ const DriverPost = () => {
   const dropTimer = useRef(null);
 
   // Vehicle types
-  const defaultVehicles = ["hatchback", "sedan", "suv", "muv", "mini", "auto"];
-  const allInclusiveVehicles = ["hatchback", "sedan", "suv", "muv", "mini"];
-  const vehicles = requirements.allinclusive
-    ? allInclusiveVehicles
-    : defaultVehicles;
+  const VEHICLE_CATEGORIES = {
+    MINI: {
+      id: 1,
+      key: "mini",
+      label: "Mini",
+      seating: "4+1",
+      example: "WagonR",
+      allowedInAllInclusive: true,
+    },
+
+    SEDAN: {
+      id: 2,
+      key: "sedan",
+      label: "Sedan",
+      seating: "4+1",
+      example: "Swift Dzire",
+      allowedInAllInclusive: true,
+    },
+
+    SUV: {
+      id: 3,
+      key: "suv",
+      label: "SUV",
+      seating: "6+1",
+      example: "Ertiga",
+      allowedInAllInclusive: true,
+    },
+
+    PRIME_SUV: {
+      id: 4,
+      key: "prime_suv",
+      label: "Prime SUV",
+      seating: "6+1",
+      example: "Innova Crysta",
+      allowedInAllInclusive: false, // ❗ not allowed in all-inclusive
+    },
+  };
+
+  const vehicles = Object.values(VEHICLE_CATEGORIES)
+    .filter((v) => (requirements.allinclusive ? v.allowedInAllInclusive : true))
+    .sort((a, b) => a.id - b.id);
 
   // Google Places Autocomplete
   const fetchPlaceSuggestions = async (input, setter, loadingSetter) => {
@@ -127,51 +163,49 @@ const DriverPost = () => {
     }
   };
 
-const fetchCompany = async () => {
-  try {
-    setLoading(true);
-    const res = await axios.get(`${API_URL_APP}/api/v1/my-company`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = res.data?.data;
-    console.log("Company data:", data);
+  const fetchCompany = async () => {
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_URL_APP}/api/v1/my-company`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = res.data?.data;
+      console.log("Company data:", data);
 
-    if (data && Object.keys(data).length > 0) {
-      setCompany(data);
-      // Proceed with whatever you need when company exists
-    } else {
-      // No company found → Show simple native alert
-      Alert.alert(
-        "Company Required",
-        "Please add company details first.",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Add Company",
-            onPress: () => navigation.navigate("company-details"),
-          },
-        ],
-        { cancelable: false }
-      );
+      if (data && Object.keys(data).length > 0) {
+        setCompany(data);
+        // Proceed with whatever you need when company exists
+      } else {
+        // No company found → Show simple native alert
+        Alert.alert(
+          "Company Required",
+          "Please add company details first.",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Add Company",
+              onPress: () => navigation.navigate("company-details"),
+            },
+          ],
+          { cancelable: false }
+        );
+      }
+    } catch (err) {
+      console.log("Fetch error:", err?.response?.data || err.message);
+      Alert.alert("Error", "Failed to load company details", [{ text: "OK" }]);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.log("Fetch error:", err?.response?.data || err.message);
-    Alert.alert("Error", "Failed to load company details", [
-      { text: "OK" },
-    ]);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
   useEffect(() => {
     fetchCompany();
   }, [token]);
 
   const fetchRidePostedById = async () => {
-    if(!rideId) return
+    if (!rideId) return;
     try {
       const response = await axios.get(
         `${API_URL_APP}/api/v1/post-rides/${rideId}`,
@@ -455,7 +489,7 @@ const fetchCompany = async () => {
         commissionAmount: parseFloat(commission) || 0,
         driverEarning: parseFloat(driverEarning),
         extraKmCharge: parseFloat(extraKm) || 0,
-        companyDetails:company?._id,
+        companyDetails: company?._id,
         extraMinCharge: parseFloat(extraHour) || 0,
         acceptBookingType: acceptMode,
         extraRequirements: Object.entries(requirements)
@@ -995,19 +1029,27 @@ const fetchCompany = async () => {
               </View>
               <FlatList
                 data={vehicles}
-                keyExtractor={(item) => item}
+                keyExtractor={(item) => item.key}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.modalItem}
                     onPress={() => {
-                      setVehicle(item);
+                      console.log("item.key", item.key);
+                      setVehicle(item.key); // ✅ store key for API
                       setShowVehicleModal(false);
                     }}
                   >
-                    <Text style={styles.modalItemText}>
-                      {item.toUpperCase()}
-                    </Text>
-                    {vehicle === item && (
+                    <View>
+                      <Text style={styles.modalItemText}>
+                        {item.id}. {item.label} {item.seating}
+                      </Text>
+
+                      <Text style={styles.modalSubText}>
+                        {item.label} • {item.example}
+                      </Text>
+                    </View>
+
+                    {vehicle === item.key && (
                       <CheckCircle2 size={20} color="#000" />
                     )}
                   </TouchableOpacity>

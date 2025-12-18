@@ -10,7 +10,9 @@ const AadharDetails = require("../../models/driver/AadharDetails");
 const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
-const { addVehicleUploadJob } = require("../../queues/DriverVehcilePhotoUpload");
+const {
+  addVehicleUploadJob,
+} = require("../../queues/DriverVehcilePhotoUpload");
 const gstCache = new Map(); // GST cache
 const rateLimitMap = new Map(); // Rate limit tracker
 
@@ -325,7 +327,7 @@ exports.registerDriver = async (req, res) => {
       driver.driver_email = email || undefined;
       driver.driver_gender = gender || undefined;
       driver.aadhar_number = aadhaarNumber;
-      driver.address=address
+      driver.address = address;
       driver.fcm_token = fcmToken || undefined;
       driver.device_id = deviceId || undefined;
       driver.referral_id_applied = referralIdApplied || undefined;
@@ -899,7 +901,7 @@ exports.addVehicleDetails = async (req, res) => {
     log(currentStep, "Request received", {
       params: req.params,
       bodyKeys: Object.keys(req.body || {}),
-      files: (req.files || []).map(f => f.fieldname),
+      files: (req.files || []).map((f) => f.fieldname),
     });
 
     const { driverId } = req.params;
@@ -913,19 +915,19 @@ exports.addVehicleDetails = async (req, res) => {
     if (!driverId) {
       log(currentStep, "Driver ID missing");
       await cleanupFiles(files);
-      return res.status(400).json({ 
-        success: false, 
-        message: "Driver ID is required" 
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID is required",
       });
     }
 
     const driver = await Driver.findById(driverId);
     if (!driver) {
       log(currentStep, "Driver not found", { driverId });
-     cleanupFiles(files);
-      return res.status(404).json({ 
-        success: false, 
-        message: "Driver not found" 
+      cleanupFiles(files);
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
       });
     }
 
@@ -939,25 +941,26 @@ exports.addVehicleDetails = async (req, res) => {
 
     if (body.rcData) {
       try {
-        rcData = typeof body.rcData === "string"
-          ? JSON.parse(body.rcData)
-          : body.rcData;
+        rcData =
+          typeof body.rcData === "string"
+            ? JSON.parse(body.rcData)
+            : body.rcData;
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
-      cleanupFiles(files);
-        return res.status(400).json({ 
-          success: false, 
-          message: "Invalid RC data format" 
+        cleanupFiles(files);
+        return res.status(400).json({
+          success: false,
+          message: "Invalid RC data format",
         });
       }
     }
 
     if (!rcData) {
       log(currentStep, "RC data missing");
-cleanupFiles(files);
-      return res.status(400).json({ 
-        success: false, 
-        message: "RC verification data is required" 
+      cleanupFiles(files);
+      return res.status(400).json({
+        success: false,
+        message: "RC verification data is required",
       });
     }
 
@@ -970,8 +973,11 @@ cleanupFiles(files);
     const { vehicleType, vehicleNumber } = body;
 
     if (!vehicleType || !vehicleNumber) {
-      log(currentStep, "Required fields missing", { vehicleType, vehicleNumber });
-     cleanupFiles(files);
+      log(currentStep, "Required fields missing", {
+        vehicleType,
+        vehicleNumber,
+      });
+      cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: "vehicleType and vehicleNumber are required",
@@ -989,7 +995,7 @@ cleanupFiles(files);
 
     if (existingVehicle) {
       log(currentStep, "Duplicate vehicle found", { vehicleNumber });
- cleanupFiles(files);
+      cleanupFiles(files);
       return res.status(409).json({
         success: false,
         message: "Vehicle already exists",
@@ -1002,25 +1008,47 @@ cleanupFiles(files);
     currentStep = "FILE_VALIDATION";
 
     const requiredFiles = {
-      rcFront: files.find(f => f.fieldname === "rcFront"),
-      rcBack: files.find(f => f.fieldname === "rcBack"),
-      insurance: files.find(f => f.fieldname === "insurance"),
-      permit: files.find(f => f.fieldname === "permit"),
-      vehicleFront: files.find(f => f.fieldname === "vehicleFront"),
-      vehicleBack: files.find(f => f.fieldname === "vehicleBack"),
-      vehicleInterior: files.find(f => f.fieldname === "vehicleInterior"),
+      rcFront: {
+        file: files.find((f) => f.fieldname === "rcFront"),
+        message: "Please re-upload RC Front Side Photo",
+      },
+      rcBack: {
+        file: files.find((f) => f.fieldname === "rcBack"),
+        message: "Please re-upload RC Back Side Photo",
+      },
+      insurance: {
+        file: files.find((f) => f.fieldname === "insurance"),
+        message: "Please upload Insurance Document",
+      },
+      permit: {
+        file: files.find((f) => f.fieldname === "permit"),
+        message: "Please upload Vehicle Permit Document",
+      },
+      vehicleFront: {
+        file: files.find((f) => f.fieldname === "vehicleFront"),
+        message: "Please upload Vehicle Front Photo",
+      },
+      vehicleBack: {
+        file: files.find((f) => f.fieldname === "vehicleBack"),
+        message: "Please upload Vehicle Back Photo",
+      },
+      vehicleInterior: {
+        file: files.find((f) => f.fieldname === "vehicleInterior"),
+        message: "Please upload Vehicle Interior Photo",
+      },
     };
+    const missingEntry = Object.values(requiredFiles).find(
+      (item) => !item.file
+    );
 
-    const missing = Object.entries(requiredFiles)
-      .filter(([_, file]) => !file)
-      .map(([key]) => key);
+    if (missingEntry) {
+      log(currentStep, "Missing required file", missingEntry.message);
 
-    if (missing.length) {
-      log(currentStep, "Missing required files", missing);
- cleanupFiles(files);
+      await cleanupFiles(files);
+
       return res.status(400).json({
         success: false,
-        message: `Missing required files: ${missing.join(", ")}`,
+        message: missingEntry.message,
       });
     }
 
@@ -1030,7 +1058,7 @@ cleanupFiles(files);
        6️⃣ Add Job to Queue
     -----------------------------*/
     currentStep = "QUEUE_JOB_ADD";
-    
+
     // Prepare file paths for the queue job
     const filePaths = {
       rcFront: requiredFiles.rcFront.path,
@@ -1056,9 +1084,9 @@ cleanupFiles(files);
       rcData,
     });
 
-    log(currentStep, "Job added to queue successfully", { 
+    log(currentStep, "Job added to queue successfully", {
       jobId: job.id,
-      driverId: driver._id 
+      driverId: driver._id,
     });
 
     /* ----------------------------
@@ -1066,13 +1094,13 @@ cleanupFiles(files);
     -----------------------------*/
     return res.status(202).json({
       success: true,
-      message: "Vehicle upload job queued successfully. Processing in background.",
+      message:
+        "Vehicle upload job queued successfully. Processing in background.",
       jobId: job.id,
       driverId: driver._id,
       status: "processing",
       note: "You will be notified once the upload is complete",
     });
-
   } catch (error) {
     console.error(`\n🔥 ERROR at step: ${currentStep}`);
     console.error(error);
@@ -1095,8 +1123,10 @@ cleanupFiles(files);
 exports.getVehicleUploadStatus = async (req, res) => {
   try {
     const { jobId } = req.params;
-    
-    const { vehiclePhotoUploadQueue } = require('../queues/DriverVehiclePhotoUpload');
+
+    const {
+      vehiclePhotoUploadQueue,
+    } = require("../queues/DriverVehiclePhotoUpload");
     const job = await vehiclePhotoUploadQueue.getJob(jobId);
 
     if (!job) {
@@ -1111,7 +1141,7 @@ exports.getVehicleUploadStatus = async (req, res) => {
     const reason = job.failedReason;
 
     let result = null;
-    if (state === 'completed') {
+    if (state === "completed") {
       result = job.returnvalue;
     }
 
@@ -1127,9 +1157,8 @@ exports.getVehicleUploadStatus = async (req, res) => {
       processedOn: job.processedOn,
       finishedOn: job.finishedOn,
     });
-
   } catch (error) {
-    console.error('Error fetching job status:', error);
+    console.error("Error fetching job status:", error);
     return res.status(500).json({
       success: false,
       message: "Error fetching job status",
@@ -1137,7 +1166,6 @@ exports.getVehicleUploadStatus = async (req, res) => {
     });
   }
 };
-
 
 // Helper to delete local files
 function cleanupFiles(files) {
@@ -1799,7 +1827,6 @@ exports.verifyAadhaarOtp = async (req, res) => {
   }
 };
 
-
 /* ----------------------------------------
    🔤 NAME NORMALIZATION & MATCHING
 ---------------------------------------- */
@@ -1807,16 +1834,16 @@ exports.verifyAadhaarOtp = async (req, res) => {
 const normalizeName = (name = "") =>
   name
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "")   // remove symbols/numbers
+    .replace(/[^a-z\s]/g, "") // remove symbols/numbers
     .trim()
     .replace(/\s+/g, " ");
 
 const splitName = (name = "") => normalizeName(name).split(" ");
 
 const expandInitials = (parts, fullParts) =>
-  parts.map(p => {
+  parts.map((p) => {
     if (p.length === 1) {
-      return fullParts.find(fp => fp.startsWith(p)) || p;
+      return fullParts.find((fp) => fp.startsWith(p)) || p;
     }
     return p;
   });
@@ -1834,7 +1861,7 @@ const nameMatchScore = (aadhaar, dl) => {
   // First name must match strictly
   if (aParts[0] !== dParts[0]) return 0;
 
-  const common = aParts.filter(p => dParts.includes(p));
+  const common = aParts.filter((p) => dParts.includes(p));
   const maxLen = Math.max(aParts.length, dParts.length);
 
   return common.length / maxLen; // 0 → 1
@@ -2002,7 +2029,6 @@ exports.verifyDrivingLicense = async (req, res) => {
   }
 };
 
-
 /* -------------------------------------------------
    🚗 VERIFY RC DETAILS (FINAL – PROD READY)
 -------------------------------------------------- */
@@ -2011,7 +2037,9 @@ exports.verifyRcDetails = async (req, res) => {
   const TRACE_ID = `RC-${Date.now()}`;
 
   try {
-    console.log(`\n================ RC VERIFY START [${TRACE_ID}] ================`);
+    console.log(
+      `\n================ RC VERIFY START [${TRACE_ID}] ================`
+    );
     console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
 
     const { rcNumber, deviceId, isByPass } = req.body;
@@ -2072,9 +2100,8 @@ exports.verifyRcDetails = async (req, res) => {
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
       {
-          key: process.env.QUICKEKYC_API_KEY,
+        key: process.env.QUICKEKYC_API_KEY,
         id_number: rcNumber.toUpperCase(),
-      
       },
       {
         headers: { "Content-Type": "application/json" },
@@ -2085,7 +2112,7 @@ exports.verifyRcDetails = async (req, res) => {
     console.log("⬅️ RC API Response:", JSON.stringify(response.data, null, 2));
 
     if (response.data.status !== "success" || !response.data.data) {
-      console.error("❌ RC API Failure",response.data);
+      console.error("❌ RC API Failure", response.data);
       return res.status(400).json({
         success: false,
         message: response.data.message || "RC verification failed.",
@@ -2093,7 +2120,6 @@ exports.verifyRcDetails = async (req, res) => {
     }
 
     let rcInfo = response.data.data;
-
 
     /* ---------------- BIKE DETECTION ---------------- */
     const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
@@ -2157,7 +2183,7 @@ exports.verifyRcDetails = async (req, res) => {
 
     console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
 
-    console.log("✔ RC Data:", rcInfo,);
+    console.log("✔ RC Data:", rcInfo);
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
@@ -2176,7 +2202,6 @@ exports.verifyRcDetails = async (req, res) => {
     });
   }
 };
-
 
 exports.VerifyGstNo = async (req, res) => {
   try {
@@ -2337,7 +2362,6 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-
     // Step 3: First time → Generate & Send OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -2360,7 +2384,6 @@ exports.sendOtp = async (req, res) => {
       otp_sent: true,
       message: "OTP sent successfully",
     });
-
   } catch (error) {
     console.error("sendOtp error:", error);
     return res.status(500).json({
@@ -2647,13 +2670,13 @@ exports.changeActiveVehcile = async (req, res) => {
 exports.updatePrefrences = async (req, res) => {
   try {
     const userId = req.user.id;
-    const {
-      accept_mini_rides,
-      accept_sedan_rides,
-      accept_suv_rides,
-    } = req.body;
+    const { accept_mini_rides, accept_sedan_rides, accept_suv_rides } =
+      req.body;
 
-    const driver = await Driver.findById(userId).populate("current_vehicle_id","vehicle_type");
+    const driver = await Driver.findById(userId).populate(
+      "current_vehicle_id",
+      "vehicle_type"
+    );
     if (!driver) {
       return res.status(404).json({
         success: false,
@@ -2747,8 +2770,6 @@ exports.updatePrefrences = async (req, res) => {
     });
   }
 };
-
-
 
 exports.getPreferencesViaVehicleCategory = async (req, res) => {
   try {

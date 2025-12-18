@@ -10,6 +10,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import {
   MaterialCommunityIcons,
@@ -39,6 +40,22 @@ export default function Profile() {
   useEffect(() => {
     fetchDriverDetails();
   }, [token]);
+
+   const stopFloatingWidget = async () => {
+      if (Platform.OS !== "android") return false;
+  
+      try {
+        console.log("🛑 Stopping floating widget...");
+        await FloatingWidgetService.hideFloatingIcon();
+       
+        console.log("✅ Floating widget stopped");
+        return true;
+      } catch (error) {
+        console.error("❌ Stop floating widget failed:", error);
+        return false;
+      }
+    };
+  
 
   const openModal = (type) => {
     setModalContent(type);
@@ -156,6 +173,7 @@ export default function Profile() {
                 "Account Deleted",
                 "Your account has been deleted successfully."
               );
+              stopFloatingWidget()
               logout(navigation);
               await FloatingWidgetService.hideFloatingIcon();
             } catch (error) {
@@ -491,6 +509,7 @@ export default function Profile() {
             label="Logout"
             color="#dc2626"
             onPress={async () => {
+              stopFloatingWidget()
               await FloatingWidgetService.hideFloatingIcon();
               logout(navigation);
             }}

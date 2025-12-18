@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
+  Platform,
   StyleSheet,
   ScrollView,
   Alert,
@@ -13,16 +14,33 @@ import { Ionicons } from "@expo/vector-icons";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import logo from "../../assets/taxisafar-logo.png";
 import onboardImage from "../../assets/onboard.png"; // phone + driver image
+import { FloatingWidgetService } from "../../services/NativeModules";
 
+const stopFloatingWidget = async () => {
+  if (Platform.OS !== "android") return false;
+
+  try {
+    console.log("🛑 Stopping floating widget...");
+    await FloatingWidgetService.hideFloatingIcon();
+
+    console.log("✅ Floating widget stopped");
+    return true;
+  } catch (error) {
+    console.error("❌ Stop floating widget failed:", error);
+    return false;
+  }
+};
 export default function OnboardScreen() {
   const navigation = useNavigation();
-
+  useEffect(() => {
+    stopFloatingWidget();
+  }, []);
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* Logo */}
       <View style={{ position: "relative", top: verticalScale(20) }}>
         <Image source={logo} style={styles.logo} resizeMode="contain" />
-<View style={styles.dashedLine} />
+        <View style={styles.dashedLine} />
         {/* Tagline */}
         <Text style={styles.tagline}>
           India’s Smart B2B & B2C AI{" "}
@@ -87,7 +105,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   dashedLine: {
-    
     height: 1,
     backgroundColor: "transparent",
     borderTopWidth: 1,
@@ -97,7 +114,7 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width:verticalScale(230),
+    width: verticalScale(230),
     height: verticalScale(70),
   },
 
