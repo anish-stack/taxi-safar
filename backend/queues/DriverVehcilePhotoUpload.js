@@ -1,0 +1,359 @@
+const Bull = require('bull');
+const Driver = require("../models/driver/driver.model");
+const Redis = require('ioredis');
+const Vehicle = require("../models/driver/vehicle.model");
+const { deleteImage, uploadSingleImage } = require("../utils/cloudinary");
+const fs = require('fs').promises;
+
+const redis = new Redis({ 
+  host: '127.0.0.1', 
+  port: 6379,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false
+});
+
+// Create the queue
+const vehiclePhotoUploadQueue = new Bull('vehicle-photo-upload', {
+  redis: {
+    host: '127.0.0.1',
+    port: 6379,
+  },
+  defaultJobOptions: {
+    attempts: 4, // Retry 3 times (total 4 attempts)
+    backoff: {
+      type: 'exponential',
+      delay: 5000, // Start with 5 seconds, then exponential backoff
+    },
+    removeOnComplete: 100, // Keep last 100 completed jobs
+    removeOnFail: 500, // Keep last 500 failed jobs
+  },
+});
+
+// Utility function to log
+const log = (step, message, data = null) => {
+  const timestamp = new Date().toISOString();
+  console.log(`\n🔹 [VEHICLE_UPLOAD_QUEUE | ${step}] ${message}`);
+  if (data) {
+    console.log('📦 Data:', JSON.stringify(data, null, 2));
+  }
+};
+
+// Utility to cleanup local files
+const cleanupLocalFile = async (filePath) => {
+  try {
+    if (filePath) {
+      await fs.unlink(filePath);
+      log('FILE_CLEANUP', `Deleted local file: ${filePath}`);
+    }
+  } catch (error) {
+    log('FILE_CLEANUP_ERROR', `Failed to delete ${filePath}:`, error.message);
+  }
+};
+
+// Process the queue
+vehiclePhotoUploadQueue.process(async (job) => {
+  const { 
+    driverId, 
+    vehicleData, 
+    filePaths, 
+    rcData 
+  } = job.data;
+
+  log('JOB_START', `Processing vehicle upload for driver: ${driverId}`, {
+    jobId: job.id,
+    attempt: job.attemptsMade + 1,
+    maxAttempts: job.opts.attempts
+  });
+
+  let uploadedFiles = {};
+  let currentStep = 'INIT';
+
+  try {
+    // Step 1: Validate Driver
+    currentStep = 'DRIVER_VALIDATION';
+    const driver = await Driver.findById(driverId);
+    
+    if (!driver) {
+      throw new Error(`Driver not found: ${driverId}`);
+    }
+
+    log(currentStep, 'Driver validated', { driverId: driver._id });
+    await job.progress(10);
+
+    // Step 2: Upload RC Front
+    currentStep = 'UPLOAD_RC_FRONT';
+    log(currentStep, 'Uploading RC front');
+    uploadedFiles.rcFront = await uploadSingleImage(
+      filePaths.rcFront, 
+      "vehicle_documents/rc/front"
+    );
+    await cleanupLocalFile(filePaths.rcFront);
+    await job.progress(20);
+
+    // Step 3: Upload RC Back
+    currentStep = 'UPLOAD_RC_BACK';
+    log(currentStep, 'Uploading RC back');
+    uploadedFiles.rcBack = await uploadSingleImage(
+      filePaths.rcBack, 
+      "vehicle_documents/rc/back"
+    );
+    await cleanupLocalFile(filePaths.rcBack);
+    await job.progress(30);
+
+    // Step 4: Upload Insurance
+    currentStep = 'UPLOAD_INSURANCE';
+    log(currentStep, 'Uploading insurance document');
+    uploadedFiles.insurance = await uploadSingleImage(
+      filePaths.insurance, 
+      "vehicle_documents/insurance"
+    );
+    await cleanupLocalFile(filePaths.insurance);
+    await job.progress(40);
+
+    // Step 5: Upload Permit
+    currentStep = 'UPLOAD_PERMIT';
+    log(currentStep, 'Uploading permit document');
+    uploadedFiles.permit = await uploadSingleImage(
+      filePaths.permit, 
+      "vehicle_documents/permit"
+    );
+    await cleanupLocalFile(filePaths.permit);
+    await job.progress(50);
+
+    // Step 6: Upload Vehicle Front Photo
+    currentStep = 'UPLOAD_VEHICLE_FRONT';
+    log(currentStep, 'Uploading vehicle front photo');
+    uploadedFiles.vehicleFront = await uploadSingleImage(
+      filePaths.vehicleFront, 
+      "vehicle_photos/front"
+    );
+    await cleanupLocalFile(filePaths.vehicleFront);
+    await job.progress(60);
+
+    // Step 7: Upload Vehicle Back Photo
+    currentStep = 'UPLOAD_VEHICLE_BACK';
+    log(currentStep, 'Uploading vehicle back photo');
+    uploadedFiles.vehicleBack = await uploadSingleImage(
+      filePaths.vehicleBack, 
+      "vehicle_photos/back"
+    );
+    await cleanupLocalFile(filePaths.vehicleBack);
+    await job.progress(70);
+
+    // Step 8: Upload Vehicle Interior Photo
+    currentStep = 'UPLOAD_VEHICLE_INTERIOR';
+    log(currentStep, 'Uploading vehicle interior photo');
+    uploadedFiles.vehicleInterior = await uploadSingleImage(
+      filePaths.vehicleInterior, 
+      "vehicle_photos/interior"
+    );
+    await cleanupLocalFile(filePaths.vehicleInterior);
+    await job.progress(80);
+
+    log('UPLOAD_COMPLETE', 'All files uploaded successfully');
+
+    // Step 9: Create Vehicle Record
+    currentStep = 'VEHICLE_CREATE';
+    const vehicle = await Vehicle.create({
+      driver_id: driver._id,
+      vehicle_type: vehicleData.vehicleType.toLowerCase(),
+      vehicle_brand: rcData.maker_description,
+      vehicle_name: rcData.maker_model,
+      vehicle_number: vehicleData.vehicleNumber.toUpperCase(),
+      
+      // Registration Certificate
+      registration_certificate: {
+        rc_number: rcData.rc_number,
+        register_date: rcData.registration_date ? new Date(rcData.registration_date) : undefined,
+        fit_upto: rcData.fit_up_to ? new Date(rcData.fit_up_to) : undefined,
+        rc_status: rcData.rc_status || "ACTIVE",
+        verified: true,
+        verified_at: new Date(),
+        verified_via: "quickekyc_api",
+        front: uploadedFiles.rcFront,
+        back: uploadedFiles.rcBack,
+      },
+      
+      // Insurance
+      insurance: {
+        company_name: rcData.insurance_company,
+        policy_number: rcData.insurance_policy_number,
+        expiry_date: rcData.insurance_upto ? new Date(rcData.insurance_upto) : new Date(),
+        verified: true,
+        verified_at: new Date(),
+        verified_via: "rc_api",
+        document: uploadedFiles.insurance,
+      },
+      
+      // Permit
+      permit: {
+        permit_number: rcData.permit_number,
+        permit_type: rcData.permit_type,
+        valid_from: rcData.permit_valid_from ? new Date(rcData.permit_valid_from) : undefined,
+        valid_upto: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : undefined,
+        expiry_date: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : new Date(),
+        verified: true,
+        verified_at: new Date(),
+        document: uploadedFiles.permit,
+      },
+      
+      // Vehicle Photos
+      vehicle_photos: {
+        front: uploadedFiles.vehicleFront,
+        back: uploadedFiles.vehicleBack,
+        interior: uploadedFiles.vehicleInterior,
+      },
+      
+      // Technical Details
+      chassis_number: rcData.vehicle_chasi_number,
+      engine_number: rcData.vehicle_engine_number,
+      fuel_type: rcData.fuel_type,
+      color: rcData.color,
+      norms_type: rcData.norms_type,
+      body_type: rcData.body_type,
+      cubic_capacity: rcData.cubic_capacity,
+      seating_capacity: rcData.seat_capacity ? parseInt(rcData.seat_capacity) : undefined,
+      manufacturing_date: rcData.manufacturing_date_formatted || rcData.manufacturing_date,
+      vehicle_category: rcData.vehicle_category,
+      vehicle_category_description: rcData.vehicle_category_description,
+      unladen_weight: rcData.unladen_weight,
+      gross_weight: rcData.vehicle_gross_weight,
+      registered_at: rcData.registered_at,
+      
+      // Owner Details
+      owner_details: {
+        owner_name: rcData.owner_name,
+        father_name: rcData.father_name,
+        present_address: rcData.present_address,
+        permanent_address: rcData.permanent_address,
+        mobile_number: rcData.mobile_number,
+        owner_number: rcData.owner_number,
+      },
+      
+      // Financer Details
+      financer_details: {
+        financed: rcData.financed ? "YES" : "NO",
+        financerName: rcData.financer,
+      },
+      
+      // Tax Details
+      tax_details: {
+        tax_upto: rcData.tax_upto ? new Date(rcData.tax_upto) : undefined,
+        tax_paid_upto: rcData.tax_paid_upto ? new Date(rcData.tax_paid_upto) : undefined,
+      },
+      
+      // PUCC Details
+      pucc_details: {
+        pucc_number: rcData.pucc_number,
+        pucc_upto: rcData.pucc_upto ? new Date(rcData.pucc_upto) : undefined,
+      },
+      
+      rc_verification_data: rcData,
+      approval_status: "pending",
+      is_active: false,
+    });
+
+    log(currentStep, 'Vehicle created successfully', { vehicleId: vehicle._id });
+    await job.progress(90);
+
+    // Step 10: Update Driver
+    currentStep = 'DRIVER_UPDATE';
+    driver.current_vehicle_id = vehicle._id;
+    await driver.save();
+
+    log(currentStep, 'Driver updated with vehicle reference');
+    await job.progress(100);
+
+    // Return success result
+    return {
+      success: true,
+      driverId: driver._id,
+      vehicleId: vehicle._id,
+      message: 'Vehicle added successfully. Awaiting admin approval.',
+    };
+
+  } catch (error) {
+    log('ERROR', `Failed at step: ${currentStep}`, {
+      error: error.message,
+      stack: error.stack,
+      attempt: job.attemptsMade + 1
+    });
+
+    // Cleanup uploaded files on error
+    for (const [key, file] of Object.entries(uploadedFiles)) {
+      if (file?.public_id) {
+        try {
+          await deleteImage(file.public_id);
+          log('CLEANUP', `Deleted Cloudinary image: ${key}`, { public_id: file.public_id });
+        } catch (cleanupError) {
+          log('CLEANUP_ERROR', `Failed to delete ${key}`, cleanupError.message);
+        }
+      }
+    }
+
+    // Cleanup remaining local files
+    for (const [key, filePath] of Object.entries(filePaths)) {
+      await cleanupLocalFile(filePath);
+    }
+
+    throw error; // Re-throw to trigger retry
+  }
+});
+
+// Event handlers for monitoring
+vehiclePhotoUploadQueue.on('completed', (job, result) => {
+  log('JOB_COMPLETED', `Job ${job.id} completed successfully`, result);
+});
+
+vehiclePhotoUploadQueue.on('failed', (job, err) => {
+  log('JOB_FAILED', `Job ${job.id} failed after ${job.attemptsMade} attempts`, {
+    error: err.message,
+    driverId: job.data.driverId
+  });
+});
+
+vehiclePhotoUploadQueue.on('stalled', (job) => {
+  log('JOB_STALLED', `Job ${job.id} has stalled`, {
+    driverId: job.data.driverId
+  });
+});
+
+vehiclePhotoUploadQueue.on('progress', (job, progress) => {
+  log('JOB_PROGRESS', `Job ${job.id} progress: ${progress}%`);
+});
+
+// Helper function to add job to queue
+const addVehicleUploadJob = async (jobData) => {
+  try {
+    const job = await vehiclePhotoUploadQueue.add(jobData, {
+      priority: 1, // Higher priority for vehicle uploads
+      timeout: 300000, // 5 minutes timeout
+    });
+
+    log('JOB_ADDED', `Job added to queue`, {
+      jobId: job.id,
+      driverId: jobData.driverId
+    });
+
+    return job;
+  } catch (error) {
+    log('JOB_ADD_ERROR', 'Failed to add job to queue', error.message);
+    throw error;
+  }
+};
+
+// Graceful shutdown
+const gracefulShutdown = async () => {
+  log('SHUTDOWN', 'Gracefully shutting down vehicle upload queue...');
+  await vehiclePhotoUploadQueue.close();
+  await redis.quit();
+  log('SHUTDOWN', 'Queue closed successfully');
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+module.exports = {
+  vehiclePhotoUploadQueue,
+  addVehicleUploadJob,
+};

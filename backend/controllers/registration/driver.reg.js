@@ -10,6 +10,7 @@ const AadharDetails = require("../../models/driver/AadharDetails");
 const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
+const { addVehicleUploadJob } = require("../../queues/DriverVehcilePhotoUpload");
 const gstCache = new Map(); // GST cache
 const rateLimitMap = new Map(); // Rate limit tracker
 
@@ -891,7 +892,6 @@ const log = (step, message, data = null) => {
 };
 
 exports.addVehicleDetails = async (req, res) => {
-  let uploadedFiles = {};
   let currentStep = "INIT";
 
   try {
@@ -912,15 +912,21 @@ exports.addVehicleDetails = async (req, res) => {
     currentStep = "DRIVER_VALIDATION";
     if (!driverId) {
       log(currentStep, "Driver ID missing");
-      cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "Driver ID is required" });
+      await cleanupFiles(files);
+      return res.status(400).json({ 
+        success: false, 
+        message: "Driver ID is required" 
+      });
     }
 
     const driver = await Driver.findById(driverId);
     if (!driver) {
       log(currentStep, "Driver not found", { driverId });
-      cleanupFiles(files);
-      return res.status(404).json({ success: false, message: "Driver not found" });
+     cleanupFiles(files);
+      return res.status(404).json({ 
+        success: false, 
+        message: "Driver not found" 
+      });
     }
 
     log(currentStep, "Driver validated", { driverId: driver._id });
@@ -938,28 +944,34 @@ exports.addVehicleDetails = async (req, res) => {
           : body.rcData;
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
-        cleanupFiles(files);
-        return res.status(400).json({ success: false, message: "Invalid RC data format" });
+      cleanupFiles(files);
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid RC data format" 
+        });
       }
     }
 
     if (!rcData) {
       log(currentStep, "RC data missing");
-      cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "RC verification data is required" });
+cleanupFiles(files);
+      return res.status(400).json({ 
+        success: false, 
+        message: "RC verification data is required" 
+      });
     }
 
-    log(currentStep, "RC data parsed successfully",rcData);
+    log(currentStep, "RC data parsed successfully", rcData);
 
     /* ----------------------------
        3️⃣ Validate Required Fields
     -----------------------------*/
     currentStep = "BODY_VALIDATION";
-    const { vehicleType, vehicleNumber, insuranceExpiry, permitExpiry } = body;
+    const { vehicleType, vehicleNumber } = body;
 
     if (!vehicleType || !vehicleNumber) {
       log(currentStep, "Required fields missing", { vehicleType, vehicleNumber });
-      cleanupFiles(files);
+     cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: "vehicleType and vehicleNumber are required",
@@ -977,7 +989,7 @@ exports.addVehicleDetails = async (req, res) => {
 
     if (existingVehicle) {
       log(currentStep, "Duplicate vehicle found", { vehicleNumber });
-      cleanupFiles(files);
+ cleanupFiles(files);
       return res.status(409).json({
         success: false,
         message: "Vehicle already exists",
@@ -1005,7 +1017,7 @@ exports.addVehicleDetails = async (req, res) => {
 
     if (missing.length) {
       log(currentStep, "Missing required files", missing);
-      cleanupFiles(files);
+ cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: `Missing required files: ${missing.join(", ")}`,
@@ -1015,160 +1027,112 @@ exports.addVehicleDetails = async (req, res) => {
     log(currentStep, "All required files present");
 
     /* ----------------------------
-       6️⃣ Upload Files
+       6️⃣ Add Job to Queue
     -----------------------------*/
-    currentStep = "CLOUDINARY_UPLOAD";
-    log(currentStep, "Uploading documents to Cloudinary");
+    currentStep = "QUEUE_JOB_ADD";
+    
+    // Prepare file paths for the queue job
+    const filePaths = {
+      rcFront: requiredFiles.rcFront.path,
+      rcBack: requiredFiles.rcBack.path,
+      insurance: requiredFiles.insurance.path,
+      permit: requiredFiles.permit.path,
+      vehicleFront: requiredFiles.vehicleFront.path,
+      vehicleBack: requiredFiles.vehicleBack.path,
+      vehicleInterior: requiredFiles.vehicleInterior.path,
+    };
 
-    uploadedFiles.rcFront = await uploadSingleImage(requiredFiles.rcFront.path, "vehicle_documents/rc/front");
-    uploadedFiles.rcBack = await uploadSingleImage(requiredFiles.rcBack.path, "vehicle_documents/rc/back");
-    uploadedFiles.insurance = await uploadSingleImage(requiredFiles.insurance.path, "vehicle_documents/insurance");
-    uploadedFiles.permit = await uploadSingleImage(requiredFiles.permit.path, "vehicle_documents/permit");
-    uploadedFiles.vehicleFront = await uploadSingleImage(requiredFiles.vehicleFront.path, "vehicle_photos/front");
-    uploadedFiles.vehicleBack = await uploadSingleImage(requiredFiles.vehicleBack.path, "vehicle_photos/back");
-    uploadedFiles.vehicleInterior = await uploadSingleImage(requiredFiles.vehicleInterior.path, "vehicle_photos/interior");
+    // Prepare vehicle data
+    const vehicleData = {
+      vehicleType,
+      vehicleNumber,
+    };
 
-    cleanupFiles(files);
-    log(currentStep, "All files uploaded successfully");
+    // Add job to Bull queue
+    const job = await addVehicleUploadJob({
+      driverId: driver._id.toString(),
+      vehicleData,
+      filePaths,
+      rcData,
+    });
+
+    log(currentStep, "Job added to queue successfully", { 
+      jobId: job.id,
+      driverId: driver._id 
+    });
 
     /* ----------------------------
-       7️⃣ Create Vehicle
+       7️⃣ Return Response
     -----------------------------*/
-    currentStep = "VEHICLE_CREATE";
-
-   const vehicle = await Vehicle.create({
-  driver_id: driver._id,
-  vehicle_type: vehicleType.toLowerCase(),
-  vehicle_brand: rcData.maker_description,
-  vehicle_name: rcData.maker_model,
-  vehicle_number: vehicleNumber.toUpperCase(),
-  
-  // Registration Certificate
-  registration_certificate: {
-    rc_number: rcData.rc_number,
-    register_date: rcData.registration_date ? new Date(rcData.registration_date) : undefined,
-    fit_upto: rcData.fit_up_to ? new Date(rcData.fit_up_to) : undefined,
-    rc_status: rcData.rc_status || "ACTIVE",
-    verified: true,
-    verified_at: new Date(),
-    verified_via: "quickekyc_api",
-    front: uploadedFiles.rcFront,
-    back: uploadedFiles.rcBack,
-  },
-  
-  // Insurance
-  insurance: {
-    company_name: rcData.insurance_company,
-    policy_number: rcData.insurance_policy_number,
-    expiry_date: rcData.insurance_upto ? new Date(rcData.insurance_upto) : new Date(),
-    verified: true,
-    verified_at: new Date(),
-    verified_via: "rc_api",
-    document: uploadedFiles.insurance,
-  },
-  
-  // Permit - THIS IS THE CRITICAL FIX
-  permit: {
-    permit_number: rcData.permit_number,
-    permit_type: rcData.permit_type,
-    valid_from: rcData.permit_valid_from ? new Date(rcData.permit_valid_from) : undefined,
-    valid_upto: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : undefined,
-    expiry_date: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : new Date(), // ✅ REQUIRED FIELD
-    verified: true,
-    verified_at: new Date(),
-    document: uploadedFiles.permit,
-  },
-  
-  // Vehicle Photos
-  vehicle_photos: {
-    front: uploadedFiles.vehicleFront,
-    back: uploadedFiles.vehicleBack,
-    interior: uploadedFiles.vehicleInterior,
-  },
-  
-  // Technical Details
-  chassis_number: rcData.vehicle_chasi_number,
-  engine_number: rcData.vehicle_engine_number,
-  fuel_type: rcData.fuel_type,
-  color: rcData.color,
-  norms_type: rcData.norms_type,
-  body_type: rcData.body_type,
-  cubic_capacity: rcData.cubic_capacity,
-  seating_capacity: rcData.seat_capacity ? parseInt(rcData.seat_capacity) : undefined,
-  manufacturing_date: rcData.manufacturing_date_formatted || rcData.manufacturing_date,
-  vehicle_category: rcData.vehicle_category,
-  vehicle_category_description: rcData.vehicle_category_description,
-  unladen_weight: rcData.unladen_weight,
-  gross_weight: rcData.vehicle_gross_weight,
-  registered_at: rcData.registered_at,
-  
-  // Owner Details
-  owner_details: {
-    owner_name: rcData.owner_name,
-    father_name: rcData.father_name,
-    present_address: rcData.present_address,
-    permanent_address: rcData.permanent_address,
-    mobile_number: rcData.mobile_number,
-    owner_number: rcData.owner_number,
-  },
-  
-  // Financer Details
-  financer_details: {
-    financed: rcData.financed ? "YES" : "NO",
-    financerName: rcData.financer,
-  },
-  
-  // Tax Details
-  tax_details: {
-    tax_upto: rcData.tax_upto ? new Date(rcData.tax_upto) : undefined,
-    tax_paid_upto: rcData.tax_paid_upto ? new Date(rcData.tax_paid_upto) : undefined,
-  },
-  
-  // PUCC Details
-  pucc_details: {
-    pucc_number: rcData.pucc_number,
-    pucc_upto: rcData.pucc_upto ? new Date(rcData.pucc_upto) : undefined,
-  },
-  
-  rc_verification_data: rcData,
-  approval_status: "pending",
-  is_active: false,
-});
-
-    log(currentStep, "Vehicle created", { vehicleId: vehicle._id });
-
-    /* ----------------------------
-       8️⃣ Update Driver
-    -----------------------------*/
-    currentStep = "DRIVER_UPDATE";
-    driver.current_vehicle_id = vehicle._id;
-    await driver.save();
-
-    log(currentStep, "Driver updated with vehicle");
-
-    return res.status(201).json({
+    return res.status(202).json({
       success: true,
-      message: "Vehicle added successfully. Awaiting admin approval.",
+      message: "Vehicle upload job queued successfully. Processing in background.",
+      jobId: job.id,
       driverId: driver._id,
-      vehicleId: vehicle._id,
+      status: "processing",
+      note: "You will be notified once the upload is complete",
     });
 
   } catch (error) {
     console.error(`\n🔥 ERROR at step: ${currentStep}`);
     console.error(error);
 
-    for (const file of Object.values(uploadedFiles)) {
-      if (file?.public_id) {
-        try { await deleteImage(file.public_id); } catch {}
-      }
-    }
-
-    cleanupFiles(req.files || []);
+    // Cleanup files on error
+    await cleanupFiles(req.files || []);
 
     return res.status(500).json({
       success: false,
       message: "Server error",
       step: currentStep,
+      error: error.message,
+    });
+  }
+};
+
+/* ----------------------------
+   Get Job Status Endpoint
+-----------------------------*/
+exports.getVehicleUploadStatus = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    
+    const { vehiclePhotoUploadQueue } = require('../queues/DriverVehiclePhotoUpload');
+    const job = await vehiclePhotoUploadQueue.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: "Job not found",
+      });
+    }
+
+    const state = await job.getState();
+    const progress = job.progress();
+    const reason = job.failedReason;
+
+    let result = null;
+    if (state === 'completed') {
+      result = job.returnvalue;
+    }
+
+    return res.status(200).json({
+      success: true,
+      jobId: job.id,
+      state, // active, completed, failed, delayed, waiting
+      progress,
+      attemptsMade: job.attemptsMade,
+      failedReason: reason,
+      result,
+      timestamp: job.timestamp,
+      processedOn: job.processedOn,
+      finishedOn: job.finishedOn,
+    });
+
+  } catch (error) {
+    console.error('Error fetching job status:', error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching job status",
       error: error.message,
     });
   }
