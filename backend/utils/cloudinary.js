@@ -48,6 +48,7 @@ const uploadSingleImage = async (fileInput, folder = "files") => {
 
             resolve({
               url: result.secure_url,
+              image:result.secure_url,
               public_id: result.public_id,
             });
           }
@@ -85,12 +86,11 @@ const uploadSingleImage = async (fileInput, folder = "files") => {
       console.log("🔗 URL:", result.secure_url);
       console.log("🆔 Public ID:", result.public_id);
 
-      await fs.unlink(fileInput).catch(() => {
-        console.warn("⚠️ Failed to delete local file:", fileInput);
-      });
-
+      // ✅ FIX: Return consistent structure with 'url' instead of 'image'
       return {
-        image: result.secure_url,
+        url: result.secure_url,  // ← Changed from 'image' to 'url'
+                      image:result.secure_url,
+
         public_id: result.public_id,
       };
     }
@@ -102,7 +102,6 @@ const uploadSingleImage = async (fileInput, folder = "files") => {
     throw new Error("Failed to upload file to Cloudinary");
   }
 };
-
 const deleteImage = async (public_id) => {
   try {
     await cloudinary.uploader.destroy(public_id);

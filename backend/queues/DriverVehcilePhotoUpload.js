@@ -80,73 +80,89 @@ vehiclePhotoUploadQueue.process(async (job) => {
     log(currentStep, 'Driver validated', { driverId: driver._id });
     await job.progress(10);
 
+    // Helper function to normalize upload result
+    const normalizeUploadResult = (result) => {
+      // Handle both { url, public_id } and { image, public_id } formats
+      return {
+        url: result.url || result.image,
+        public_id: result.public_id
+      };
+    };
+
     // Step 2: Upload RC Front
     currentStep = 'UPLOAD_RC_FRONT';
     log(currentStep, 'Uploading RC front');
-    uploadedFiles.rcFront = await uploadSingleImage(
+    const rcFrontResult = await uploadSingleImage(
       filePaths.rcFront, 
       "vehicle_documents/rc/front"
     );
+    uploadedFiles.rcFront = normalizeUploadResult(rcFrontResult);
     await cleanupLocalFile(filePaths.rcFront);
     await job.progress(20);
 
     // Step 3: Upload RC Back
     currentStep = 'UPLOAD_RC_BACK';
     log(currentStep, 'Uploading RC back');
-    uploadedFiles.rcBack = await uploadSingleImage(
+    const rcBackResult = await uploadSingleImage(
       filePaths.rcBack, 
       "vehicle_documents/rc/back"
     );
+    uploadedFiles.rcBack = normalizeUploadResult(rcBackResult);
     await cleanupLocalFile(filePaths.rcBack);
     await job.progress(30);
 
     // Step 4: Upload Insurance
     currentStep = 'UPLOAD_INSURANCE';
     log(currentStep, 'Uploading insurance document');
-    uploadedFiles.insurance = await uploadSingleImage(
+    const insuranceResult = await uploadSingleImage(
       filePaths.insurance, 
       "vehicle_documents/insurance"
     );
+    uploadedFiles.insurance = normalizeUploadResult(insuranceResult);
     await cleanupLocalFile(filePaths.insurance);
     await job.progress(40);
 
     // Step 5: Upload Permit
     currentStep = 'UPLOAD_PERMIT';
     log(currentStep, 'Uploading permit document');
-    uploadedFiles.permit = await uploadSingleImage(
+    const permitResult = await uploadSingleImage(
       filePaths.permit, 
       "vehicle_documents/permit"
     );
+    uploadedFiles.permit = normalizeUploadResult(permitResult);
     await cleanupLocalFile(filePaths.permit);
     await job.progress(50);
 
     // Step 6: Upload Vehicle Front Photo
     currentStep = 'UPLOAD_VEHICLE_FRONT';
     log(currentStep, 'Uploading vehicle front photo');
-    uploadedFiles.vehicleFront = await uploadSingleImage(
+    const vehicleFrontResult = await uploadSingleImage(
       filePaths.vehicleFront, 
       "vehicle_photos/front"
     );
+    uploadedFiles.vehicleFront = normalizeUploadResult(vehicleFrontResult);
     await cleanupLocalFile(filePaths.vehicleFront);
     await job.progress(60);
 
     // Step 7: Upload Vehicle Back Photo
     currentStep = 'UPLOAD_VEHICLE_BACK';
     log(currentStep, 'Uploading vehicle back photo');
-    uploadedFiles.vehicleBack = await uploadSingleImage(
+    const vehicleBackResult = await uploadSingleImage(
       filePaths.vehicleBack, 
       "vehicle_photos/back"
     );
+    uploadedFiles.vehicleBack = normalizeUploadResult(vehicleBackResult);
     await cleanupLocalFile(filePaths.vehicleBack);
     await job.progress(70);
 
     // Step 8: Upload Vehicle Interior Photo
     currentStep = 'UPLOAD_VEHICLE_INTERIOR';
     log(currentStep, 'Uploading vehicle interior photo');
-    uploadedFiles.vehicleInterior = await uploadSingleImage(
+    const vehicleInteriorResult = await uploadSingleImage(
       filePaths.vehicleInterior, 
       "vehicle_photos/interior"
     );
+    uploadedFiles.vehicleInterior = normalizeUploadResult(vehicleInteriorResult);
     await cleanupLocalFile(filePaths.vehicleInterior);
     await job.progress(80);
 
