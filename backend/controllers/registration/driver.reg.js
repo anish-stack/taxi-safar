@@ -1132,6 +1132,7 @@ exports.addVehicleDetails = async (req, res) => {
       error: error.message,
     });
   }
+}
 /* ----------------------------
    Get Job Status Endpoint
 -----------------------------*/
