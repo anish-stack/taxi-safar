@@ -1958,33 +1958,34 @@ exports.verifyDrivingLicense = async (req, res) => {
 
 exports.verifyRcDetails = async (req, res) => {
   const TRACE_ID = `RC-${Date.now()}`;
+
   try {
     console.log(`\n================ RC VERIFY START [${TRACE_ID}] ================`);
     console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
 
-    const { rcNumber, deviceId, isByPass, driverId } = req.body;
+    const { rcNumber, deviceId, isByPass } = req.body;
 
     /* ---------------- VALIDATION ---------------- */
     console.log("🧪 Validating input fields");
 
-    if (!rcNumber || !deviceId || !driverId) {
-      console.warn("⚠️ Validation failed → Missing required fields");
+    if (!rcNumber || !deviceId) {
+      console.warn("⚠️ Validation failed → Missing fields");
       return res.status(400).json({
         success: false,
-        message: "RC number, deviceId and driverId are required.",
+        message: "RC number and deviceId are required.",
       });
     }
 
-    /* ---------------- DRIVER ---------------- */
-    console.log("👤 Fetching driver details →", driverId);
+    /* ---------------- DRIVER (BY DEVICE ID) ---------------- */
+    console.log("👤 Fetching driver using deviceId:", deviceId);
 
-    const driverDetails = await Driver.findById(driverId).lean();
+    const driverDetails = await Driver.findOne({ device_id: deviceId }).lean();
 
     if (!driverDetails) {
-      console.error("❌ Driver not found in DB");
+      console.error("❌ No driver linked to this device");
       return res.status(404).json({
         success: false,
-        message: "Driver not found.",
+        message: "Driver not found for this device.",
       });
     }
 
@@ -1992,17 +1993,18 @@ exports.verifyRcDetails = async (req, res) => {
       id: driverDetails._id,
       name: driverDetails.driver_name,
       mobile: driverDetails.mobile,
+      device_id: driverDetails.device_id,
     });
 
     /* ---------------- AADHAAR ---------------- */
-    console.log("🪪 Fetching Aadhaar record for device:", deviceId);
+    console.log("🪪 Fetching Aadhaar record for device");
 
     const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
       .sort({ createdAt: -1 })
       .lean();
 
     if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
-      console.warn("❌ Aadhaar not verified or missing name");
+      console.warn("❌ Aadhaar not verified");
       return res.status(400).json({
         success: false,
         message: "Aadhaar not verified for this device.",
@@ -2028,10 +2030,10 @@ exports.verifyRcDetails = async (req, res) => {
       }
     );
 
-    console.log("⬅️ RC API Raw Response:", JSON.stringify(response.data, null, 2));
+    console.log("⬅️ RC API Response:", JSON.stringify(response.data, null, 2));
 
     if (response.data.status !== "success" || !response.data.data) {
-      console.error("❌ RC API returned failure");
+      console.error("❌ RC API Failure");
       return res.status(400).json({
         success: false,
         message: response.data.message || "RC verification failed.",
@@ -2040,16 +2042,13 @@ exports.verifyRcDetails = async (req, res) => {
 
     let rcInfo = response.data.data;
 
-    console.log("✔ RC Data Parsed:", {
+    console.log("✔ RC Data:", {
       owner_name: rcInfo.owner_name,
       vehicle_category: rcInfo.vehicle_category,
       vehicle_class: rcInfo.vehicle_class,
-      registration_date: rcInfo.registration_date,
     });
 
     /* ---------------- BIKE DETECTION ---------------- */
-    console.log("🚲 Checking vehicle category");
-
     const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
     const isBike =
       vehicleCategory.includes("2W") ||
@@ -2057,21 +2056,20 @@ exports.verifyRcDetails = async (req, res) => {
       vehicleCategory.includes("MOTORCYCLE");
 
     console.log("🚘 Vehicle Category:", vehicleCategory);
-    console.log("🚲 Is Bike Detected:", isBike);
+    console.log("🚲 Bike Detected:", isBike);
 
     /* ---------------- BYPASS MODE ---------------- */
     if (isByPass === true) {
       console.warn("⚡ BYPASS MODE ENABLED");
 
       if (isBike) {
-        console.warn("🛠 Overriding bike category → CAR");
+        console.warn("🛠 Overriding bike → CAR");
         rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
       }
 
       console.log("📝 Forcing RC owner name to Aadhaar name");
       rcInfo.owner_name = aadhaarName;
 
-      console.log("✅ RC VERIFIED (BYPASS)");
       return res.status(200).json({
         success: true,
         message: "RC verified successfully (BYPASS MODE).",
@@ -2083,7 +2081,7 @@ exports.verifyRcDetails = async (req, res) => {
 
     /* ---------------- BIKE BLOCK ---------------- */
     if (isBike) {
-      console.warn("🚫 Bike detected → blocking registration");
+      console.warn("🚫 Bike detected → blocked");
       return res.status(400).json({
         success: false,
         message: "Two-wheelers are not allowed. Please register a car.",
@@ -2091,30 +2089,25 @@ exports.verifyRcDetails = async (req, res) => {
     }
 
     /* ---------------- NAME MATCH ---------------- */
-    const rcOwnerName = rcInfo.owner_name;
+    console.log("🔍 Name Matching");
+    console.log("🪪 Aadhaar:", aadhaarName);
+    console.log("📄 RC Owner:", rcInfo.owner_name);
 
-    console.log("🔍 Name Matching Started");
-    console.log("🪪 Aadhaar Name:", aadhaarName);
-    console.log("📄 RC Owner Name:", rcOwnerName);
+    const nameMatched = isNameMatch(aadhaarName, rcInfo.owner_name);
 
-    const nameMatched = isNameMatch(aadhaarName, rcOwnerName);
-
-    console.log("📊 Name Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
+    console.log("📊 Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
 
     if (!nameMatched) {
-      console.error("❌ Name mismatch detected");
+      console.error("❌ Name mismatch");
 
       return res.status(400).json({
         success: false,
         rcData: rcInfo,
         nameMismatch: true,
-        message: `RC owner name "${rcOwnerName}" does not match Aadhaar name "${aadhaarName}".`,
+        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
       });
     }
 
-    console.log("✅ RC OWNER NAME MATCHED");
-
-    /* ---------------- SUCCESS ---------------- */
     console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
 
     return res.status(200).json({
