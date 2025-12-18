@@ -665,7 +665,6 @@ exports.login = async (req, res) => {
 exports.verifyOtp = async (req, res) => {
   try {
     const { number, otp } = req.body;
-    console.log("req.bod", req.body);
     // ✅ Validate input
     if (!number || !otp) {
       return res.status(400).json({
@@ -1750,10 +1749,14 @@ exports.verifyAadhaarOtp = async (req, res) => {
 };
 
 
+/* ----------------------------------------
+   🔤 NAME NORMALIZATION & MATCHING
+---------------------------------------- */
+
 const normalizeName = (name = "") =>
   name
     .toLowerCase()
-    .replace(/[^a-z\s]/g, "") // remove dots, commas, symbols
+    .replace(/[^a-z\s]/g, "")   // remove symbols/numbers
     .trim()
     .replace(/\s+/g, " ");
 
@@ -1771,11 +1774,13 @@ const nameMatchScore = (aadhaar, dl) => {
   let aParts = splitName(aadhaar);
   let dParts = splitName(dl);
 
-  // Expand initials
+  if (!aParts.length || !dParts.length) return 0;
+
+  // Expand initials both sides
   dParts = expandInitials(dParts, aParts);
   aParts = expandInitials(aParts, dParts);
 
-  // First name must match
+  // First name must match strictly
   if (aParts[0] !== dParts[0]) return 0;
 
   const common = aParts.filter(p => dParts.includes(p));
@@ -1785,11 +1790,22 @@ const nameMatchScore = (aadhaar, dl) => {
 };
 
 const isNameMatch = (aadhaarName, dlName) => {
+  const aParts = splitName(aadhaarName);
+  const dParts = splitName(dlName);
+
+  console.log("🧩 Aadhaar Parts:", aParts);
+  console.log("🧩 DL Parts:", dParts);
+
+  // ❌ junk / fraud protection
+  if (!dParts.length || dParts[0].length < 2) return false;
+  if (aParts.length < 2) return false;
+
   const score = nameMatchScore(aadhaarName, dlName);
 
-  console.log("📊 Name Match Score:", score.toFixed(2));
+  console.log("📊 Name Match Score:", score);
 
-  return score >= 0.6; // 👈 SAFE THRESHOLD
+  // ✅ Indian KYC safe threshold
+  return score >= 0.3;
 };
 
 /* -------------------------------------------------
@@ -1814,7 +1830,7 @@ exports.verifyDrivingLicense = async (req, res) => {
 
     /* ---------------- SETTINGS ---------------- */
     const settings = await AppSettings.findOne();
-    const BYPASS = settings?.ByPassApi;
+    const BYPASS = settings?.ByPassApi === true;
 
     console.log("⚙️ BYPASS MODE:", BYPASS);
 
@@ -1866,11 +1882,15 @@ exports.verifyDrivingLicense = async (req, res) => {
       dob: new Date(dob).toISOString().split("T")[0],
     };
 
+    console.log("📤 API Payload:", apiPayload);
+
     const apiResponse = await axios.post(
       "https://api.quickekyc.com/api/v1/driving-license/driving-license",
       apiPayload,
       { timeout: 20000 }
     );
+
+    console.log("📥 API Response:", apiResponse.data);
 
     if (apiResponse.data.status !== "success") {
       return res.status(400).json({
@@ -1931,22 +1951,52 @@ exports.verifyDrivingLicense = async (req, res) => {
   }
 };
 
+
+/* -------------------------------------------------
+   🚗 VERIFY RC DETAILS (FINAL – PROD READY)
+-------------------------------------------------- */
+
 exports.verifyRcDetails = async (req, res) => {
   try {
-    const { rcNumber, deviceId, isByPass, driverId, mobile, formAll } =
-      req.body;
+    console.log("\n================ RC VERIFY START ================");
+    console.log("📥 Incoming Body:", req.body);
 
-    if (!rcNumber) {
+    const { rcNumber, deviceId, isByPass, driverId } = req.body;
+
+    /* ---------------- VALIDATION ---------------- */
+    if (!rcNumber || !deviceId || !driverId) {
       return res.status(400).json({
         success: false,
-        message: "RC number is required.",
+        message: "RC number, deviceId and driverId are required.",
       });
     }
 
-    const driverDetails = await Driver.findById(driverId);
+    /* ---------------- DRIVER ---------------- */
+    const driverDetails = await Driver.findById(driverId).lean();
+    if (!driverDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found.",
+      });
+    }
+
+    /* ---------------- AADHAAR ---------------- */
     const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
       .sort({ createdAt: -1 })
       .lean();
+
+    if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
+      return res.status(400).json({
+        success: false,
+        message: "Aadhaar not verified for this device.",
+      });
+    }
+
+    const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name;
+    console.log("✔ Aadhaar Name:", aadhaarName);
+
+    /* ---------------- RC API ---------------- */
+    console.log("🔵 Calling QuickEKYC RC API");
 
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
@@ -1967,65 +2017,67 @@ exports.verifyRcDetails = async (req, res) => {
       });
     }
 
-    let rcInfo = response.data.data; // ← IMPORTANT (let so we can edit)
+    let rcInfo = response.data.data;
 
-    // --------- Detect bike ----------
+    console.log("✔ RC Owner Name:", rcInfo.owner_name);
+
+    /* ---------------- BIKE DETECTION ---------------- */
     const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
     const isBike =
       vehicleCategory.includes("2W") ||
-      vehicleCategory.includes("TWO WHEELER") ||
+      vehicleCategory.includes("TWO") ||
       vehicleCategory.includes("MOTORCYCLE");
 
-    // =====================================================================
-    // 🔥 BYPASS MODE → Modify vehicle category if bike detected
-    // =====================================================================
+    console.log("🚲 Bike Detected:", isBike);
+
+    /* ---------------- BYPASS MODE ---------------- */
     if (isByPass === true) {
-      console.log("⚡ Bypass Mode → Vehicle type override if bike");
+      console.log("⚡ BYPASS MODE ENABLED");
 
       if (isBike) {
-        // ⭐ MODIFY vehicle_category directly here
-        rcInfo.owner_name = aadhaarRecord?.aadhar_verification_data?.full_name;
-        rcInfo.vehicle_category = "CAR (FORCED BYPASS)";
+        rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
       }
+
+      rcInfo.owner_name = aadhaarName;
 
       return res.status(200).json({
         success: true,
-        message: "RC verified successfully (bypass).",
-        rcData: rcInfo, // ← updated category sent here
-        aadhaarData: null,
+        message: "RC verified successfully (BYPASS MODE).",
+        rcData: rcInfo,
         bikeDetected: isBike,
         bypassUsed: true,
       });
     }
 
-    // =====================================================================
-    // Normal mode (bike not allowed)
-    // =====================================================================
+    /* ---------------- BIKE BLOCK ---------------- */
     if (isBike) {
       return res.status(400).json({
         success: false,
-        aadharModel: false,
-        message: "Bikes/Two-wheelers are not allowed. Please register a car.",
+        message: "Two-wheelers are not allowed. Please register a car.",
       });
     }
 
-    // ---------------- Aadhaar match ---------------
+    /* ---------------- NAME MATCH ---------------- */
+    const rcOwnerName = rcInfo.owner_name;
 
-    const aadhaarName =
-      driverDetails?.driver_name ||
-      aadhaarRecord.aadhar_verification_data.full_name.toLowerCase().trim();
-    const rcOwnerName = rcInfo.owner_name.toLowerCase().trim();
+    console.log("🔍 Name Compare:", aadhaarName, "↔", rcOwnerName);
 
-    if (aadhaarName !== rcOwnerName) {
+    const nameMatched = isNameMatch(aadhaarName, rcOwnerName);
+
+    if (!nameMatched) {
+      console.log("❌ Name mismatch");
+
       return res.status(400).json({
         success: false,
         rcData: rcInfo,
-        aadharModel: true,
-        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
+        nameMismatch: true,
+        message: `RC owner name "${rcOwnerName}" does not match Aadhaar name "${aadhaarName}".`,
       });
     }
 
-    // ---------------- SUCCESS ----------------
+    console.log("✅ RC OWNER NAME MATCHED");
+
+    /* ---------------- SUCCESS ---------------- */
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
@@ -2034,6 +2086,8 @@ exports.verifyRcDetails = async (req, res) => {
       bypassUsed: false,
     });
   } catch (error) {
+    console.error("🔥 RC VERIFY ERROR:", error);
+
     return res.status(500).json({
       success: false,
       message: "Something went wrong during RC verification.",
