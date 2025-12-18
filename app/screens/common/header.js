@@ -17,8 +17,8 @@ import loginStore from "../../store/auth.store";
 import LocationService from "../../services/LocationsService";
 import { API_URL_APP_CHAT } from "../../constant/api";
 import { useNavigation } from "@react-navigation/native";
-import axios from "axios";
-import messaging from "@react-native-firebase/messaging";
+
+import { FloatingWidgetService } from "../../services/NativeModules";
 
 const KM = [5, 10, 15, 20, 25, 30];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");

@@ -23,7 +23,7 @@ import Layout from "../common/layout";
 import BackWithLogo from "../common/back_with_logo";
 import { useNavigation } from "@react-navigation/native";
 import { API_URL_APP } from "../../constant/api";
-
+import { FloatingWidgetService } from "../../services/NativeModules";
 export default function Profile() {
   const { logout, token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
@@ -157,6 +157,7 @@ export default function Profile() {
                 "Your account has been deleted successfully."
               );
               logout(navigation);
+              await FloatingWidgetService.hideFloatingIcon();
             } catch (error) {
               Alert.alert(
                 "Error",
@@ -439,7 +440,7 @@ export default function Profile() {
             })`}
             onPress={() => navigation.navigate("all-vehicle")}
           />
-         
+
           <MenuItem
             onPress={() => navigation.navigate("job-posted-u")}
             icon={<Ionicons name="bag" size={22} color="black" />}
@@ -489,7 +490,10 @@ export default function Profile() {
             icon={<Ionicons name="log-out-outline" size={22} color="#dc2626" />}
             label="Logout"
             color="#dc2626"
-            onPress={() => logout(navigation)}
+            onPress={async () => {
+              await FloatingWidgetService.hideFloatingIcon();
+              logout(navigation);
+            }}
           />
         </Section>
       </ScrollView>

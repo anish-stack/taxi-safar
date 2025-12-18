@@ -70,7 +70,7 @@ export default function RegisterScreen({ navigation }) {
   // === STATES ===
   const [currentStep, setCurrentStep] = useState(1);
   const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [mobile, setMobile] = useState("7042129128");
+  const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
   const [dob, setDob] = useState(null);
   const [email, setEmail] = useState("");

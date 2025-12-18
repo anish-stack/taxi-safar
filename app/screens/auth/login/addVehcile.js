@@ -63,7 +63,6 @@ export default function AddVehicle({ navigation }) {
     permitExpiry: null,
   });
 
-  console.log("vehicleNumber", vehicleNumber);
 
   const [docs, setDocs] = useState({
     rcFront: null,
@@ -152,7 +151,6 @@ export default function AddVehicle({ navigation }) {
       const stored = await getData("aadhaar_verified_data");
       if (!stored) {
         setIsOwnerAadhaarFlow(true);
-        console.log("Yaha se open hu");
         setShowAadhaarModal(true);
         return;
       }

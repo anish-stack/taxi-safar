@@ -1,26 +1,26 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import {
-  View,
-  StyleSheet,
-  Image,
-  Dimensions,
-  ScrollView,
-} from "react-native";
+import { View, StyleSheet, Image, Dimensions, ScrollView } from "react-native";
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+import axios from "axios";
 
 import useDriverStore from "../../store/driver.store";
 import { Colors } from "../../constant/ui";
 import { getCurrentLocation } from "../../services/PermissionService";
+import { API_URL_APP } from "../../constant/api";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
+const isSmallDevice = width < 375; // e.g. iPhone SE, older Android
+const isMediumDevice = width >= 375 && width < 428; // Most common (Pixel, iPhone 12–14)
+const isLargeDevice = width >= 428; // Large phones: Realme 11 Pro, S23 Ultra, etc.
+const isTablet = width >= 768; // iPad, Galaxy Tab
 /* -----------------------------------
    Constants
 ----------------------------------- */
 const BANNER_HEIGHT = verticalScale(130);
 
-const OFFLINE_BANNERS = [
+const FALLBACK_BANNERS = [
   { id: 1, image: require("./image1.png") },
   { id: 2, image: require("./image.png") },
 ];
@@ -37,6 +37,7 @@ export default function DriverMap() {
   const [currentLocation, setCurrentLocation] = useState(DEFAULT_COORDS);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [locationReady, setLocationReady] = useState(false);
+  const [banners, setBanners] = useState(FALLBACK_BANNERS);
 
   const scrollRef = useRef(null);
   const intervalRef = useRef(null);
@@ -45,9 +46,34 @@ export default function DriverMap() {
   const isDriverOnline = Boolean(is_online);
 
   const currentRadius =
-    (driver?.currentRadius > 0
-      ? driver.currentRadius
-      : DEFAULT_RADIUS_KM) * 1000;
+    (driver?.currentRadius > 0 ? driver.currentRadius : DEFAULT_RADIUS_KM) *
+    1000;
+
+  /* -----------------------------------
+     Fetch Banners (API)
+  ----------------------------------- */
+  useEffect(() => {
+    const fetchBanners = async () => {
+      try {
+        const res = await axios.get(
+          `${API_URL_APP}/api/v1/admin/banner?active=true`
+        );
+
+        if (res?.data?.data?.length) {
+          const apiBanners = res.data.data.map((item) => ({
+            id: item._id,
+            image: { uri: item.url },
+          }));
+
+          setBanners(apiBanners);
+        }
+      } catch (err) {
+        setBanners(FALLBACK_BANNERS);
+      }
+    };
+
+    fetchBanners();
+  }, []);
 
   /* -----------------------------------
      Fetch Location (Silent)
@@ -85,14 +111,14 @@ export default function DriverMap() {
      Offline Banner Auto Scroll
   ----------------------------------- */
   useEffect(() => {
-    if (isDriverOnline) {
+    if (isDriverOnline || banners.length <= 1) {
       intervalRef.current && clearInterval(intervalRef.current);
       return;
     }
 
     intervalRef.current = setInterval(() => {
       setBannerIndex((prev) => {
-        const next = (prev + 1) % OFFLINE_BANNERS.length;
+        const next = (prev + 1) % banners.length;
         scrollRef.current?.scrollTo({
           x: next * width,
           animated: true,
@@ -102,7 +128,7 @@ export default function DriverMap() {
     }, 8000);
 
     return () => clearInterval(intervalRef.current);
-  }, [isDriverOnline]);
+  }, [isDriverOnline, banners]);
 
   /* -----------------------------------
      OFFLINE UI
@@ -116,13 +142,11 @@ export default function DriverMap() {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={(e) => {
-            const index = Math.round(
-              e.nativeEvent.contentOffset.x / width
-            );
+            const index = Math.round(e.nativeEvent.contentOffset.x / width);
             setBannerIndex(index);
           }}
         >
-          {OFFLINE_BANNERS.map((banner) => (
+          {banners.map((banner) => (
             <View key={banner.id} style={styles.bannerCard}>
               <Image
                 source={banner.image}
@@ -134,13 +158,10 @@ export default function DriverMap() {
         </ScrollView>
 
         <View style={styles.pagination}>
-          {OFFLINE_BANNERS.map((_, i) => (
+          {banners.map((_, i) => (
             <View
               key={i}
-              style={[
-                styles.dot,
-                bannerIndex === i && styles.dotActive,
-              ]}
+              style={[styles.dot, bannerIndex === i && styles.dotActive]}
             />
           ))}
         </View>
@@ -198,7 +219,7 @@ export default function DriverMap() {
 const styles = StyleSheet.create({
   mapContainer: {
     height: BANNER_HEIGHT,
-    marginVertical: verticalScale(12),
+    // marginVertical: verticalScale(12),
   },
 
   map: {
@@ -211,13 +232,37 @@ const styles = StyleSheet.create({
   },
 
   offlineWrapper: {
-    padding:scale(2),
-    marginTop: verticalScale(6),
+    padding: isSmallDevice
+      ? scale(2)
+      : isMediumDevice
+      ? scale(4)
+      : isLargeDevice
+      ? scale(6)
+      : scale(8),
+    marginTop: isSmallDevice
+      ? verticalScale(4)
+      : isMediumDevice
+      ? verticalScale(6)
+      : isLargeDevice
+      ? verticalScale(8)
+      : verticalScale(12),
   },
 
   bannerCard: {
-    width:moderateScale(width * 0.89),
-    height: BANNER_HEIGHT,
+   width: isSmallDevice
+      ? scale(width * 0.95)
+      : isMediumDevice
+      ? scale(width * 0.83)
+      : isLargeDevice
+      ? scale(width * 0.9)
+      : scale(width * 0.7), // tablet
+    height: isSmallDevice
+      ? verticalScale(120)
+      : isMediumDevice
+      ? verticalScale(130)
+      : isLargeDevice
+      ? verticalScale(120)
+      : verticalScale(150),
     borderRadius: moderateScale(12),
     overflow: "hidden",
     backgroundColor: "#fff",

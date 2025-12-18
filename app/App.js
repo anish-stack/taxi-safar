@@ -599,7 +599,7 @@ export default function App() {
   if (isCheckingUpdates || isDownloadingUpdate) {
     return (
       <UpdateLoadingScreen
-        message={isDownloadingUpdate ? "Downloading update..." : "Checking for updates..."}
+        message={isDownloadingUpdate ? "Downloading update..." : ""}
       />
     );
   }

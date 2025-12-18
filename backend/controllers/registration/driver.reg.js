@@ -885,6 +885,13 @@ exports.getDriverDetails = async (req, res) => {
   }
 };
 
+const log = (step, message, data = null) => {
+  console.log(
+    `\n🔹 [ADD_VEHICLE | ${step}] ${message}`,
+    data ? `\n📦 Data: ${JSON.stringify(data, null, 2)}` : ""
+  );
+};
+
 exports.addVehicleDetails = async (req, res) => {
   let uploadedFiles = {};
 
