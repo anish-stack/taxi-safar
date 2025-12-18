@@ -2079,47 +2079,81 @@ exports.verifyRcDetails = async (req, res) => {
       device_id: driverDetails.device_id,
     });
 
-    /* ---------------- AADHAAR ---------------- */
-    console.log("🪪 Fetching Aadhaar record for device");
-
-    // const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
-    //   .sort({ createdAt: -1 })
-    //   .lean();
-
-    // if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
-    //   console.warn("❌ Aadhaar not verified");
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Aadhaar not verified for this device.",
-    //   });
-    // }
-
-    // const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name;
-    // console.log("✔ Aadhaar Verified Name:", aadhaarName);
-
     /* ---------------- RC API ---------------- */
     console.log("🌐 Calling QuickEKYC RC API");
     console.log("➡️ RC Number:", rcNumber.toUpperCase());
 
-    const response = await axios.post(
-      "https://api.quickekyc.com/api/v1/rc/rc_sp",
-      {
-        key: process.env.QUICKEKYC_API_KEY,
-        id_number: rcNumber.toUpperCase(),
-      },
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 20000,
+    let response;
+    try {
+      response = await axios.post(
+        "https://api.quickekyc.com/api/v1/rc/rc_sp",
+        {
+          key: process.env.QUICKEKYC_API_KEY,
+          id_number: rcNumber.toUpperCase(),
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 20000,
+        }
+      );
+    } catch (apiError) {
+      console.error("❌ RC API Request Failed:", apiError.message);
+      
+      // Check if it's a network/timeout error
+      if (apiError.code === 'ECONNABORTED' || apiError.code === 'ETIMEDOUT') {
+        console.error("⏱️ API Timeout - Parivahan might be slow or down");
+        return res.status(503).json({
+          success: false,
+          message: "RC verification service is temporarily unavailable. Please try again in a few minutes.",
+          errorType: "SERVICE_TIMEOUT",
+          retryable: true,
+        });
       }
-    );
+      
+      throw apiError; // Re-throw other errors
+    }
 
     console.log("⬅️ RC API Response:", JSON.stringify(response.data, null, 2));
 
+    /* ---------------- PARIVAHAN DOWN DETECTION ---------------- */
+    if (response.data.status === 'error' && response.data.status_code === 500) {
+      console.error("🚨 PARIVAHAN IS DOWN - Internal Server Error from API");
+      console.error("Response:", response.data);
+      
+      return res.status(503).json({
+        success: false,
+        message: "Government RC verification service (Parivahan) is currently down. Please try again after some time.",
+        errorType: "PARIVAHAN_DOWN",
+        retryable: true,
+        details: {
+          apiMessage: response.data.message,
+          requestId: response.data.request_id,
+          timestamp: new Date().toISOString(),
+        }
+      });
+    }
+
+    /* ---------------- OTHER API FAILURES ---------------- */
     if (response.data.status !== "success" || !response.data.data) {
       console.error("❌ RC API Failure", response.data);
+      
+      // Different error messages based on status code
+      let errorMessage = "RC verification failed.";
+      let errorType = "VERIFICATION_FAILED";
+      
+      if (response.data.status_code === 404) {
+        errorMessage = "RC number not found in records. Please check the number and try again.";
+        errorType = "RC_NOT_FOUND";
+      } else if (response.data.status_code === 400) {
+        errorMessage = "Invalid RC number format. Please check and try again.";
+        errorType = "INVALID_RC_FORMAT";
+      }
+      
       return res.status(400).json({
         success: false,
-        message: response.data.message || "RC verification failed.",
+        message: response.data.message || errorMessage,
+        errorType,
+        retryable: response.data.status_code === 500,
       });
     }
 
@@ -2130,7 +2164,8 @@ exports.verifyRcDetails = async (req, res) => {
     const isBike =
       vehicleCategory.includes("2W") ||
       vehicleCategory.includes("TWO") ||
-      vehicleCategory.includes("MOTORCYCLE");
+      vehicleCategory.includes("MOTORCYCLE") ||
+      vehicleCategory.includes("SCOOTER");
 
     console.log("🚘 Vehicle Category:", vehicleCategory);
     console.log("🚲 Bike Detected:", isBike);
@@ -2144,8 +2179,7 @@ exports.verifyRcDetails = async (req, res) => {
         rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
       }
 
-      console.log("📝 Forcing RC owner name to Aadhaar name");
-      rcInfo.owner_name = aadhaarName;
+      console.log("📝 Bypass mode active - skipping strict validations");
 
       return res.status(200).json({
         success: true,
@@ -2162,32 +2196,14 @@ exports.verifyRcDetails = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Two-wheelers are not allowed. Please register a car.",
+        errorType: "BIKE_NOT_ALLOWED",
+        bikeDetected: true,
       });
     }
 
-    /* ---------------- NAME MATCH ---------------- */
-    console.log("🔍 Name Matching");
-    // console.log("🪪 Aadhaar:", aadhaarName);
-    console.log("📄 RC Owner:", rcInfo.owner_name);
-
-    // const nameMatched = isNameMatch(aadhaarName, rcInfo.owner_name);
-
-    // console.log("📊 Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
-
-    // if (!nameMatched) {
-    //   console.error("❌ Name mismatch");
-
-    //   return res.status(400).json({
-    //     success: false,
-    //     rcData: rcInfo,
-    //     nameMismatch: true,
-    //     message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
-    //   });
-    // }
-
     console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
-
     console.log("✔ RC Data:", rcInfo);
+    
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
@@ -2195,6 +2211,7 @@ exports.verifyRcDetails = async (req, res) => {
       bikeDetected: false,
       bypassUsed: false,
     });
+    
   } catch (error) {
     console.error(`🔥 RC VERIFY ERROR [${TRACE_ID}]`);
     console.error(error);
@@ -2203,6 +2220,7 @@ exports.verifyRcDetails = async (req, res) => {
       success: false,
       message: "Something went wrong during RC verification.",
       error: error.message,
+      errorType: "INTERNAL_ERROR",
     });
   }
 };
