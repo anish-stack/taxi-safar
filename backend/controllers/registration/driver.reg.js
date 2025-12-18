@@ -1036,16 +1036,104 @@ exports.addVehicleDetails = async (req, res) => {
     -----------------------------*/
     currentStep = "VEHICLE_CREATE";
 
-    const vehicle = await Vehicle.create({
-      driver_id: driver._id,
-      vehicle_type: vehicleType.toLowerCase(),
-      vehicle_brand: rcData.maker_description,
-      vehicle_name: rcData.maker_model,
-      vehicle_number: vehicleNumber.toUpperCase(),
-      rc_verification_data: rcData,
-      approval_status: "pending",
-      is_active: false,
-    });
+   const vehicle = await Vehicle.create({
+  driver_id: driver._id,
+  vehicle_type: vehicleType.toLowerCase(),
+  vehicle_brand: rcData.maker_description,
+  vehicle_name: rcData.maker_model,
+  vehicle_number: vehicleNumber.toUpperCase(),
+  
+  // Registration Certificate
+  registration_certificate: {
+    rc_number: rcData.rc_number,
+    register_date: rcData.registration_date ? new Date(rcData.registration_date) : undefined,
+    fit_upto: rcData.fit_up_to ? new Date(rcData.fit_up_to) : undefined,
+    rc_status: rcData.rc_status || "ACTIVE",
+    verified: true,
+    verified_at: new Date(),
+    verified_via: "quickekyc_api",
+    front: uploadedFiles.rcFront,
+    back: uploadedFiles.rcBack,
+  },
+  
+  // Insurance
+  insurance: {
+    company_name: rcData.insurance_company,
+    policy_number: rcData.insurance_policy_number,
+    expiry_date: rcData.insurance_upto ? new Date(rcData.insurance_upto) : new Date(),
+    verified: true,
+    verified_at: new Date(),
+    verified_via: "rc_api",
+    document: uploadedFiles.insurance,
+  },
+  
+  // Permit - THIS IS THE CRITICAL FIX
+  permit: {
+    permit_number: rcData.permit_number,
+    permit_type: rcData.permit_type,
+    valid_from: rcData.permit_valid_from ? new Date(rcData.permit_valid_from) : undefined,
+    valid_upto: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : undefined,
+    expiry_date: rcData.permit_valid_upto ? new Date(rcData.permit_valid_upto) : new Date(), // ✅ REQUIRED FIELD
+    verified: true,
+    verified_at: new Date(),
+    document: uploadedFiles.permit,
+  },
+  
+  // Vehicle Photos
+  vehicle_photos: {
+    front: uploadedFiles.vehicleFront,
+    back: uploadedFiles.vehicleBack,
+    interior: uploadedFiles.vehicleInterior,
+  },
+  
+  // Technical Details
+  chassis_number: rcData.vehicle_chasi_number,
+  engine_number: rcData.vehicle_engine_number,
+  fuel_type: rcData.fuel_type,
+  color: rcData.color,
+  norms_type: rcData.norms_type,
+  body_type: rcData.body_type,
+  cubic_capacity: rcData.cubic_capacity,
+  seating_capacity: rcData.seat_capacity ? parseInt(rcData.seat_capacity) : undefined,
+  manufacturing_date: rcData.manufacturing_date_formatted || rcData.manufacturing_date,
+  vehicle_category: rcData.vehicle_category,
+  vehicle_category_description: rcData.vehicle_category_description,
+  unladen_weight: rcData.unladen_weight,
+  gross_weight: rcData.vehicle_gross_weight,
+  registered_at: rcData.registered_at,
+  
+  // Owner Details
+  owner_details: {
+    owner_name: rcData.owner_name,
+    father_name: rcData.father_name,
+    present_address: rcData.present_address,
+    permanent_address: rcData.permanent_address,
+    mobile_number: rcData.mobile_number,
+    owner_number: rcData.owner_number,
+  },
+  
+  // Financer Details
+  financer_details: {
+    financed: rcData.financed ? "YES" : "NO",
+    financerName: rcData.financer,
+  },
+  
+  // Tax Details
+  tax_details: {
+    tax_upto: rcData.tax_upto ? new Date(rcData.tax_upto) : undefined,
+    tax_paid_upto: rcData.tax_paid_upto ? new Date(rcData.tax_paid_upto) : undefined,
+  },
+  
+  // PUCC Details
+  pucc_details: {
+    pucc_number: rcData.pucc_number,
+    pucc_upto: rcData.pucc_upto ? new Date(rcData.pucc_upto) : undefined,
+  },
+  
+  rc_verification_data: rcData,
+  approval_status: "pending",
+  is_active: false,
+});
 
     log(currentStep, "Vehicle created", { vehicleId: vehicle._id });
 
