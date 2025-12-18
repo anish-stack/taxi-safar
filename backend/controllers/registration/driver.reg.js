@@ -908,6 +908,8 @@ exports.addVehicleDetails = async (req, res) => {
     const files = req.files || [];
     const body = req.body || {};
 
+    console.log("files", files);
+    
     /* ----------------------------
        1️⃣ Validate Driver
     -----------------------------*/
@@ -1037,15 +1039,14 @@ exports.addVehicleDetails = async (req, res) => {
         message: "Please upload Vehicle Interior Photo",
       },
     };
+    
     const missingEntry = Object.values(requiredFiles).find(
       (item) => !item.file
     );
 
     if (missingEntry) {
       log(currentStep, "Missing required file", missingEntry.message);
-
       await cleanupFiles(files);
-
       return res.status(400).json({
         success: false,
         message: missingEntry.message,
@@ -1059,15 +1060,15 @@ exports.addVehicleDetails = async (req, res) => {
     -----------------------------*/
     currentStep = "QUEUE_JOB_ADD";
 
-    // Prepare file paths for the queue job
+    // ✅ FIX: Access .file.path instead of just .path
     const filePaths = {
-      rcFront: requiredFiles.rcFront.path,
-      rcBack: requiredFiles.rcBack.path,
-      insurance: requiredFiles.insurance.path,
-      permit: requiredFiles.permit.path,
-      vehicleFront: requiredFiles.vehicleFront.path,
-      vehicleBack: requiredFiles.vehicleBack.path,
-      vehicleInterior: requiredFiles.vehicleInterior.path,
+      rcFront: requiredFiles.rcFront.file.path,
+      rcBack: requiredFiles.rcBack.file.path,
+      insurance: requiredFiles.insurance.file.path,
+      permit: requiredFiles.permit.file.path,
+      vehicleFront: requiredFiles.vehicleFront.file.path,
+      vehicleBack: requiredFiles.vehicleBack.file.path,
+      vehicleInterior: requiredFiles.vehicleInterior.file.path,
     };
 
     // Prepare vehicle data
@@ -1075,6 +1076,22 @@ exports.addVehicleDetails = async (req, res) => {
       vehicleType,
       vehicleNumber,
     };
+
+    console.log("filePaths", filePaths);
+
+    // Validate all file paths exist
+    const invalidPath = Object.entries(filePaths).find(([key, path]) => !path);
+    if (invalidPath) {
+      log(currentStep, "Invalid file path detected", { 
+        field: invalidPath[0],
+        path: invalidPath[1] 
+      });
+      await cleanupFiles(files);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid file path for ${invalidPath[0]}`,
+      });
+    }
 
     // Add job to Bull queue
     const job = await addVehicleUploadJob({
@@ -1115,8 +1132,6 @@ exports.addVehicleDetails = async (req, res) => {
       error: error.message,
     });
   }
-};
-
 /* ----------------------------
    Get Job Status Endpoint
 -----------------------------*/
@@ -1989,10 +2004,10 @@ exports.verifyDrivingLicense = async (req, res) => {
     // console.log("✅ Name matched successfully");
 
     /* ---------------- SAVE CACHE ---------------- */
-    cached.dl_data = dlInfo;
-    cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
-    cached.isDlisExpired = false;
-    await cached.save();
+    // cached.dl_data = dlInfo;
+    // cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    // cached.isDlisExpired = false;
+    // await cached.save();
 
     console.log("🎉 DL VERIFIED SUCCESSFULLY");
 

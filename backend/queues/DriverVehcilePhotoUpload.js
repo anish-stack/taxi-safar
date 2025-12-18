@@ -19,13 +19,13 @@ const vehiclePhotoUploadQueue = new Bull('vehicle-photo-upload', {
     port: 6379,
   },
   defaultJobOptions: {
-    attempts: 4, // Retry 3 times (total 4 attempts)
+    attempts: 4,
     backoff: {
       type: 'exponential',
-      delay: 5000, // Start with 5 seconds, then exponential backoff
+      delay: 5000,
     },
-    removeOnComplete: 100, // Keep last 100 completed jobs
-    removeOnFail: 500, // Keep last 500 failed jobs
+    removeOnComplete: 100,
+    removeOnFail: 500,
   },
 });
 
@@ -38,7 +38,7 @@ const log = (step, message, data = null) => {
   }
 };
 
-// Utility to cleanup local files
+// Utility to cleanup local files - ONLY on final completion or failure
 const cleanupLocalFile = async (filePath) => {
   try {
     if (filePath) {
@@ -48,6 +48,15 @@ const cleanupLocalFile = async (filePath) => {
   } catch (error) {
     log('FILE_CLEANUP_ERROR', `Failed to delete ${filePath}:`, error.message);
   }
+};
+
+// NEW: Cleanup all local files at once
+const cleanupAllLocalFiles = async (filePaths) => {
+  log('CLEANUP_ALL', 'Starting cleanup of all local files');
+  for (const [key, filePath] of Object.entries(filePaths)) {
+    await cleanupLocalFile(filePath);
+  }
+  log('CLEANUP_ALL', 'Local file cleanup complete');
 };
 
 // Process the queue
@@ -67,6 +76,7 @@ vehiclePhotoUploadQueue.process(async (job) => {
 
   let uploadedFiles = {};
   let currentStep = 'INIT';
+  const isLastAttempt = job.attemptsMade + 1 >= job.opts.attempts;
 
   try {
     // Step 1: Validate Driver
@@ -82,7 +92,6 @@ vehiclePhotoUploadQueue.process(async (job) => {
 
     // Helper function to normalize upload result
     const normalizeUploadResult = (result) => {
-      // Handle both { url, public_id } and { image, public_id } formats
       return {
         url: result.url || result.image,
         public_id: result.public_id
@@ -91,79 +100,73 @@ vehiclePhotoUploadQueue.process(async (job) => {
 
     // Step 2: Upload RC Front
     currentStep = 'UPLOAD_RC_FRONT';
-    log(currentStep, 'Uploading RC front');
+    log(currentStep, 'Uploading RC front', { filePath: filePaths.rcFront });
     const rcFrontResult = await uploadSingleImage(
       filePaths.rcFront, 
       "vehicle_documents/rc/front"
     );
     uploadedFiles.rcFront = normalizeUploadResult(rcFrontResult);
-    await cleanupLocalFile(filePaths.rcFront);
+    // DON'T delete file yet - keep for retries
     await job.progress(20);
 
     // Step 3: Upload RC Back
     currentStep = 'UPLOAD_RC_BACK';
-    log(currentStep, 'Uploading RC back');
+    log(currentStep, 'Uploading RC back', { filePath: filePaths.rcBack });
     const rcBackResult = await uploadSingleImage(
       filePaths.rcBack, 
       "vehicle_documents/rc/back"
     );
     uploadedFiles.rcBack = normalizeUploadResult(rcBackResult);
-    await cleanupLocalFile(filePaths.rcBack);
     await job.progress(30);
 
     // Step 4: Upload Insurance
     currentStep = 'UPLOAD_INSURANCE';
-    log(currentStep, 'Uploading insurance document');
+    log(currentStep, 'Uploading insurance document', { filePath: filePaths.insurance });
     const insuranceResult = await uploadSingleImage(
       filePaths.insurance, 
       "vehicle_documents/insurance"
     );
     uploadedFiles.insurance = normalizeUploadResult(insuranceResult);
-    await cleanupLocalFile(filePaths.insurance);
     await job.progress(40);
 
     // Step 5: Upload Permit
     currentStep = 'UPLOAD_PERMIT';
-    log(currentStep, 'Uploading permit document');
+    log(currentStep, 'Uploading permit document', { filePath: filePaths.permit });
     const permitResult = await uploadSingleImage(
       filePaths.permit, 
       "vehicle_documents/permit"
     );
     uploadedFiles.permit = normalizeUploadResult(permitResult);
-    await cleanupLocalFile(filePaths.permit);
     await job.progress(50);
 
     // Step 6: Upload Vehicle Front Photo
     currentStep = 'UPLOAD_VEHICLE_FRONT';
-    log(currentStep, 'Uploading vehicle front photo');
+    log(currentStep, 'Uploading vehicle front photo', { filePath: filePaths.vehicleFront });
     const vehicleFrontResult = await uploadSingleImage(
       filePaths.vehicleFront, 
       "vehicle_photos/front"
     );
     uploadedFiles.vehicleFront = normalizeUploadResult(vehicleFrontResult);
-    await cleanupLocalFile(filePaths.vehicleFront);
     await job.progress(60);
 
     // Step 7: Upload Vehicle Back Photo
     currentStep = 'UPLOAD_VEHICLE_BACK';
-    log(currentStep, 'Uploading vehicle back photo');
+    log(currentStep, 'Uploading vehicle back photo', { filePath: filePaths.vehicleBack });
     const vehicleBackResult = await uploadSingleImage(
       filePaths.vehicleBack, 
       "vehicle_photos/back"
     );
     uploadedFiles.vehicleBack = normalizeUploadResult(vehicleBackResult);
-    await cleanupLocalFile(filePaths.vehicleBack);
     await job.progress(70);
 
     // Step 8: Upload Vehicle Interior Photo
     currentStep = 'UPLOAD_VEHICLE_INTERIOR';
-    log(currentStep, 'Uploading vehicle interior photo');
+    log(currentStep, 'Uploading vehicle interior photo', { filePath: filePaths.vehicleInterior });
     const vehicleInteriorResult = await uploadSingleImage(
       filePaths.vehicleInterior, 
       "vehicle_photos/interior"
     );
     uploadedFiles.vehicleInterior = normalizeUploadResult(vehicleInteriorResult);
-    await cleanupLocalFile(filePaths.vehicleInterior);
     await job.progress(80);
 
     log('UPLOAD_COMPLETE', 'All files uploaded successfully');
@@ -280,6 +283,9 @@ vehiclePhotoUploadQueue.process(async (job) => {
     log(currentStep, 'Driver updated with vehicle reference');
     await job.progress(100);
 
+    // ✅ SUCCESS - Now cleanup local files
+    await cleanupAllLocalFiles(filePaths);
+
     // Return success result
     return {
       success: true,
@@ -292,10 +298,11 @@ vehiclePhotoUploadQueue.process(async (job) => {
     log('ERROR', `Failed at step: ${currentStep}`, {
       error: error.message,
       stack: error.stack,
-      attempt: job.attemptsMade + 1
+      attempt: job.attemptsMade + 1,
+      isLastAttempt
     });
 
-    // Cleanup uploaded files on error
+    // Cleanup Cloudinary uploads that succeeded before the error
     for (const [key, file] of Object.entries(uploadedFiles)) {
       if (file?.public_id) {
         try {
@@ -307,9 +314,12 @@ vehiclePhotoUploadQueue.process(async (job) => {
       }
     }
 
-    // Cleanup remaining local files
-    for (const [key, filePath] of Object.entries(filePaths)) {
-      await cleanupLocalFile(filePath);
+    // ⚠️ ONLY cleanup local files on LAST attempt
+    if (isLastAttempt) {
+      log('FINAL_ATTEMPT', 'Last attempt failed - cleaning up local files');
+      await cleanupAllLocalFiles(filePaths);
+    } else {
+      log('RETRY_PENDING', `Keeping local files for retry (attempt ${job.attemptsMade + 1}/${job.opts.attempts})`);
     }
 
     throw error; // Re-throw to trigger retry
@@ -321,11 +331,17 @@ vehiclePhotoUploadQueue.on('completed', (job, result) => {
   log('JOB_COMPLETED', `Job ${job.id} completed successfully`, result);
 });
 
-vehiclePhotoUploadQueue.on('failed', (job, err) => {
-  log('JOB_FAILED', `Job ${job.id} failed after ${job.attemptsMade} attempts`, {
+vehiclePhotoUploadQueue.on('failed', async (job, err) => {
+  log('JOB_FAILED', `Job ${job.id} failed permanently after ${job.attemptsMade} attempts`, {
     error: err.message,
     driverId: job.data.driverId
   });
+  
+  // Final cleanup on permanent failure
+  if (job.data.filePaths) {
+    log('FINAL_CLEANUP', 'Performing final cleanup of local files');
+    await cleanupAllLocalFiles(job.data.filePaths);
+  }
 });
 
 vehiclePhotoUploadQueue.on('stalled', (job) => {
@@ -342,7 +358,7 @@ vehiclePhotoUploadQueue.on('progress', (job, progress) => {
 const addVehicleUploadJob = async (jobData) => {
   try {
     const job = await vehiclePhotoUploadQueue.add(jobData, {
-      priority: 1, // Higher priority for vehicle uploads
+      priority: 1,
       timeout: 300000, // 5 minutes timeout
     });
 
