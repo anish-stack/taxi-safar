@@ -6,11 +6,18 @@ import {
   AppState,
   Alert,
   ActivityIndicator,
+  Modal,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Linking,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
 import { useFonts } from "expo-font";
+import * as Updates from "expo-updates";
+import * as Application from 'expo-application';
 // Services
 import { requestAppPermissions } from "./services/PermissionService";
 import { initializeNotifications } from "./utils/initNotifications";
@@ -20,6 +27,8 @@ import { useDriverServices } from "./hooks/useDriverServices";
 // Store
 import loginStore from "./store/auth.store";
 import useDriverStore from "./store/driver.store";
+
+// Hooks
 
 // Constants
 import { API_URL_APP } from "./constant/api";
@@ -84,6 +93,7 @@ import MyTrips from "./screens/MyTrips/MyTrips";
 import AllCategories from "./screens/AllCategories/AllCategories";
 import AllVehicles from "./screens/pages/AllVehicles";
 import Preferences from "./screens/pages/Preferences";
+import useSettings from "./hooks/Settings";
 
 const Stack = createNativeStackNavigator();
 
@@ -94,9 +104,41 @@ const CONFIG = {
   PERMISSION_CHECK_INTERVAL: 300000, // 5 minutes
 };
 
+// Update Modal Component
+const UpdateModal = ({ visible, onUpdate, type = "store" }) => (
+  <Modal visible={visible} transparent animationType="fade">
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>Update Required</Text>
+        <Text style={styles.modalMessage}>
+          {type === "store"
+            ? "A new version of the app is available on the Play Store. Please update to continue using the app."
+            : "An update is available. Please update to get the latest features and improvements."}
+        </Text>
+        <TouchableOpacity style={styles.updateButton} onPress={onUpdate}>
+          <Text style={styles.updateButtonText}>Update Now</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </Modal>
+);
+
+// Loading Screen Component
+const UpdateLoadingScreen = ({ message = "Updating app..." }) => (
+  <View style={styles.loadingContainer}>
+    <ActivityIndicator size="large" color="#000" />
+    <Text style={styles.loadingText}>{message}</Text>
+  </View>
+);
+
 export default function App() {
   const { token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
+
+  // Fetch settings
+  const { data: settingsData, loading: settingsLoading } = useSettings({
+    autoFetch: true,
+  });
 
   const [fontsLoaded] = useFonts({
     "SFProDisplay-Regular": require("./assets/fonts/SF-Pro-Display-Regular.otf"),
@@ -115,12 +157,15 @@ export default function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isDriverOnline, setIsDriverOnline] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(true);
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
+  const [showStoreUpdateModal, setShowStoreUpdateModal] = useState(false);
+  const [storeUpdateLink, setStoreUpdateLink] = useState("");
 
   // Get driver info
   const driverId = driver?._id || driver;
 
   // Initialize driver services (Ride Pooling & Floating Widget)
-  // IMPORTANT: Only initialize AFTER permissions are granted
   const {
     isPoolingActive,
     isWidgetActive,
@@ -135,8 +180,115 @@ export default function App() {
     token,
     isDriverOnline,
     enableFloatingWidget: true,
-    enabled: permissionsGranted, // Only enable after permissions
+    enabled: permissionsGranted,
   });
+
+  /**
+   * Get current app version
+   */
+  const getCurrentAppVersion = () => {
+    return Application.nativeApplicationVersion || "1.0.0";
+  };
+
+  /**
+   * Compare version strings
+   * Returns true if serverVersion > currentVersion
+   */
+  const isServerVersionGreater = (currentVersion, serverVersion) => {
+    const current = currentVersion.split(".").map(Number);
+    const server = serverVersion.split(".").map(Number);
+
+    for (let i = 0; i < Math.max(current.length, server.length); i++) {
+      const c = current[i] || 0;
+      const s = server[i] || 0;
+      if (s > c) return true;
+      if (s < c) return false;
+    }
+    return false;
+  };
+
+  /**
+   * Check for Play Store updates
+   */
+  const checkPlayStoreUpdate = async () => {
+    try {
+      if (Platform.OS !== "android" || !settingsData?.data) {
+        return false;
+      }
+
+      const currentVersion = getCurrentAppVersion();
+      const serverVersion = settingsData.data.app_version_android;
+      const playStoreLink = settingsData.data.app_link_android;
+
+      console.log("📱 Current version:", currentVersion);
+      console.log("📱 Server version:", serverVersion);
+
+      if (serverVersion && isServerVersionGreater(currentVersion, serverVersion)) {
+        console.log("🔄 Play Store update required");
+        setStoreUpdateLink(playStoreLink || "");
+        setShowStoreUpdateModal(true);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error("❌ Error checking Play Store update:", error);
+      return false;
+    }
+  };
+
+  /**
+   * Handle Play Store update
+   */
+  const handlePlayStoreUpdate = async () => {
+    try {
+      if (storeUpdateLink) {
+        const canOpen = await Linking.canOpenURL(storeUpdateLink);
+        if (canOpen) {
+          await Linking.openURL(storeUpdateLink);
+        } else {
+          Alert.alert("Error", "Unable to open Play Store link");
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error opening Play Store:", error);
+      Alert.alert("Error", "Unable to open Play Store");
+    }
+  };
+
+  /**
+   * Check for OTA updates (Expo Updates / EAS)
+   */
+  const checkOTAUpdate = async () => {
+    try {
+      if (__DEV__) {
+        console.log("🔄 Skipping OTA update check in development");
+        return false;
+      }
+
+      console.log("🔄 Checking for OTA updates...");
+
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        console.log("📥 OTA update available, downloading...");
+        setIsDownloadingUpdate(true);
+
+        await Updates.fetchUpdateAsync();
+
+        console.log("✅ OTA update downloaded, reloading app...");
+        await Updates.reloadAsync();
+
+        return true;
+      } else {
+        console.log("✅ App is up to date");
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Error checking OTA updates:", error);
+      return false;
+    }
+  };
 
   /**
    * Request all permissions FIRST - before any service initialization
@@ -173,10 +325,8 @@ export default function App() {
     try {
       console.log("📱 Initializing app...");
 
-      // Fetch driver details
       await fetchDriverDetails();
 
-      // Initialize notifications (only if token exists)
       if (authToken) {
         await initializeNotifications(authToken);
         console.log("🔔 Notifications initialized");
@@ -191,7 +341,6 @@ export default function App() {
 
   /**
    * Start location tracking service
-   * ONLY call this AFTER permissions are granted
    */
   const startLocationTracking = async (authToken) => {
     try {
@@ -206,9 +355,7 @@ export default function App() {
       }
 
       if (!permissionsGranted) {
-        console.warn(
-          "⚠️ Cannot start location tracking - permissions not granted"
-        );
+        console.warn("⚠️ Cannot start location tracking - permissions not granted");
         return;
       }
 
@@ -216,7 +363,6 @@ export default function App() {
 
       const apiUrl = `${API_URL_APP}/api/v1/update-driver-location`;
 
-      // Add delay to ensure permissions are fully processed
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       await locationService.startTracking(apiUrl, authToken);
@@ -289,9 +435,7 @@ export default function App() {
             token &&
             permissionsGranted
           ) {
-            console.log(
-              "🔄 Permissions restored, restarting location tracking"
-            );
+            console.log("🔄 Permissions restored, restarting location tracking");
             await startLocationTracking(token);
           }
         }
@@ -307,7 +451,6 @@ export default function App() {
   const handleAppStateChange = async (nextAppState) => {
     console.log(`📱 App state: ${appStateRef.current} -> ${nextAppState}`);
 
-    // App coming to foreground
     if (
       appStateRef.current.match(/inactive|background/) &&
       nextAppState === "active"
@@ -317,19 +460,16 @@ export default function App() {
       const authToken = (await SecureStore.getItemAsync("auth_token")) || token;
 
       if (authToken && permissionsGranted) {
-        // Reinitialize services
         await initializeApp(authToken);
         await startLocationTracking(authToken);
       }
     }
 
-    // App going to background
     if (
       appStateRef.current === "active" &&
       nextAppState.match(/inactive|background/)
     ) {
       console.log("📱 App went to background");
-      // Services continue running in background
     }
 
     appStateRef.current = nextAppState;
@@ -345,18 +485,34 @@ export default function App() {
       try {
         console.log("🚀 Starting app setup...");
 
-        // STEP 1: Request permissions FIRST
+        // STEP 1: Wait for settings to load
+        if (settingsLoading) {
+          console.log("⏳ Waiting for settings...");
+          return;
+        }
+
+        // STEP 2: Check for Play Store update FIRST
+        const needsStoreUpdate = await checkPlayStoreUpdate();
+        if (needsStoreUpdate) {
+          console.log("⚠️ Play Store update required, blocking app");
+          setIsCheckingUpdates(false);
+          return;
+        }
+
+        // STEP 3: Check for OTA updates
+        await checkOTAUpdate();
+        setIsCheckingUpdates(false);
+
+        // STEP 4: Request permissions
         const permissionsOk = await requestAllPermissions();
 
         if (!permissionsOk) {
-          console.warn(
-            "⚠️ Permissions not granted, skipping service initialization"
-          );
+          console.warn("⚠️ Permissions not granted, skipping service initialization");
           setIsInitialized(true);
           return;
         }
 
-        // STEP 2: Get auth token
+        // STEP 5: Get auth token
         const storedToken = await SecureStore.getItemAsync("auth_token");
         const authToken = storedToken || token;
 
@@ -366,17 +522,17 @@ export default function App() {
           return;
         }
 
-        // STEP 3: Initialize app (fetch driver, init notifications)
+        // STEP 6: Initialize app
         await initializeApp(authToken);
 
-        // STEP 4: Start location tracking (with delay)
+        // STEP 7: Start location tracking
         await startLocationTracking(authToken);
 
-        // STEP 5: Setup periodic refreshes
+        // STEP 8: Setup periodic refreshes
         setupNotificationRefresh(authToken);
         setupPermissionCheck();
 
-        // STEP 6: Setup app state listener
+        // STEP 9: Setup app state listener
         appStateSubscription = AppState.addEventListener(
           "change",
           handleAppStateChange
@@ -386,13 +542,13 @@ export default function App() {
         console.log("✅ App setup completed successfully");
       } catch (error) {
         console.error("❌ Error in app setup:", error);
+        setIsCheckingUpdates(false);
         setIsInitialized(true);
       }
     };
 
     setup();
 
-    // Cleanup function
     return () => {
       console.log("🧹 Cleaning up app...");
 
@@ -408,7 +564,7 @@ export default function App() {
 
       stopLocationTracking();
     };
-  }, []); // Run only once on mount
+  }, [settingsLoading, settingsData]);
 
   /**
    * Handle token changes
@@ -435,36 +591,32 @@ export default function App() {
     handleTokenChange();
   }, [token, isInitialized, permissionsGranted]);
 
-  // Log service status
-  useEffect(() => {
-    console.log("📊 Service Status:", {
-      permissionsGranted,
-      isDriverOnline,
-      isPoolingActive,
-      isWidgetActive,
-      hasOverlayPermission,
-    });
-  }, [
-    permissionsGranted,
-    isDriverOnline,
-    isPoolingActive,
-    isWidgetActive,
-    hasOverlayPermission,
-  ]);
-
+  // Show loading screens
   if (!fontsLoaded) {
+    return <UpdateLoadingScreen message="Loading fonts..." />;
+  }
+
+  if (isCheckingUpdates || isDownloadingUpdate) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#000" />
-      </View>
+      <UpdateLoadingScreen
+        message={isDownloadingUpdate ? "Downloading update..." : "Checking for updates..."}
+      />
     );
   }
+
   return (
     <NavigationContainer>
       <View style={{ flex: 1 }}>
         {Platform.OS === "android" && (
           <RNStatusBar backgroundColor="#F2F5F6" barStyle="dark-content" />
         )}
+
+        {/* Play Store Update Modal */}
+        <UpdateModal
+          visible={showStoreUpdateModal}
+          onUpdate={handlePlayStoreUpdate}
+          type="store"
+        />
 
         <Stack.Navigator
           initialRouteName="splash"
@@ -485,9 +637,6 @@ export default function App() {
           <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="addVehcile" component={AddVehicle} />
           <Stack.Screen name="preferences" component={Preferences} />
-
-
-          {/* Preferences */}
           <Stack.Screen name="bankAdd" component={AddBank} />
           <Stack.Screen name="wait_screen" component={WaitScreen} />
 
@@ -516,10 +665,7 @@ export default function App() {
           {/* Driver Post & Reserve */}
           <Stack.Screen name="Add" component={Driver_Post} />
           <Stack.Screen name="Reserve" component={Reserve} />
-          <Stack.Screen
-            name="DriverPostDetails"
-            component={ReserveRideDetails}
-          />
+          <Stack.Screen name="DriverPostDetails" component={ReserveRideDetails} />
           <Stack.Screen
             name="ReserveRideDetailsAssigned"
             component={ReserveRideDetailsAssigned}
@@ -561,8 +707,9 @@ export default function App() {
           <Stack.Screen name="CreateBorderTax" component={CreateBorderTax} />
           <Stack.Screen name="ViewBorderTax" component={AllBorderTax} />
 
-            {/* Vehciles */}
-            <Stack.Screen name="all-vehicle" component={AllVehicles} />
+          {/* Vehicles */}
+          <Stack.Screen name="all-vehicle" component={AllVehicles} />
+
           {/* Insurance */}
           <Stack.Screen name="Insurance" component={InsurnaceIntro} />
           <Stack.Screen name="CreateInsurance" component={ApplyForInsurance} />
@@ -571,11 +718,64 @@ export default function App() {
           {/* Others */}
           <Stack.Screen name="BuySellTaxi" component={BuySellTaxi} />
           <Stack.Screen name="MyTrip" component={MyTrips} />
-
-          {/* AllCategories */}
           <Stack.Screen name="AllCategories" component={AllCategories} />
         </Stack.Navigator>
       </View>
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F2F5F6",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "500",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "85%",
+    maxWidth: 400,
+    alignItems: "center",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 12,
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  updateButton: {
+    backgroundColor: "#000",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    width: "100%",
+  },
+  updateButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+});
