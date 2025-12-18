@@ -5,13 +5,14 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Modal,
-  ScrollView,
   StyleSheet,
   Switch,
   Image,
   Alert,
+  RefreshControl,
+  ScrollView,
 } from "react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import BackWithLogo from "../common/back_with_logo";
 import axios from "axios";
 import { API_URL_APP } from "../../constant/api";
@@ -33,48 +34,51 @@ const DetailRow = ({ label, value }) => (
 
 export default function AllVehicles({ navigation }) {
   const [allVehicles, setAllVehicles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
-  const [toggleLoading, setToggleLoading] = useState(null);
 
   const { token } = loginStore();
   const { driver } = useDriverStore();
+  const intervalRef = useRef(null);
 
-  // 🚗 Fetch vehicles
-  const handleFetchVehicle = async () => {
+  const fetchVehicles = async (isPullToRefresh = false) => {
     try {
-      setLoading(true);
-      const { data } = await axios.get(
-        `${API_URL_APP}/api/v1/get-all-Vehciles`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      if (data.success) setAllVehicles(data.vehicles);
+      if (!isPullToRefresh) setLoading(true);
+      else setRefreshing(true);
+
+      const { data } = await axios.get(`${API_URL_APP}/api/v1/get-all-Vehciles`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (data.success) {
+        setAllVehicles(data.vehicles || []);
+      }
     } catch (err) {
       console.error("Fetch Vehicles Error:", err.message);
+      Alert.alert("Error", "Failed to load vehicles. Please try again.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    handleFetchVehicle();
-  }, [navigation]);
+  const onRefresh = useCallback(() => {
+    fetchVehicles(true);
+  }, [token]);
 
-  // 🔁 Open modal
+  useEffect(() => {
+    fetchVehicles();
+  }, [token, navigation]);
+
   const openVehicleModal = (vehicle) => {
+    setSelectedVehicle(vehicle);
     setModalVisible(true);
-    setModalLoading(true);
-    setTimeout(() => {
-      setSelectedVehicle(vehicle);
-      setModalLoading(false);
-    }, 300);
+    setModalLoading(false);
   };
 
-  // 🔄 Toggle active / inactive from modal
   const toggleActiveVehicle = async (vehicle) => {
     try {
       setModalLoading(true);
@@ -83,125 +87,143 @@ export default function AllVehicles({ navigation }) {
         { is_active: !vehicle.is_active },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      handleFetchVehicle();
+      fetchVehicles();
     } catch (err) {
-      const msg = err.response.data.message;
-      Alert.alert(msg);
-      console.error("Toggle Active Error:", err.response.data);
+      const msg = err.response?.data?.message || "Failed to update status";
+      Alert.alert("Error", msg);
     } finally {
       setModalLoading(false);
     }
   };
 
-  const renderVehicle = ({ item }) => {
-    const vehicleImage =
-      item.vehicle_type === "mini"
-        ? mini
-        : item.vehicle_type === "sedan"
-        ? sedan
-        : suv;
+  const getVehicleImage = (vehicleType) => {
+    switch (vehicleType) {
+      case "mini":
+        return mini;
+      case "sedan":
+        return sedan;
+      default:
+        return suv;
+    }
+  };
 
-    return (
-      <TouchableOpacity
-        activeOpacity={0.85}
-       
-        style={[styles.card, item.is_active && styles.activeCard]}
-      >
-        {/* ---------------- Header (Status + Switch) ---------------- */}
-        <View style={styles.cardHeader}>
+  const renderVehicle = ({ item }) => (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[styles.card, item.is_active && styles.activeCard]}
+    >
+      {/* Header: Status Badge + Toggle Switch */}
+      <View style={styles.cardHeader}>
+        <View
+          style={[
+            styles.statusBadge,
+            item.is_active ? styles.activeBadge : styles.inactiveBadge,
+          ]}
+        >
           <View
             style={[
-              styles.statusBadge,
-              item.is_active ? styles.activeBadge : styles.inactiveBadge,
+              styles.statusDot,
+              item.is_active ? styles.activeDot : styles.inactiveDot,
+            ]}
+          />
+          <Text
+            style={[
+              styles.statusText,
+              item.is_active ? styles.activeText : styles.inactiveText,
             ]}
           >
-            <View
-              style={[
-                styles.statusDot,
-                item.is_active ? styles.activeDot : styles.inactiveDot,
-              ]}
-            />
-            <Text
-              style={[
-                styles.statusText,
-                item.is_active ? styles.activeText : styles.inactiveText,
-              ]}
-            >
-              {item.is_active ? "Active" : "Inactive"}
-            </Text>
-          </View>
+            {item.is_active ? "Active" : "Inactive"}
+          </Text>
+        </View>
 
-          {/* Active / Inactive Switch */}
-          <Switch
-            value={item.is_active}
-            onValueChange={() => toggleActiveVehicle(item)}
-            trackColor={{ false: "#E5E7EB", true: "#A7F3D0" }}
-            thumbColor={item.is_active ? "#10B981" : "#9CA3AF"}
+        <Switch
+          value={item.is_active}
+          onValueChange={() => toggleActiveVehicle(item)}
+          trackColor={{ false: "#E5E7EB", true: "#A7F3D0" }}
+          thumbColor={item.is_active ? "#10B981" : "#9CA3AF"}
+        />
+      </View>
+
+      {/* Vehicle Info Section */}
+      <View style={styles.cardContent}>
+        <View style={styles.vehicleImageContainer}>
+          <Image
+            source={getVehicleImage(item.vehicle_type)}
+            style={styles.vehicleImage}
+            resizeMode="contain"
           />
         </View>
 
-        {/* ---------------- Vehicle Info ---------------- */}
-        <View style={styles.cardContent}>
-          <View style={styles.vehicleImageContainer}>
-            <Image
-              source={vehicleImage}
-              style={styles.vehicleImage}
-              resizeMode="contain"
-            />
-          </View>
+        <View style={styles.vehicleInfo}>
+          <Text style={styles.vehicleNumber}>{item.vehicle_number}</Text>
+          <Text style={styles.vehicleName}>{item.vehicle_name}</Text>
 
-          <View style={styles.vehicleInfo}>
-            <Text style={styles.vehicleNumber}>{item.vehicle_number}</Text>
-            <Text style={styles.vehicleName}>{item.vehicle_name}</Text>
-
-            <View style={styles.detailsRow}>
-              <View style={styles.detailItem}>
-                <Ionicons
-                  name="speedometer-outline"
-                  size={14}
-                  color="#6B7280"
-                />
-                <Text style={styles.detailText}>{item.fuel_type}</Text>
-              </View>
-
-              <View style={styles.detailItem}>
-                <Ionicons name="people-outline" size={14} color="#6B7280" />
-                <Text style={styles.detailText}>
-                  {item.seating_capacity} seats
-                </Text>
-              </View>
+          <View style={styles.detailsRow}>
+            <View style={styles.detailItem}>
+              <Ionicons name="speedometer-outline" size={14} color="#6B7280" />
+              <Text style={styles.detailText}>{item.fuel_type}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="people-outline" size={14} color="#6B7280" />
+              <Text style={styles.detailText}>{item.seating_capacity} seats</Text>
             </View>
           </View>
         </View>
+      </View>
 
-        {/* ---------------- Footer (Preferences + View Details) ---------------- */}
-        <View style={styles.footerRow}>
-          {/* Preferences Button */}
-          <TouchableOpacity
-            style={styles.preferencesBtn}
-            onPress={() => navigation.navigate("preferences")}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name="tune-variant"
-              size={22}
-              color="#111"
-            />
-            <Text style={styles.preferencesText}>Preferences</Text>
-          </TouchableOpacity>
+      {/* Footer: Action Buttons */}
+      <View style={styles.footerRow}>
+        <TouchableOpacity
+          style={styles.preferencesBtn}
+          onPress={() => navigation.navigate("preferences")}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="tune-variant" size={22} color="#111" />
+          <Text style={styles.preferencesText}>Preferences</Text>
+        </TouchableOpacity>
 
-          {/* View Details */}
-          <TouchableOpacity
-            style={styles.viewDetailsContainer}
-            onPress={() => openVehicleModal(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.viewDetailsText}>View Details</Text>
-            <Ionicons name="chevron-forward" size={18} color="#6B7280" />
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.viewDetailsContainer}
+          onPress={() => openVehicleModal(item)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.viewDetailsText}>View Details</Text>
+          <Ionicons name="chevron-forward" size={18} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <MaterialCommunityIcons name="car-off" size={80} color="#D1D5DB" />
+      <Text style={styles.emptyText}>No vehicles found</Text>
+      <Text style={styles.emptySubtext}>Add your first vehicle to get started</Text>
+    </View>
+  );
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#000" />
+          <Text style={styles.loadingText}>Loading vehicles...</Text>
         </View>
-      </TouchableOpacity>
+      );
+    }
+
+    return (
+      <FlatList
+        data={allVehicles}
+        keyExtractor={(item) => item._id}
+        renderItem={renderVehicle}
+        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={renderEmpty}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      />
     );
   };
 
@@ -221,30 +243,9 @@ export default function AllVehicles({ navigation }) {
         }
       />
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#000" />
-          <Text style={styles.loadingText}>Loading vehicles...</Text>
-        </View>
-      ) : allVehicles.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="car-off" size={80} color="#D1D5DB" />
-          <Text style={styles.emptyText}>No vehicles found</Text>
-          <Text style={styles.emptySubtext}>
-            Add your first vehicle to get started
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={allVehicles}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-          renderItem={renderVehicle}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      {renderContent()}
 
-      {/* 📋 Vehicle Details Modal */}
+      {/* Vehicle Details Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -259,21 +260,14 @@ export default function AllVehicles({ navigation }) {
               <ActivityIndicator size="large" style={{ marginTop: 40 }} />
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Modal Header */}
                 <View style={styles.modalHeader}>
                   <Image
-                    source={
-                      selectedVehicle.vehicle_type === "mini"
-                        ? mini
-                        : selectedVehicle.vehicle_type === "sedan"
-                        ? sedan
-                        : suv
-                    }
+                    source={getVehicleImage(selectedVehicle.vehicle_type)}
                     style={styles.modalVehicleImage}
                     resizeMode="contain"
                   />
-                  <Text style={styles.modalTitle}>
-                    {selectedVehicle.vehicle_number}
-                  </Text>
+                  <Text style={styles.modalTitle}>{selectedVehicle.vehicle_number}</Text>
                   <View
                     style={[
                       styles.modalStatusBadge,
@@ -295,34 +289,24 @@ export default function AllVehicles({ navigation }) {
                   </View>
                 </View>
 
+                {/* Vehicle Information Section */}
                 <View style={styles.modalSection}>
                   <Text style={styles.sectionTitle}>Vehicle Information</Text>
                   <DetailRow
                     label="Vehicle Number"
                     value={selectedVehicle.vehicle_number}
                   />
-                  <DetailRow
-                    label="Vehicle Name"
-                    value={selectedVehicle.vehicle_name}
-                  />
-                  <DetailRow
-                    label="Vehicle Type"
-                    value={selectedVehicle.vehicle_type}
-                  />
-                  <DetailRow
-                    label="Fuel Type"
-                    value={selectedVehicle.fuel_type}
-                  />
-                  <DetailRow
-                    label="Brand"
-                    value={selectedVehicle.vehicle_brand}
-                  />
+                  <DetailRow label="Vehicle Name" value={selectedVehicle.vehicle_name} />
+                  <DetailRow label="Vehicle Type" value={selectedVehicle.vehicle_type} />
+                  <DetailRow label="Fuel Type" value={selectedVehicle.fuel_type} />
+                  <DetailRow label="Brand" value={selectedVehicle.vehicle_brand} />
                   <DetailRow
                     label="Seating Capacity"
                     value={selectedVehicle.seating_capacity}
                   />
                 </View>
 
+                {/* Insurance Details Section */}
                 <View style={styles.modalSection}>
                   <Text style={styles.sectionTitle}>Insurance Details</Text>
                   <DetailRow
@@ -349,9 +333,12 @@ export default function AllVehicles({ navigation }) {
   );
 }
 
-/* 🎨 Styles */
+/* Styles */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FB" },
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FB",
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -436,10 +423,6 @@ const styles = StyleSheet.create({
   inactiveText: {
     color: "#991B1B",
   },
-  switchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   cardContent: {
     flexDirection: "row",
     alignItems: "center",
@@ -449,7 +432,6 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 12,
-    // backgroundColor: "#F3F4F6",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -486,41 +468,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
   },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  preferencesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#F9FAFB",
+  },
+  preferencesText: {
+    fontSize: 13,
+    color: "#111",
+    fontWeight: "500",
+  },
   viewDetailsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
+    gap: 4,
   },
   viewDetailsText: {
     fontSize: 13,
     color: "#6B7280",
-    marginRight: 4,
-  },
-  addButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 20,
-    zIndex: 10,
-    backgroundColor: "#000",
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
   },
   modalOverlay: {
     flex: 1,
-    paddingBottom: 40,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
+    paddingBottom: 40,
   },
   modalContainer: {
     backgroundColor: "#fff",
@@ -600,58 +581,5 @@ const styles = StyleSheet.create({
     color: "#111827",
     flex: 1,
     textAlign: "right",
-  },
-  actionBtn: {
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-  },
-  activateBtn: {
-    backgroundColor: "#10B981",
-  },
-  deactivateBtn: {
-    backgroundColor: "#EF4444",
-  },
-  actionText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  footerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 12,
-  },
-
-  preferencesBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: "#F9FAFB",
-  },
-
-  preferencesText: {
-    fontSize: 13,
-    color: "#111",
-    fontWeight: "500",
-  },
-
-  viewDetailsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-
-  viewDetailsText: {
-    fontSize: 13,
-    color: "#6B7280",
   },
 });

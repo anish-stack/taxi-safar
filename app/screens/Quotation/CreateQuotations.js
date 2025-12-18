@@ -20,6 +20,7 @@ import loginStore from "../../store/auth.store";
 import useDriverStore from "../../store/driver.store";
 import { UniversalAlert } from "../common/UniversalAlert";
 import { CommonActions } from "@react-navigation/native";
+import BackWithLogo from "../common/back_with_logo";
 
 const GST_RATE = 5;
 
@@ -592,16 +593,12 @@ export default function CreateQuotationForm({ navigation, route }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 50}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {id ? "Edit " : "Create "}
-            {documentType === "quotation" ? "Quotation" : "Tax Invoice"}
-          </Text>
-          <View style={{ width: 24 }} />
-        </View>
+      <BackWithLogo
+  isLogo={false}
+  title={`${id ? "Edit" : "Create"} ${
+    documentType === "quotation" ? "Quotation" : "Tax Invoice"
+  }`}
+/>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {company && (

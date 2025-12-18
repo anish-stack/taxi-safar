@@ -177,7 +177,7 @@ export default function Profile() {
       case "profile":
         return (
           <View>
-            <Text style={styles.modalTitle}>Profile Details</Text>
+            <Text style={styles.modalTitle}>My Driver Profile Details</Text>
             <DetailRow label="Name" value={driver.driver_name} />
             <DetailRow
               label="Date of Birth"
@@ -404,9 +404,15 @@ export default function Profile() {
         <Section title="General">
           <MenuItem
             icon={<Ionicons name="person-outline" size={22} color="black" />}
-            label="Profile Details"
+            label="My Driver Profile Details"
             onPress={() => openModal("profile")}
           />
+          <MenuItem
+            icon={<Ionicons name="business-outline" size={22} color="black" />}
+            label="My Agent Profile Details"
+            onPress={() => navigation.navigate("company-details")}
+          />
+
           <MenuItem
             icon={
               <MaterialCommunityIcons
@@ -457,13 +463,7 @@ export default function Profile() {
             label="Document Registration"
             onPress={() => openModal("document")}
           />
-          <MenuItem
-            icon={
-              <Ionicons name="document-text-outline" size={22} color="black" />
-            }
-            label="Company Details"
-            onPress={() => navigation.navigate("company-details")}
-          />
+
           <MenuItem
             icon={<Ionicons name="car-outline" size={22} color="black" />}
             label="Vehicle Registration"

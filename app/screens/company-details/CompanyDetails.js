@@ -7,6 +7,7 @@ import {
   TextInput,
   StyleSheet,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Keyboard,
 } from "react-native";
@@ -59,7 +60,7 @@ const ImageUploader = memo(({ title, uri, onPress }) => {
   );
 });
 
-export default function CompanyDetails({navigation}) {
+export default function CompanyDetails({ navigation }) {
   const { token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
 
@@ -68,6 +69,7 @@ export default function CompanyDetails({navigation}) {
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
 
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
@@ -78,7 +80,8 @@ export default function CompanyDetails({navigation}) {
     onPrimaryPress: () => setAlertVisible(false),
   });
 
-  const [activeTab, setActiveTab] = useState("gst");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [activeTab, setActiveTab] = useState("noGst");
 
   const [gstNumber, setGstNumber] = useState("");
   const [verifyingGst, setVerifyingGst] = useState(false);
@@ -99,41 +102,46 @@ export default function CompanyDetails({navigation}) {
   const emailRef = useRef(null);
   const isInitialLoad = useRef(true);
 
-
-  // Move all hooks BEFORE any conditional returns
-const showAlert = useCallback((type, title, message, onClose = null) => {
-  setAlertConfig({
-    type,
-    title,
-    message,
-    primaryButton: "OK",
-    onPrimaryPress: () => {
-      setAlertVisible(false);
-      if (onClose) onClose();
-    },
-  });
-  setAlertVisible(true);
-}, []);
-
-  const pickImage = useCallback(async (type) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      showAlert("warning", "Permission Required", "Please grant access to your photo library.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-      allowsEditing: false,
+  const showAlert = useCallback((type, title, message, onClose = null) => {
+    setAlertConfig({
+      type,
+      title,
+      message,
+      primaryButton: "OK",
+      onPrimaryPress: () => {
+        setAlertVisible(false);
+        if (onClose) onClose();
+      },
     });
+    setAlertVisible(true);
+  }, []);
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      const uri = result.assets[0].uri;
-      if (type === "logo") setLogo(uri);
-      if (type === "signature") setSignature(uri);
-    }
-  }, [showAlert]);
+  const pickImage = useCallback(
+    async (type) => {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        showAlert(
+          "warning",
+          "Permission Required",
+          "Please grant access to your photo library."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: false,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const uri = result.assets[0].uri;
+        if (type === "logo") setLogo(uri);
+        if (type === "signature") setSignature(uri);
+      }
+    },
+    [showAlert]
+  );
 
   const onPickLogo = useCallback(() => pickImage("logo"), [pickImage]);
   const onPickSignature = useCallback(() => pickImage("signature"), [pickImage]);
@@ -147,39 +155,40 @@ const showAlert = useCallback((type, title, message, onClose = null) => {
       await fetchDriverDetails();
       const data = res.data?.data;
 
-if (data && Object.keys(data).length > 0) {
-  setCompany(data);
-  setCompanyName(data.company_name || "");
-  setAddress(data.address || "");
-  setPhone(data.phone || driver?.driver_contact_number || "");
-  setEmail(data.email || driver?.driver_email || "");
-  setGstNumber(data.gst_number || "");
-  setLogo(data.logo?.url || null);
-  setSignature(data.signature?.url || null);
+      if (data && Object.keys(data).length > 0) {
+        setCompany(data);
+        setCompanyName(data.company_name || "");
+        setAddress(data.address || "");
+        setPhone(data.phone || driver?.driver_contact_number || "");
+        setEmail(data.email || driver?.driver_email || "");
+        setGstNumber(data.gst_number || "");
+        setLogo(data.logo?.url || null);
+        setSignature(data.signature?.url || null);
 
-  if (isInitialLoad.current) {
-    if (data.gst_number) {
-      setActiveTab("gst");
-      setGstVerified(true);
-    } else {
-      setActiveTab("noGst");
-    }
-  }
-} else {
-  if (isInitialLoad.current) {
-    setActiveTab("gst");
-  }
-}
+        if (isInitialLoad.current) {
+          if (data.gst_number) {
+            setActiveTab("withGst");
+            setGstVerified(true);
+          } else {
+            setActiveTab("noGst");
+          }
+          setIsEditMode(false);
+        }
+      } else {
+        if (isInitialLoad.current) {
+          setActiveTab("noGst");
+          setIsEditMode(true);
+        }
+      }
 
-isInitialLoad.current = false;
-
+      isInitialLoad.current = false;
     } catch (err) {
       console.log("Fetch error =>", err?.response?.data);
       showAlert("error", "Error", "Failed to load company details");
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, driver, showAlert, fetchDriverDetails]);
 
   const verifyGst = useCallback(async () => {
     if (gstNumber.length !== 15) {
@@ -201,10 +210,17 @@ isInitialLoad.current = false;
         let addressValue = "";
         if (verified.address && typeof verified.address === "object") {
           const parts = [];
-          if (verified.address.street && verified.address.street !== "123 Default Street") parts.push(verified.address.street);
-          if (verified.address.city && verified.address.city !== "Default City") parts.push(verified.address.city);
-          if (verified.address.state && verified.address.state !== "Default State") parts.push(verified.address.state);
-          if (verified.address.pincode && verified.address.pincode !== "000000") parts.push(verified.address.pincode);
+          if (
+            verified.address.street &&
+            verified.address.street !== "123 Default Street"
+          )
+            parts.push(verified.address.street);
+          if (verified.address.city && verified.address.city !== "Default City")
+            parts.push(verified.address.city);
+          if (verified.address.state && verified.address.state !== "Default State")
+            parts.push(verified.address.state);
+          if (verified.address.pincode && verified.address.pincode !== "000000")
+            parts.push(verified.address.pincode);
           addressValue = parts.join(", ");
         } else if (typeof verified.address === "string") {
           addressValue = verified.address;
@@ -213,21 +229,41 @@ isInitialLoad.current = false;
         const emailValue = verified.email || verified.emailId || "";
         const phoneValue = verified.mobileNo || verified.mobile || verified.phone || "";
 
-        const filledData = { name: companyNameValue, address: addressValue, email: emailValue, phone: phoneValue };
+        const filledData = {
+          name: companyNameValue,
+          address: addressValue,
+          email: emailValue,
+          phone: phoneValue,
+        };
 
         setGstData(filledData);
         setGstVerified(true);
         if (filledData.name) setCompanyName(filledData.name);
         if (filledData.address) setAddress(filledData.address);
-        if (filledData.email) setEmail(filledData.email || driver?.driver_email || "");
-        if (filledData.phone) setPhone(filledData.phone || driver?.driver_contact_number || "");
+        if (filledData.email)
+          setEmail(filledData.email || driver?.driver_email || "");
+        if (filledData.phone)
+          setPhone(filledData.phone || driver?.driver_contact_number || "");
 
-        showAlert("success", "GST Verified ✓", "Company details auto-filled successfully!",()=>navigation.goBack());
+        showAlert(
+          "success",
+          "GST Verified ✓",
+          "Company details auto-filled successfully!"
+        );
+        setActiveTab("withGst");
       } else {
-        showAlert("error", "Invalid GST", response.data.message || "GST number not valid");
+        showAlert(
+          "error",
+          "Invalid GST",
+          response.data.message || "GST number not valid"
+        );
       }
     } catch (err) {
-      showAlert("error", "Failed", err.response?.data?.message || "Verification failed");
+      showAlert(
+        "error",
+        "Failed",
+        err.response?.data?.message || "Verification failed"
+      );
     } finally {
       setVerifyingGst(false);
     }
@@ -246,32 +282,74 @@ isInitialLoad.current = false;
       formData.append("address", address);
       formData.append("phone", phone);
       formData.append("email", email);
-      formData.append("gst_number", activeTab === "gst" && gstVerified ? gstNumber : "");
+      formData.append(
+        "gst_number",
+        activeTab === "withGst" && gstVerified ? gstNumber : ""
+      );
 
       if (logo && logo.startsWith("file://")) {
-        formData.append("logo", { uri: logo, name: "logo.jpg", type: "image/jpeg" });
+        formData.append("logo", {
+          uri: logo,
+          name: "logo.jpg",
+          type: "image/jpeg",
+        });
       }
       if (signature && signature.startsWith("file://")) {
-        formData.append("signature", { uri: signature, name: "signature.png", type: "image/png" });
+        formData.append("signature", {
+          uri: signature,
+          name: "signature.png",
+          type: "image/png",
+        });
       }
 
       const isEditing = !!company;
-      const url = isEditing ? `${API_URL_APP}/api/v1/update-company` : `${API_URL_APP}/api/v1/add-company`;
+      const url = isEditing
+        ? `${API_URL_APP}/api/v1/update-company`
+        : `${API_URL_APP}/api/v1/add-company`;
 
       await axios({
         method: isEditing ? "PUT" : "POST",
         url,
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
         data: formData,
       });
 
-      showAlert("success", "Success", `Company details ${isEditing ? "updated" : "saved"} successfully!`, fetchCompany);
+      showAlert(
+        "success",
+        "Success",
+        `Company details ${isEditing ? "updated" : "saved"} successfully!`,
+        () => {
+          setIsEditMode(false);
+          fetchCompany();
+        }
+      );
     } catch (err) {
-      showAlert("error", "Error", err.response?.data?.message || "Failed to save company details");
+      showAlert(
+        "error",
+        "Error",
+        err.response?.data?.message || "Failed to save company details"
+      );
     } finally {
       setSaving(false);
     }
-  }, [companyName, address, phone, email, activeTab, gstVerified, gstNumber, logo, signature, company, token, showAlert, fetchCompany]);
+  }, [
+    companyName,
+    address,
+    phone,
+    email,
+    activeTab,
+    gstVerified,
+    gstNumber,
+    logo,
+    signature,
+    company,
+    token,
+    showAlert,
+    fetchCompany,
+  ]);
 
   const scrollToInput = useCallback((ref) => {
     ref.current?.measure((x, y, width, height, pageX, pageY) => {
@@ -281,7 +359,7 @@ isInitialLoad.current = false;
 
   useEffect(() => {
     fetchCompany();
-  }, []);
+  }, [fetchCompany]);
 
   useEffect(() => {
     (async () => {
@@ -290,26 +368,189 @@ isInitialLoad.current = false;
         if (pending.length > 0) {
           const lastResult = pending[pending.length - 1];
           if (lastResult?.assets?.[0]?.uri) {
-            showAlert("info", "Recovered Image", "An image selection was recovered. Please re-upload if needed.");
+            showAlert(
+              "info",
+              "Recovered Image",
+              "An image selection was recovered. Please re-upload if needed."
+            );
           }
         }
       }
     })();
   }, [showAlert]);
 
-  // NOW it's safe to have conditional returns - all hooks are above
   if (loading) {
     return (
       <Layout showHeader={false}>
         <BackWithLogo />
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator size="large" color="#000" />
-          <Text style={styles.loadingText}>Loading company details...</Text>
+          <Text style={styles.loadingText}>Loading profile details...</Text>
         </View>
       </Layout>
     );
   }
 
+  // Show detail card if company exists and not in edit mode
+  if (company && !isEditMode) {
+    return (
+      <Layout showHeader={false} showBottomTabs={false}>
+        <BackWithLogo isLogo={false} title="My Agent Profile" />
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: verticalScale(50) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.container}>
+            <View style={styles.compactDetailCard}>
+              {/* Logo + Info Section */}
+              <View style={styles.cardContent}>
+                {/* Logo */}
+                {logo && (
+                  <View style={styles.compactLogoContainer}>
+                    <Image
+                      source={{ uri: logo }}
+                      style={styles.compactLogo}
+                      contentFit="contain"
+                    />
+                  </View>
+                )}
+
+                {/* Text Info */}
+                <View style={styles.cardInfo}>
+                  <Text style={styles.compactCompanyName}>{companyName}</Text>
+
+                  <View style={styles.compactDetails}>
+                    <Text style={styles.compactLabel}>
+                      📍 {address?.split(",")[0] || "Location"}
+                    </Text>
+                    <Text style={styles.compactLabel}>
+                      📞 {phone || "Phone"}
+                    </Text>
+                  </View>
+
+                  {gstNumber && (
+                    <View style={styles.gstBadge}>
+                      <Text style={styles.gstBadgeText}>GST Verified ✓</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.viewButton}
+                  onPress={() => setViewModalVisible(true)}
+                >
+                  <Text style={styles.viewButtonText}>View</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.editActionButton}
+                  onPress={() => setIsEditMode(true)}
+                >
+                  <Text style={styles.editActionButtonText}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+        <UniversalAlert
+          visible={alertVisible}
+          onClose={() => setAlertVisible(false)}
+          type={alertConfig.type}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          primaryButton={alertConfig.primaryButton}
+          onPrimaryPress={alertConfig.onPrimaryPress}
+        />
+
+        {/* View Details Modal */}
+        <Modal
+          visible={viewModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setViewModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.viewModalContent}>
+              {/* Modal Header */}
+              <View style={styles.viewModalHeader}>
+                <Text style={styles.viewModalTitle}>Profile Details</Text>
+                <TouchableOpacity onPress={() => setViewModalVisible(false)}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Modal Body */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.viewModalBody}
+              >
+                {/* Logo Section */}
+                {logo && (
+                  <View style={styles.modalLogoContainer}>
+                    <Image
+                      source={{ uri: logo }}
+                      style={styles.modalLogoImage}
+                      contentFit="contain"
+                    />
+                  </View>
+                )}
+
+                {/* Company Name */}
+                <Text style={styles.modalCompanyName}>{companyName}</Text>
+
+                {/* Details Sections */}
+                <View style={styles.modalDetailSection}>
+                  <Text style={styles.modalDetailLabel}>Address</Text>
+                  <Text style={styles.modalDetailValue}>{address || "N/A"}</Text>
+                </View>
+
+                <View style={styles.modalDetailSection}>
+                  <Text style={styles.modalDetailLabel}>Phone</Text>
+                  <Text style={styles.modalDetailValue}>{phone || "N/A"}</Text>
+                </View>
+
+                <View style={styles.modalDetailSection}>
+                  <Text style={styles.modalDetailLabel}>Email</Text>
+                  <Text style={styles.modalDetailValue}>{email || "N/A"}</Text>
+                </View>
+
+                {gstNumber && (
+                  <View style={styles.modalDetailSection}>
+                    <Text style={styles.modalDetailLabel}>GST Number</Text>
+                    <Text style={styles.modalDetailValue}>{gstNumber}</Text>
+                  </View>
+                )}
+
+                {signature && (
+                  <View style={styles.modalDetailSection}>
+                    <Text style={styles.modalDetailLabel}>Digital Signature</Text>
+                    <Image
+                      source={{ uri: signature }}
+                      style={styles.modalSignatureImage}
+                      contentFit="contain"
+                    />
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setViewModalVisible(false)}
+              >
+                <Text style={styles.modalCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </Layout>
+    );
+  }
+
+  // Edit mode form
   const isFormVisible = activeTab === "noGst" || gstVerified;
   const isFormEditable = activeTab === "noGst" || !gstVerified;
 
@@ -317,46 +558,55 @@ isInitialLoad.current = false;
     <Layout showHeader={false} showBottomTabs={false}>
       <BackWithLogo
         isLogo={false}
-        title={company ? "Edit Company Details" : "Add Company Details"}
+        title={company ? "Edit My Agent Profile" : "Add My Agent Profile"}
       />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-       behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
         <ScrollView
           ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: verticalScale(50) }}
-         
         >
           <View style={styles.container}>
             {/* Tabs */}
             <View style={styles.tabContainer}>
               <TouchableOpacity
-                style={[styles.tab, activeTab === "gst" && styles.activeTab]}
+                style={[styles.tab, activeTab === "noGst" && styles.activeTab]}
                 onPress={() => {
-                  setActiveTab("gst");
+                  setActiveTab("noGst");
                   setGstVerified(false);
                   setGstData(null);
                 }}
               >
-                <Text style={[styles.tabText, activeTab === "gst" && styles.activeTabText]}>
-                  Have GST
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "noGst" && styles.activeTabText,
+                  ]}
+                >
+                  No GST
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tab, activeTab === "noGst" && styles.activeTab]}
-                onPress={() => setActiveTab("noGst")}
+                style={[styles.tab, activeTab === "withGst" && styles.activeTab]}
+                onPress={() => setActiveTab("withGst")}
               >
-                <Text style={[styles.tabText, activeTab === "noGst" && styles.activeTabText]}>
-                  No GST
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "withGst" && styles.activeTabText,
+                  ]}
+                >
+                  With GST
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* GST Input */}
-            {activeTab === "gst" && !gstVerified && (
+            {activeTab === "withGst" && !gstVerified && (
               <View style={styles.gstSection}>
                 <Text style={styles.label}>Enter your GST Number</Text>
                 <View style={styles.gstInputContainer}>
@@ -370,17 +620,27 @@ isInitialLoad.current = false;
                     maxLength={15}
                     returnKeyType="done"
                     onSubmitEditing={verifyGst}
-                    // onFocus={() => scrollToInput(gstRef)}
+                    placeholderTextColor="#999"
                   />
                   <TouchableOpacity
                     onPress={verifyGst}
                     disabled={verifyingGst || gstNumber.length !== 15}
-                    style={[styles.verifyBtn, (verifyingGst || gstNumber.length !== 15) && styles.verifyBtnDisabled]}
+                    style={[
+                      styles.verifyBtn,
+                      (verifyingGst || gstNumber.length !== 15) &&
+                        styles.verifyBtnDisabled,
+                    ]}
                   >
-                    {verifyingGst ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.verifyText}>Verify</Text>}
+                    {verifyingGst ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.verifyText}>Verify</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.hint}>We'll auto-fill your company details from GST records</Text>
+                <Text style={styles.hint}>
+                  We'll auto-fill your company details from GST records
+                </Text>
               </View>
             )}
 
@@ -388,7 +648,10 @@ isInitialLoad.current = false;
             {isFormVisible && (
               <>
                 <Text style={styles.label}>
-                  Business Name {gstVerified && <Text style={styles.verifiedTag}>(Verified)</Text>}
+                  Business Name{" "}
+                  {gstVerified && (
+                    <Text style={styles.verifiedTag}>(Verified)</Text>
+                  )}
                 </Text>
                 <TextInput
                   ref={companyNameRef}
@@ -397,13 +660,15 @@ isInitialLoad.current = false;
                   onChangeText={isFormEditable ? setCompanyName : null}
                   editable={isFormEditable}
                   placeholder="Enter company name"
+                  placeholderTextColor="#999"
                   returnKeyType="next"
-                  // onSubmitEditing={() => addressRef.current?.focus()}
-                  // onFocus={() => scrollToInput(companyNameRef)}
                 />
 
                 <Text style={styles.label}>
-                  Address {gstVerified && <Text style={styles.verifiedTag}>(Verified)</Text>}
+                  Address{" "}
+                  {gstVerified && (
+                    <Text style={styles.verifiedTag}>(Verified)</Text>
+                  )}
                 </Text>
                 <TextInput
                   ref={addressRef}
@@ -413,15 +678,17 @@ isInitialLoad.current = false;
                   editable={isFormEditable}
                   multiline
                   placeholder="Enter full address"
+                  placeholderTextColor="#999"
                   returnKeyType="next"
-                  // onSubmitEditing={() => phoneRef.current?.focus()}
-                  // onFocus={() => scrollToInput(addressRef)}
                 />
 
                 <View style={styles.row}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.label}>
-                      Phone {gstVerified && <Text style={styles.verifiedTag}>(Verified)</Text>}
+                      Phone{" "}
+                      {gstVerified && (
+                        <Text style={styles.verifiedTag}>(Verified)</Text>
+                      )}
                     </Text>
                     <TextInput
                       ref={phoneRef}
@@ -431,15 +698,17 @@ isInitialLoad.current = false;
                       editable={isFormEditable}
                       keyboardType="phone-pad"
                       placeholder="Enter phone number"
+                      placeholderTextColor="#999"
                       returnKeyType="next"
-                      // onSubmitEditing={() => emailRef.current?.focus()}
-                      // onFocus={() => scrollToInput(phoneRef)}
                     />
                   </View>
                   <View style={{ width: scale(12) }} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.label}>
-                      Email {gstVerified && <Text style={styles.verifiedTag}>(Verified)</Text>}
+                      Email{" "}
+                      {gstVerified && (
+                        <Text style={styles.verifiedTag}>(Verified)</Text>
+                      )}
                     </Text>
                     <TextInput
                       ref={emailRef}
@@ -449,9 +718,8 @@ isInitialLoad.current = false;
                       editable={isFormEditable}
                       keyboardType="email-address"
                       placeholder="Enter email"
+                      placeholderTextColor="#999"
                       returnKeyType="done"
-                      // onSubmitEditing={Keyboard.dismiss}
-                      // onFocus={() => scrollToInput(emailRef)}
                     />
                   </View>
                 </View>
@@ -478,7 +746,7 @@ isInitialLoad.current = false;
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <Text style={styles.saveButtonText}>
-                      {company ? "Update Details" : "Save Details"}
+                      {company ? "Update Profile" : "Save Profile"}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -488,15 +756,16 @@ isInitialLoad.current = false;
         </ScrollView>
       </KeyboardAvoidingView>
 
-<UniversalAlert
-  visible={alertVisible}
-  onClose={() => setAlertVisible(false)}
-  type={alertConfig.type}
-  title={alertConfig.title}
-  message={alertConfig.message}
-  primaryButton={alertConfig.primaryButton}
-  onPrimaryPress={alertConfig.onPrimaryPress}
-/>    </Layout>
+      <UniversalAlert
+        visible={alertVisible}
+        onClose={() => setAlertVisible(false)}
+        type={alertConfig.type}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        primaryButton={alertConfig.primaryButton}
+        onPrimaryPress={alertConfig.onPrimaryPress}
+      />
+    </Layout>
   );
 }
 
@@ -534,7 +803,11 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(20),
     marginBottom: verticalScale(8),
   },
-  verifiedTag: { fontSize: moderateScale(12), color: "#16a34a", fontWeight: "500" },
+  verifiedTag: {
+    fontSize: moderateScale(12),
+    color: "#16a34a",
+    fontWeight: "500",
+  },
 
   gstInputContainer: { flexDirection: "row", alignItems: "flex-end", gap: scale(12) },
   gstInput: {
@@ -546,6 +819,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(12),
     fontSize: moderateScale(15),
     backgroundColor: "#fff",
+    color: "#000",
   },
   verifyBtn: {
     backgroundColor: "#000",
@@ -555,7 +829,12 @@ const styles = StyleSheet.create({
   },
   verifyBtnDisabled: { opacity: 0.6 },
   verifyText: { color: "#fff", fontWeight: "600" },
-  hint: { fontSize: moderateScale(13), color: "#6b7280", marginTop: verticalScale(8), fontStyle: "italic" },
+  hint: {
+    fontSize: moderateScale(13),
+    color: "#6b7280",
+    marginTop: verticalScale(8),
+    fontStyle: "italic",
+  },
 
   input: {
     borderWidth: 1,
@@ -602,7 +881,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  overlayText: { color: "#fff", fontSize: moderateScale(15), fontWeight: "600" },
+  overlayText: {
+    color: "#fff",
+    fontSize: moderateScale(15),
+    fontWeight: "600",
+  },
 
   saveButton: {
     backgroundColor: "#000",
@@ -612,7 +895,212 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(32),
   },
   saveButtonDisabled: { opacity: 0.7 },
-  saveButtonText: { color: "#fff", fontSize: moderateScale(16), fontWeight: "bold" },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: moderateScale(16),
+    fontWeight: "bold",
+  },
 
-  loadingText: { marginTop: verticalScale(12), color: "#666", fontSize: moderateScale(15) },
+  // Compact Detail Card Styles (Hotel Card Style)
+  compactDetailCard: {
+    backgroundColor: "#fff",
+    borderRadius: moderateScale(16),
+    padding: scale(14),
+    // marginTop: verticalScale(16),
+    marginBottom: verticalScale(16),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(12),
+  },
+  compactLogoContainer: {
+    width: scale(80),
+    height: scale(80),
+    borderRadius: moderateScale(12),
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  compactLogo: {
+    width: "90%",
+    height: "90%",
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  compactCompanyName: {
+    fontSize: moderateScale(16),
+    fontWeight: "700",
+    color: "#000",
+    marginBottom: verticalScale(6),
+  },
+  compactDetails: {
+    marginBottom: verticalScale(8),
+  },
+  compactLabel: {
+    fontSize: moderateScale(12),
+    color: "#6b7280",
+    marginBottom: verticalScale(3),
+    lineHeight: 16,
+  },
+  gstBadge: {
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(6),
+    alignSelf: "flex-start",
+  },
+  gstBadgeText: {
+    fontSize: moderateScale(11),
+    fontWeight: "600",
+    color: "#065f46",
+  },
+  cardActions: {
+    flexDirection: "column",
+    gap: verticalScale(8),
+    marginLeft: scale(12),
+  },
+  viewButton: {
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(8),
+    borderWidth: 1,
+    borderColor: "#000",
+    alignItems: "center",
+    minWidth: scale(70),
+  },
+  viewButtonText: {
+    fontSize: moderateScale(12),
+    fontWeight: "600",
+    color: "#000",
+  },
+  editActionButton: {
+    backgroundColor: "#000",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(8),
+    alignItems: "center",
+    minWidth: scale(70),
+  },
+  editActionButtonText: {
+    fontSize: moderateScale(12),
+    fontWeight: "600",
+    color: "#fff",
+  },
+
+  loadingText: {
+    marginTop: verticalScale(12),
+    color: "#666",
+    fontSize: moderateScale(15),
+  },
+
+  // View Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  viewModalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    maxHeight: "90%",
+    paddingTop: verticalScale(16),
+  },
+  viewModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(12),
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  viewModalTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: "700",
+    color: "#000",
+  },
+  closeButtonText: {
+    fontSize: moderateScale(24),
+    color: "#6b7280",
+    fontWeight: "600",
+  },
+  viewModalBody: {
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(16),
+    paddingBottom: verticalScale(20),
+  },
+  modalLogoContainer: {
+    width: "100%",
+    height: verticalScale(120),
+    borderRadius: moderateScale(12),
+    backgroundColor: "#f9fafb",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: verticalScale(20),
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  modalLogoImage: {
+    width: "80%",
+    height: "100%",
+  },
+  modalCompanyName: {
+    fontSize: moderateScale(22),
+    fontWeight: "700",
+    color: "#000",
+    marginBottom: verticalScale(20),
+    textAlign: "center",
+  },
+  modalDetailSection: {
+    marginBottom: verticalScale(16),
+    paddingBottom: verticalScale(16),
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  modalDetailLabel: {
+    fontSize: moderateScale(12),
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: verticalScale(6),
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  modalDetailValue: {
+    fontSize: moderateScale(15),
+    fontWeight: "500",
+    color: "#000",
+    lineHeight: 22,
+  },
+  modalSignatureImage: {
+    width: "100%",
+    height: verticalScale(100),
+    marginTop: verticalScale(10),
+    borderRadius: moderateScale(8),
+  },
+  modalCloseBtn: {
+    backgroundColor: "#000",
+    paddingVertical: verticalScale(14),
+    borderRadius: moderateScale(12),
+    alignItems: "center",
+    marginHorizontal: scale(20),
+    marginBottom: verticalScale(20),
+  },
+  modalCloseBtnText: {
+    color: "#fff",
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+  },
 });

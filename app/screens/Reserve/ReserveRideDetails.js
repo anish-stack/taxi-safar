@@ -61,7 +61,7 @@ const ReserveRideDetailsRedesigned = () => {
   const [distance, setDistance] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mapRegion, setMapRegion] = useState(null);
-
+  const [company,setCompany] = useState(null)
   const estimateDuration = (distanceKm) =>
     parseFloat((distanceKm / 50).toFixed(2));
 
@@ -159,8 +159,23 @@ const ReserveRideDetailsRedesigned = () => {
     }
   };
 
+  console.log(rideData?.companyId)
+  const fetchCompanyDetails = async()=>{
+    try {
+      const response = await axios.get(`http://192.168.1.11:3100/api/v1/company-details/${rideData?.companyId}`)
+      if(response.data.success){
+      setCompany(response.data.data)
+      }else{
+        setCompany(null)
+      }
+    } catch (error) {
+      console.log("ok",error.response.data)
+    }
+  }
+
   useEffect(() => {
     fetchRideDetails();
+    fetchCompanyDetails()
   }, [rideId]);
 
   const getExtraRequirements = (req) => {

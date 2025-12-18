@@ -48,6 +48,7 @@ const {
   getMyCompanyDetails,
   adminGetAllCompanyDetails,
   FetchMyAssignedRides,
+  getCompanyDetails,
 } = require("../controllers/driver/driver.helper.controller");
 
 // Controllers - Driver Post Rides
@@ -189,7 +190,7 @@ router.put("/update-company", protect, companyUpload, updateCompanyDetails);
 router.delete("/delete-company", protect, deleteCompanyDetails);
 router.get("/my-company", protect, getMyCompanyDetails);
 router.get("/admin/all-company-details", adminGetAllCompanyDetails);
-
+router.get("/company-details/:id",  getCompanyDetails);
 
 // ---------------------------------------------
 // 🔥 DRIVER POST RIDES

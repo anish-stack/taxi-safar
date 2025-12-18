@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import axios from "axios";
@@ -24,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function AddBank({ navigation }) {
   const route = useRoute();
   const { driverId } = route.params || {};
+
   // State
   const [banks, setBanks] = useState([]);
   const [filteredBanks, setFilteredBanks] = useState([]);
@@ -37,12 +40,9 @@ export default function AddBank({ navigation }) {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [banksLoading, setBanksLoading] = useState(true);
-
-  // Search Modal State
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Fetch banks on mount
   useEffect(() => {
     fetchBanks();
   }, []);
@@ -71,7 +71,6 @@ export default function AddBank({ navigation }) {
     }
   };
 
-  // Filter banks based on search
   useEffect(() => {
     if (searchQuery.trim()) {
       const filtered = banks.filter((bank) =>
@@ -120,7 +119,8 @@ export default function AddBank({ navigation }) {
     const newErrors = {};
 
     if (!bankName) newErrors.bankName = "Please select a bank";
-    if (!accountHolderName.trim()) newErrors.accountHolderName = "Please enter account holder name";
+    if (!accountHolderName.trim())
+      newErrors.accountHolderName = "Please enter account holder name";
     if (!accountNumber.trim()) newErrors.accountNumber = "Please enter account number";
     if (!confirmAccountNumber.trim()) {
       newErrors.confirmAccountNumber = "Please confirm account number";
@@ -141,87 +141,86 @@ export default function AddBank({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
 
-const handleSubmit = async () => {
-  if (!validateForm()) {
-    Alert.alert("Validation Error", "Please fill in all required fields correctly");
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    const getDriverId = await getData("driverid");
-    const riderId = getDriverId || driverId;
-
-    if (!riderId) {
-      Alert.alert("Error", "Driver ID not found. Please log in again.");
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      Alert.alert(
+        "Validation Error",
+        "Please fill in all required fields correctly"
+      );
       return;
     }
 
-    // ✅ Prepare JSON data
-    const data = {
-      bank_name: bankName,
-      account_number: accountNumber,
-      ifsc_code: ifscCode?.toUpperCase(),
-      branch_name: branchName,
-      account_holder_name: accountHolderName,
-      upi_id: upiId || undefined,
-    };
+    try {
+      setLoading(true);
 
-    // ✅ API call (JSON payload)
-    const response = await axios.post(
-      `${API_URL_APP}/api/v1/add-bank-details/${riderId}`,
-      data,
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
+      const getDriverId = await getData("driverid");
+      const riderId = getDriverId || driverId;
+
+      if (!riderId) {
+        Alert.alert("Error", "Driver ID not found. Please log in again.");
+        return;
       }
-    );
 
-  if (response.data.success) {
-  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const data = {
+        bank_name: bankName,
+        account_number: accountNumber,
+        ifsc_code: ifscCode?.toUpperCase(),
+        branch_name: branchName,
+        account_holder_name: accountHolderName,
+        upi_id: upiId || undefined,
+      };
 
-  Alert.alert(
-    "Success",
-    "Bank details added successfully!",
-    [
-      {
-        text: "OK",
-        onPress: () =>
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: "wait_screen",
-                params: { driverId: driverId },
-              },
-            ],
-          }),
-      },
-    ]
-  );
-} else {
-  throw new Error(response.data.message || "Failed to add bank details");
-}
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/add-bank-details/${riderId}`,
+        data,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
-  } catch (error) {
-    console.error("❌ Error submitting bank details:", error.response?.data);
+      if (response.data.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    let errorMessage = "Something went wrong. Please try again later.";
-    if (error.response?.data?.message) {
-      errorMessage = error.response.data.message;
-    } else if (error.message) {
-      errorMessage = error.message;
+        Alert.alert(
+          "Success",
+          "Bank details added successfully!",
+          [
+            {
+              text: "OK",
+              onPress: () =>
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: "wait_screen",
+                      params: { driverId: driverId },
+                    },
+                  ],
+                }),
+            },
+          ]
+        );
+      } else {
+        throw new Error(response.data.message || "Failed to add bank details");
+      }
+    } catch (error) {
+      console.error("Error submitting bank details:", error.response?.data);
+
+      let errorMessage = "Something went wrong. Please try again later.";
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Error", errorMessage);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoading(false);
     }
-
-    Alert.alert("Error", errorMessage);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   const renderProgressBar = (currentStep) => (
     <View style={styles.progressContainer}>
@@ -239,152 +238,157 @@ const handleSubmit = async () => {
 
   if (banksLoading) {
     return (
-      <>
+      <SafeAreaView style={{ flex: 1 }}>
         <BackWithLogo />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading banks...</Text>
         </View>
-      </>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{flex:1}}>
+    <SafeAreaView style={{ flex: 1 }}>
       <BackWithLogo />
       {renderProgressBar(4)}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
       >
-        <Text style={styles.title}>Bank Account Details</Text>
-        <Text style={styles.subtitle}>Enter your bank account information</Text>
-
-        {/* Bank Name Searchable */}
-        <Text style={styles.label}>Bank Name</Text>
-        <TouchableOpacity
-          style={styles.bankSelector}
-          onPress={() => setSearchModalVisible(true)}
-          disabled={loading}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={[styles.bankText, !bankName && styles.placeholderText]}>
-            {bankName || "Tap to select your bank"}
-          </Text>
-          <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
-        {renderError("bankName")}
+          <Text style={styles.title}>Bank Account Details</Text>
+          <Text style={styles.subtitle}>Enter your bank account information</Text>
 
-        {/* Account Holder Name */}
-        <Text style={styles.label}>Account Holder Name</Text>
-        <TextInput
-          placeholder="Enter full name as per bank records"
-          value={accountHolderName}
-          onChangeText={(v) => {
-            setAccountHolderName(v);
-            clearFieldError("accountHolderName");
-          }}
-          style={styles.input}
-          editable={!loading}
-        />
-        {renderError("accountHolderName")}
+          {/* Bank Name Searchable */}
+          <Text style={styles.label}>Bank Name</Text>
+          <TouchableOpacity
+            style={styles.bankSelector}
+            onPress={() => setSearchModalVisible(true)}
+            disabled={loading}
+          >
+            <Text style={[styles.bankText, !bankName && styles.placeholderText]}>
+              {bankName || "Tap to select your bank"}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          {renderError("bankName")}
 
-        {/* Account Number */}
-        <Text style={styles.label}>Account Number</Text>
-        <TextInput
-          placeholder="Enter account number"
-          value={accountNumber}
-          onChangeText={(v) => {
-            setAccountNumber(v);
-            clearFieldError("accountNumber");
-          }}
-          style={styles.input}
-          keyboardType="number-pad"
-          editable={!loading}
-        />
-        {renderError("accountNumber")}
+          {/* Account Holder Name */}
+          <Text style={styles.label}>Account Holder Name</Text>
+          <TextInput
+            placeholder="Enter full name as per bank records"
+            value={accountHolderName}
+            onChangeText={(v) => {
+              setAccountHolderName(v);
+              clearFieldError("accountHolderName");
+            }}
+            style={styles.input}
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("accountHolderName")}
 
-        {/* Confirm Account Number */}
-        <Text style={styles.label}>Confirm Account Number</Text>
-        <TextInput
-          placeholder="Re-enter account number"
-          value={confirmAccountNumber}
-          onChangeText={(v) => {
-            setConfirmAccountNumber(v);
-            clearFieldError("confirmAccountNumber");
-          }}
-          style={styles.input}
-          keyboardType="number-pad"
-          editable={!loading}
-        />
-        {renderError("confirmAccountNumber")}
+          {/* Account Number */}
+          <Text style={styles.label}>Account Number</Text>
+          <TextInput
+            placeholder="Enter account number"
+            value={accountNumber}
+            onChangeText={(v) => {
+              setAccountNumber(v);
+              clearFieldError("accountNumber");
+            }}
+            style={styles.input}
+            keyboardType="number-pad"
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("accountNumber")}
 
-        {/* IFSC Code */}
-        <Text style={styles.label}>IFSC Code</Text>
-        <TextInput
-          placeholder="e.g. SBIN0001234"
-          value={ifscCode}
-          onChangeText={(v) => {
-            setIfscCode(v.toUpperCase());
-            clearFieldError("ifscCode");
-          }}
-          style={styles.input}
-          autoCapitalize="characters"
-          maxLength={11}
-          editable={!loading}
-        />
-        {renderError("ifscCode")}
+          {/* Confirm Account Number */}
+          <Text style={styles.label}>Confirm Account Number</Text>
+          <TextInput
+            placeholder="Re-enter account number"
+            value={confirmAccountNumber}
+            onChangeText={(v) => {
+              setConfirmAccountNumber(v);
+              clearFieldError("confirmAccountNumber");
+            }}
+            style={styles.input}
+            keyboardType="number-pad"
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("confirmAccountNumber")}
 
-        {/* Branch Name */}
-        <Text style={styles.label}>Branch Name</Text>
-        <TextInput
-          placeholder="Enter branch name"
-          value={branchName}
-          onChangeText={(v) => {
-            setBranchName(v);
-            clearFieldError("branchName");
-          }}
-          style={styles.input}
-          editable={!loading}
-        />
-        {renderError("branchName")}
+          {/* IFSC Code */}
+          <Text style={styles.label}>IFSC Code</Text>
+          <TextInput
+            placeholder="e.g. SBIN0001234"
+            value={ifscCode}
+            onChangeText={(v) => {
+              setIfscCode(v.toUpperCase());
+              clearFieldError("ifscCode");
+            }}
+            style={styles.input}
+            autoCapitalize="characters"
+            maxLength={11}
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("ifscCode")}
 
-        {/* UPI ID (Optional) */}
-        <Text style={styles.label}>UPI ID (Optional)</Text>
-        <TextInput
-          placeholder="yourname@bankname"
-          value={upiId}
-          onChangeText={(v) => {
-            setUpiId(v);
-            clearFieldError("upiId");
-          }}
-          style={styles.input}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          editable={!loading}
-        />
-        {renderError("upiId")}
+          {/* Branch Name */}
+          <Text style={styles.label}>Branch Name</Text>
+          <TextInput
+            placeholder="Enter branch name"
+            value={branchName}
+            onChangeText={(v) => {
+              setBranchName(v);
+              clearFieldError("branchName");
+            }}
+            style={styles.input}
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("branchName")}
 
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
-          <Text style={styles.infoText}>
-            Please ensure all details match your bank records exactly. Wrong information may delay verification.
-          </Text>
-        </View>
+          {/* UPI ID (Optional) */}
+          <Text style={styles.label}>UPI ID (Optional)</Text>
+          <TextInput
+            placeholder="yourname@bankname"
+            value={upiId}
+            onChangeText={(v) => {
+              setUpiId(v);
+              clearFieldError("upiId");
+            }}
+            style={styles.input}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!loading}
+            placeholderTextColor={Colors.textSecondary}
+          />
+          {renderError("upiId")}
 
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={[styles.nextButton, loading && styles.nextButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={Colors.white} />
-          ) : (
-            <Text style={styles.nextText}>Submit Bank Details</Text>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
+          {/* Submit Button */}
+          <TouchableOpacity
+            style={[styles.nextButton, loading && styles.nextButtonDisabled]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Text style={styles.nextText}>Submit Bank Details</Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Searchable Bank Modal */}
       <Modal
@@ -408,6 +412,7 @@ const handleSubmit = async () => {
               onChangeText={setSearchQuery}
               style={styles.searchInput}
               autoFocus
+              placeholderTextColor={Colors.textSecondary}
             />
 
             <FlatList
@@ -435,7 +440,11 @@ const handleSubmit = async () => {
 
 // === STYLES ===
 const styles = {
-  scrollContent: { padding: 20, backgroundColor: Colors.background },
+  scrollContent: {
+    padding: 20,
+    backgroundColor: Colors.background,
+    paddingBottom: 40,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -539,8 +548,6 @@ const styles = {
     marginBottom: 8,
     marginLeft: 4,
   },
-
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

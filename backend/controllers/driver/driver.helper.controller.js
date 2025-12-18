@@ -5,6 +5,7 @@ const { uploadSingleImage, deleteImage } = require("../../utils/cloudinary");
 const { deleteFile } = require("../../middlewares/multer");
 const TaxiSafariRide = require("../../models/rides/taxi_safar_ride");
 const RidesPost = require("../../models/rides_post/Rides_Post");
+const mongoose = require("mongoose");
 
 exports.toggleStatus = async (req, res) => {
   try {
@@ -422,7 +423,60 @@ exports.getMyCompanyDetails = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
+exports.getCompanyDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    console.log("📥 Incoming ID:", id);
+
+    // ✅ Validate ObjectId
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      console.log("❌ Invalid ObjectId:", id);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing ID",
+      });
+    }
+
+    console.log("🔍 Searching CompanyDetails by _id...");
+
+    const details = await CompanyDetails.findById(id);
+
+    console.log("📄 Query Result:", details);
+
+    // ❌ Not found
+    if (!details) {
+      console.log("❌ Company details NOT FOUND for ID:", id);
+      return res.status(404).json({
+        success: false,
+        message: "Company details not found",
+      });
+    }
+
+    // ✅ Found
+    console.log("✅ Company details FOUND");
+    console.log("🧾 Driver in company:", details.driver?.toString());
+
+    const matchedBy =
+      details.driver?.toString() === id ? "driver" : "_id";
+
+    console.log("🎯 Matched By:", matchedBy);
+
+    return res.status(200).json({
+      success: true,
+      data: details,
+      matchedBy,
+    });
+
+  } catch (error) {
+    console.error("🔥 Get Company Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
 exports.updateCompanyDetails = async (req, res) => {
   try {
     const driverId = req.user.id;
@@ -643,3 +697,6 @@ exports.FetchMyAssignedRides = async (req, res) => {
     });
   }
 };
+
+
+
