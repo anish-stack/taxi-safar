@@ -193,7 +193,6 @@ exports.registerDriver = async (req, res) => {
       name: body.name,
       mobile: body.mobile,
       email: body.email,
-      aadhaarNumber: body.aadhaarNumber?.slice(-4) + "****", // Masked
       dlNumber: body.dlNumber,
     });
     console.log("📂 Files received:", files.length);
@@ -237,13 +236,13 @@ exports.registerDriver = async (req, res) => {
     }
 
     // Validate Aadhaar format (12 digits)
-    if (!/^\d{12}$/.test(aadhaarNumber)) {
-      cleanupLocalFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Aadhaar number. Must be 12 digits.",
-      });
-    }
+    // if (!/^\d{12}$/.test(aadhaarNumber)) {
+    //   cleanupLocalFiles(files);
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Invalid Aadhaar number. Must be 12 digits.",
+    //   });
+    // }
 
     // ========================================
     // STEP 2: VALIDATE DOCUMENTS
@@ -1837,16 +1836,16 @@ exports.verifyDrivingLicense = async (req, res) => {
     /* ---------------- AADHAAR CACHE ---------------- */
     const cached = await AadharDetails.findOne({ device_id: deviceId });
 
-    if (!cached?.aadhar_verification_data?.aadhaar_number) {
-      console.log("❌ Aadhaar not verified");
-      return res.status(400).json({
-        success: false,
-        message: "Aadhaar not verified. Please verify Aadhaar first.",
-      });
-    }
+    // if (!cached?.aadhar_verification_data?.aadhaar_number) {
+    //   console.log("❌ Aadhaar not verified");
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Aadhaar not verified. Please verify Aadhaar first.",
+    //   });
+    // }
 
-    const aadhaarData = cached.aadhar_verification_data;
-    console.log("✔ Aadhaar Name:", aadhaarData.full_name);
+    // const aadhaarData = cached.aadhar_verification_data;
+    // console.log("✔ Aadhaar Name:", aadhaarData.full_name);
 
     /* ---------------- BYPASS MODE ---------------- */
     if (BYPASS) {
@@ -1902,25 +1901,25 @@ exports.verifyDrivingLicense = async (req, res) => {
     const dlInfo = apiResponse.data.data;
 
     /* ---------------- NAME MATCH ---------------- */
-    console.log(
-      "🔍 Comparing Names:",
-      aadhaarData.full_name,
-      "↔",
-      dlInfo.name
-    );
+    // console.log(
+    //   "🔍 Comparing Names:",
+    //   aadhaarData.full_name,
+    //   "↔",
+    //   dlInfo.name
+    // );
 
-    const matched = isNameMatch(aadhaarData.full_name, dlInfo.name);
+    // const matched = isNameMatch(aadhaarData.full_name, dlInfo.name);
 
-    if (!matched) {
-      console.log("❌ Name mismatch");
-      return res.status(400).json({
-        success: false,
-        nameMismatch: true,
-        message: `Aadhaar name "${aadhaarData.full_name}" does not match DL name "${dlInfo.name}"`,
-      });
-    }
+    // if (!matched) {
+    //   console.log("❌ Name mismatch");
+    //   return res.status(400).json({
+    //     success: false,
+    //     nameMismatch: true,
+    //     message: `Aadhaar name "${aadhaarData.full_name}" does not match DL name "${dlInfo.name}"`,
+    //   });
+    // }
 
-    console.log("✅ Name matched successfully");
+    // console.log("✅ Name matched successfully");
 
     /* ---------------- SAVE CACHE ---------------- */
     cached.dl_data = dlInfo;
@@ -1999,20 +1998,20 @@ exports.verifyRcDetails = async (req, res) => {
     /* ---------------- AADHAAR ---------------- */
     console.log("🪪 Fetching Aadhaar record for device");
 
-    const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
-      .sort({ createdAt: -1 })
-      .lean();
+    // const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
+    //   .sort({ createdAt: -1 })
+    //   .lean();
 
-    if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
-      console.warn("❌ Aadhaar not verified");
-      return res.status(400).json({
-        success: false,
-        message: "Aadhaar not verified for this device.",
-      });
-    }
+    // if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
+    //   console.warn("❌ Aadhaar not verified");
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Aadhaar not verified for this device.",
+    //   });
+    // }
 
-    const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name;
-    console.log("✔ Aadhaar Verified Name:", aadhaarName);
+    // const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name;
+    // console.log("✔ Aadhaar Verified Name:", aadhaarName);
 
     /* ---------------- RC API ---------------- */
     console.log("🌐 Calling QuickEKYC RC API");
@@ -2091,23 +2090,23 @@ exports.verifyRcDetails = async (req, res) => {
 
     /* ---------------- NAME MATCH ---------------- */
     console.log("🔍 Name Matching");
-    console.log("🪪 Aadhaar:", aadhaarName);
+    // console.log("🪪 Aadhaar:", aadhaarName);
     console.log("📄 RC Owner:", rcInfo.owner_name);
 
-    const nameMatched = isNameMatch(aadhaarName, rcInfo.owner_name);
+    // const nameMatched = isNameMatch(aadhaarName, rcInfo.owner_name);
 
-    console.log("📊 Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
+    // console.log("📊 Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
 
-    if (!nameMatched) {
-      console.error("❌ Name mismatch");
+    // if (!nameMatched) {
+    //   console.error("❌ Name mismatch");
 
-      return res.status(400).json({
-        success: false,
-        rcData: rcInfo,
-        nameMismatch: true,
-        message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
-      });
-    }
+    //   return res.status(400).json({
+    //     success: false,
+    //     rcData: rcInfo,
+    //     nameMismatch: true,
+    //     message: `RC owner name "${rcInfo.owner_name}" does not match Aadhaar name "${aadhaarName}".`,
+    //   });
+    // }
 
     console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
 
