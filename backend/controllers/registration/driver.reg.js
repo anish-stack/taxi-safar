@@ -949,7 +949,7 @@ exports.addVehicleDetails = async (req, res) => {
       return res.status(400).json({ success: false, message: "RC verification data is required" });
     }
 
-    log(currentStep, "RC data parsed successfully");
+    log(currentStep, "RC data parsed successfully",rcData);
 
     /* ----------------------------
        3️⃣ Validate Required Fields
