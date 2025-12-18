@@ -3,6 +3,7 @@ const { ExpressAdapter } = require('@bull-board/express');
 const { createBullBoard } = require('@bull-board/api');
 const { BullAdapter } = require('@bull-board/api/bullAdapter');
 const { ridePostNotifications } = require('./queues/RidePostNotifications');
+const { vehiclePhotoUploadQueue } = require('./queues/DriverVehcilePhotoUpload');
 
 
 
@@ -11,8 +12,11 @@ const setupBullBoard = (app) => {
   serverAdapter.setBasePath('/admin/queues');
 
   createBullBoard({
-    queues: [new BullAdapter(ridePostNotifications)],
-    serverAdapter,
+queues: [
+      new BullAdapter(ridePostNotifications),
+      new BullAdapter(vehiclePhotoUploadQueue), // Added vehicle upload queue
+    ]  ,
+      serverAdapter,
   });
 
 
