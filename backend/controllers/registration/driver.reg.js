@@ -1957,14 +1957,18 @@ exports.verifyDrivingLicense = async (req, res) => {
 -------------------------------------------------- */
 
 exports.verifyRcDetails = async (req, res) => {
+  const TRACE_ID = `RC-${Date.now()}`;
   try {
-    console.log("\n================ RC VERIFY START ================");
-    console.log("📥 Incoming Body:", req.body);
+    console.log(`\n================ RC VERIFY START [${TRACE_ID}] ================`);
+    console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
 
     const { rcNumber, deviceId, isByPass, driverId } = req.body;
 
     /* ---------------- VALIDATION ---------------- */
+    console.log("🧪 Validating input fields");
+
     if (!rcNumber || !deviceId || !driverId) {
+      console.warn("⚠️ Validation failed → Missing required fields");
       return res.status(400).json({
         success: false,
         message: "RC number, deviceId and driverId are required.",
@@ -1972,20 +1976,33 @@ exports.verifyRcDetails = async (req, res) => {
     }
 
     /* ---------------- DRIVER ---------------- */
+    console.log("👤 Fetching driver details →", driverId);
+
     const driverDetails = await Driver.findById(driverId).lean();
+
     if (!driverDetails) {
+      console.error("❌ Driver not found in DB");
       return res.status(404).json({
         success: false,
         message: "Driver not found.",
       });
     }
 
+    console.log("✔ Driver Found:", {
+      id: driverDetails._id,
+      name: driverDetails.driver_name,
+      mobile: driverDetails.mobile,
+    });
+
     /* ---------------- AADHAAR ---------------- */
+    console.log("🪪 Fetching Aadhaar record for device:", deviceId);
+
     const aadhaarRecord = await AadharDetails.findOne({ device_id: deviceId })
       .sort({ createdAt: -1 })
       .lean();
 
     if (!aadhaarRecord?.aadhar_verification_data?.full_name) {
+      console.warn("❌ Aadhaar not verified or missing name");
       return res.status(400).json({
         success: false,
         message: "Aadhaar not verified for this device.",
@@ -1993,10 +2010,11 @@ exports.verifyRcDetails = async (req, res) => {
     }
 
     const aadhaarName = aadhaarRecord.aadhar_verification_data.full_name;
-    console.log("✔ Aadhaar Name:", aadhaarName);
+    console.log("✔ Aadhaar Verified Name:", aadhaarName);
 
     /* ---------------- RC API ---------------- */
-    console.log("🔵 Calling QuickEKYC RC API");
+    console.log("🌐 Calling QuickEKYC RC API");
+    console.log("➡️ RC Number:", rcNumber.toUpperCase());
 
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/rc/rc_sp",
@@ -2010,7 +2028,10 @@ exports.verifyRcDetails = async (req, res) => {
       }
     );
 
+    console.log("⬅️ RC API Raw Response:", JSON.stringify(response.data, null, 2));
+
     if (response.data.status !== "success" || !response.data.data) {
+      console.error("❌ RC API returned failure");
       return res.status(400).json({
         success: false,
         message: response.data.message || "RC verification failed.",
@@ -2019,27 +2040,38 @@ exports.verifyRcDetails = async (req, res) => {
 
     let rcInfo = response.data.data;
 
-    console.log("✔ RC Owner Name:", rcInfo.owner_name);
+    console.log("✔ RC Data Parsed:", {
+      owner_name: rcInfo.owner_name,
+      vehicle_category: rcInfo.vehicle_category,
+      vehicle_class: rcInfo.vehicle_class,
+      registration_date: rcInfo.registration_date,
+    });
 
     /* ---------------- BIKE DETECTION ---------------- */
+    console.log("🚲 Checking vehicle category");
+
     const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
     const isBike =
       vehicleCategory.includes("2W") ||
       vehicleCategory.includes("TWO") ||
       vehicleCategory.includes("MOTORCYCLE");
 
-    console.log("🚲 Bike Detected:", isBike);
+    console.log("🚘 Vehicle Category:", vehicleCategory);
+    console.log("🚲 Is Bike Detected:", isBike);
 
     /* ---------------- BYPASS MODE ---------------- */
     if (isByPass === true) {
-      console.log("⚡ BYPASS MODE ENABLED");
+      console.warn("⚡ BYPASS MODE ENABLED");
 
       if (isBike) {
+        console.warn("🛠 Overriding bike category → CAR");
         rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
       }
 
+      console.log("📝 Forcing RC owner name to Aadhaar name");
       rcInfo.owner_name = aadhaarName;
 
+      console.log("✅ RC VERIFIED (BYPASS)");
       return res.status(200).json({
         success: true,
         message: "RC verified successfully (BYPASS MODE).",
@@ -2051,6 +2083,7 @@ exports.verifyRcDetails = async (req, res) => {
 
     /* ---------------- BIKE BLOCK ---------------- */
     if (isBike) {
+      console.warn("🚫 Bike detected → blocking registration");
       return res.status(400).json({
         success: false,
         message: "Two-wheelers are not allowed. Please register a car.",
@@ -2060,12 +2093,16 @@ exports.verifyRcDetails = async (req, res) => {
     /* ---------------- NAME MATCH ---------------- */
     const rcOwnerName = rcInfo.owner_name;
 
-    console.log("🔍 Name Compare:", aadhaarName, "↔", rcOwnerName);
+    console.log("🔍 Name Matching Started");
+    console.log("🪪 Aadhaar Name:", aadhaarName);
+    console.log("📄 RC Owner Name:", rcOwnerName);
 
     const nameMatched = isNameMatch(aadhaarName, rcOwnerName);
 
+    console.log("📊 Name Match Result:", nameMatched ? "MATCH ✅" : "MISMATCH ❌");
+
     if (!nameMatched) {
-      console.log("❌ Name mismatch");
+      console.error("❌ Name mismatch detected");
 
       return res.status(400).json({
         success: false,
@@ -2078,6 +2115,8 @@ exports.verifyRcDetails = async (req, res) => {
     console.log("✅ RC OWNER NAME MATCHED");
 
     /* ---------------- SUCCESS ---------------- */
+    console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
+
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
@@ -2086,7 +2125,8 @@ exports.verifyRcDetails = async (req, res) => {
       bypassUsed: false,
     });
   } catch (error) {
-    console.error("🔥 RC VERIFY ERROR:", error);
+    console.error(`🔥 RC VERIFY ERROR [${TRACE_ID}]`);
+    console.error(error);
 
     return res.status(500).json({
       success: false,
@@ -2095,6 +2135,7 @@ exports.verifyRcDetails = async (req, res) => {
     });
   }
 };
+
 
 exports.VerifyGstNo = async (req, res) => {
   try {
