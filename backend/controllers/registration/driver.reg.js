@@ -2042,11 +2042,6 @@ exports.verifyRcDetails = async (req, res) => {
 
     let rcInfo = response.data.data;
 
-    console.log("✔ RC Data:", {
-      owner_name: rcInfo.owner_name,
-      vehicle_category: rcInfo.vehicle_category,
-      vehicle_class: rcInfo.vehicle_class,
-    });
 
     /* ---------------- BIKE DETECTION ---------------- */
     const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
@@ -2110,6 +2105,7 @@ exports.verifyRcDetails = async (req, res) => {
 
     console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
 
+    console.log("✔ RC Data:", rcInfo,);
     return res.status(200).json({
       success: true,
       message: "RC verified successfully.",
