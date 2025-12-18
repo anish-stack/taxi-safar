@@ -346,7 +346,7 @@ exports.getRideById = async (req, res) => {
       .populate(
         "driverPostId",
         "driver_name driver_contact_number profile_image average_rating"
-      )
+      ).populate("companyId")
       .populate(
         "assignedDriverId",
         "driver_name driver_contact_number profile_image average_rating"
