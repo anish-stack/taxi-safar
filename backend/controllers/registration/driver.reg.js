@@ -1912,19 +1912,7 @@ exports.verifyDrivingLicense = async (req, res) => {
 
     console.log("⚙️ BYPASS MODE:", BYPASS);
 
-    /* ---------------- AADHAAR CACHE ---------------- */
-    const cached = await AadharDetails.findOne({ device_id: deviceId });
-
-    // if (!cached?.aadhar_verification_data?.aadhaar_number) {
-    //   console.log("❌ Aadhaar not verified");
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Aadhaar not verified. Please verify Aadhaar first.",
-    //   });
-    // }
-
-    // const aadhaarData = cached.aadhar_verification_data;
-    // console.log("✔ Aadhaar Name:", aadhaarData.full_name);
+   
 
     /* ---------------- BYPASS MODE ---------------- */
     if (BYPASS) {
@@ -1932,16 +1920,16 @@ exports.verifyDrivingLicense = async (req, res) => {
 
       const fakeDL = {
         license_number: "DLTEST000000",
-        name: aadhaarData.full_name,
+        name: aadhaarName,
         state: "Uttar Pradesh",
         permanent_address: "Test Address",
         permanent_zip: "226001",
       };
 
-      cached.dl_data = fakeDL;
-      cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
-      cached.isDlisExpired = false;
-      await cached.save();
+      // cached.dl_data = fakeDL;
+      // cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      // cached.isDlisExpired = false;
+      // await cached.save();
 
       return res.status(200).json({
         success: true,
