@@ -21,6 +21,9 @@ export const calculateDuration = (distanceKm) => {
   return parseFloat(hours.toFixed(2)); // returns hours
 };
 
+
+
+
 export const formatDate = (dateString) => {
   const date = new Date(dateString);
 

@@ -105,19 +105,19 @@ export default function MyTrips({ navigation }) {
 
     try {
       const res = await axios.get(
-        `${API_URL_APP}/api/v1/get-my-assigend-rides`,
+        `${API_URL_APP}/api/v1/get-my-assigned-rides`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-
+      console.log("res.data.dasta",res.data.data?.rides_post_rides)
       if (res.data?.success) {
         setRidesData(res.data.data);
       } else {
         console.warn("No rides found");
       }
     } catch (error) {
-      console.log("❌ Fetch MyTrips Error:", error);
+      console.log("❌ Fetch MyTrips Error:", error.response.data);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -383,11 +383,13 @@ export default function MyTrips({ navigation }) {
         minute: "2-digit",
       })}
       // tripType={item.trip_type}
-            tripType={`${trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"} - ${"60"}Km`}
-
+      tripType={`${
+        trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+      } - ${"60"}Km`}
       status={item?.trip_status}
       pickup={item.pickup_address}
       drop={item.destination_address}
+      item={item}
       distance={item.distance || "N/A"}
       onPress={() =>
         navigation.navigate("ProgressTaxiSafarRide", {
@@ -432,9 +434,7 @@ export default function MyTrips({ navigation }) {
       <View style={styles.actionButtons}>
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() =>
-            navigation.navigate("Add", { rideId: item._id })
-          }
+          onPress={() => navigation.navigate("Add", { rideId: item._id })}
           activeOpacity={0.7}
         >
           <Edit2 size={16} color="#FFF" />
@@ -452,20 +452,24 @@ export default function MyTrips({ navigation }) {
     </View>
   );
 
-  const renderRidesPostRide = ({ item }) => (
+  const renderRidesPostRide = ({ item }) => {
+    console.log("Item",item)
+    return(
     <DriverPost
       _id={item._id}
       vehicleName={item.vehicle_name || "Vehicle"}
       assignedStatus={item.rideStatus}
       vehicleType="mini"
+      item={item}
       status={item?.rideStatus}
       totalAmount={`₹${item.totalAmount}`}
       commission={`₹${item.commissionAmount}`}
       driverEarning={`₹${item.driverEarning}`}
       pickup={item.pickupAddress}
       drop={item.dropAddress}
-      // tripType={item.tripType}
-      tripType={`${trip.tripType === "one-way" ? "One Way Trip" : "Round Trip"} - ${"60"}Km`}
+      tripType={`${
+        item.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+      } - ${"60"}Km`}
       date={new Date(item.createdAt).toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "short",
@@ -475,14 +479,9 @@ export default function MyTrips({ navigation }) {
         hour: "2-digit",
         minute: "2-digit",
       })}
-      onPress={() =>
-        navigation.navigate("ReserveRideDetailsAssigned", {
-          rideId: item._id,
-          type: "rides_post",
-        })
-      }
+    
     />
-  );
+  );}
 
   const renderRide = ({ item }) => {
     if (activeTab === "my_posts") {
@@ -545,7 +544,7 @@ export default function MyTrips({ navigation }) {
           <Text style={styles.statValue}>{summary?.total_rides || 0}</Text>
           <Text style={styles.statLabel}>Total</Text>
         </View>
-         <View style={styles.statCard}>
+        <View style={styles.statCard}>
           <Text style={styles.statValue}>
             {myPostsPagination.totalRides || 0}
           </Text>
@@ -557,8 +556,6 @@ export default function MyTrips({ navigation }) {
           </Text>
           <Text style={styles.statLabel}>My Reserved Trip</Text>
         </View>
-     
-       
       </View>
 
       {/* Search & Filter */}

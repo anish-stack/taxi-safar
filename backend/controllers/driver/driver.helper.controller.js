@@ -575,7 +575,8 @@ exports.adminGetAllCompanyDetails = async (req, res) => {
 
 exports.FetchMyAssignedRides = async (req, res) => {
   try {
-    const driverId = req.user.id;
+    console.log("i am")
+    const driverId = req.params.id ||req.user.id;
 
     // Validation
     if (!driverId) {
@@ -607,10 +608,6 @@ exports.FetchMyAssignedRides = async (req, res) => {
       await Promise.all([
         // Fetch TaxiSafari rides with only needed fields
         TaxiSafariRide.find(taxiSafariQuery)
-          .select(
-            "pickup_address destination_address name contact vehicle_type vehicle_name distance durationText original_amount trip_status createdAt scheduled_time"
-          )
-
           .sort({ createdAt: -1 })
           .limit(limit)
           .skip(skip)
@@ -619,9 +616,6 @@ exports.FetchMyAssignedRides = async (req, res) => {
 
         // Fetch RidesPost rides with only needed fields
         RidesPost.find(ridesPostQuery)
-          .select(
-            "pickupAddress tripType dropAddress totalAmount commissionAmount driverEarning rideStatus createdAt driverPostId"
-          )
           .populate("driverPostId", "driver_name driver_contact_number")
           .sort({ createdAt: -1 })
           .limit(limit)

@@ -60,7 +60,6 @@ const ReserveRideDetailsAssigned = () => {
   const { rideId } = route.params;
   const { driver, fetchDriverDetails } = useDriverStore();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useContext(BottomTabBarHeightContext) || 0;
   // State Management
   const [routeCoords, setRouteCoords] = useState([]);
   const [rideData, setRideData] = useState(null);
@@ -350,7 +349,7 @@ const ReserveRideDetailsAssigned = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      "driver-assigned": "#DC2626",
+      "driver-assigned": "#000",
       "reached-pickup": "#D97706",
       "in-progress": "#059669",
       completed: "#10B981",
@@ -374,7 +373,7 @@ const ReserveRideDetailsAssigned = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#DC2626" />
+          <ActivityIndicator size="large" color="#000" />
           <Text style={styles.loadingText}>Loading ride details...</Text>
         </View>
       </SafeAreaView>
@@ -403,10 +402,7 @@ const ReserveRideDetailsAssigned = () => {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Trip Details</Text>
-          <Text style={styles.headerSubtitle}>
-            {formatDate(rideData.pickupDate)} •{" "}
-            {formatTime(rideData.pickupTime)}
-          </Text>
+          
         </View>
         <TouchableOpacity
           style={styles.moreButton}
@@ -423,8 +419,8 @@ const ReserveRideDetailsAssigned = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => fetchRideDetails(false)}
-            colors={["#DC2626"]}
-            tintColor="#DC2626"
+            colors={["#000"]}
+            tintColor="#000"
           />
         }
       >
@@ -473,13 +469,13 @@ const ReserveRideDetailsAssigned = () => {
                 }}
               >
                 <View style={styles.dropMarker}>
-                  <MapPin size={18} color="#DC2626" fill="#DC2626" />
+                  <MapPin size={18} color="#000" fill="#000" />
                 </View>
               </Marker>
               {routeCoords.length > 0 && (
                 <Polyline
                   coordinates={routeCoords}
-                  strokeColor="#DC2626"
+                  strokeColor="#000"
                   strokeWidth={5}
                   lineCap="round"
                 />
@@ -487,7 +483,7 @@ const ReserveRideDetailsAssigned = () => {
             </MapView>
           ) : (
             <View style={styles.mapPlaceholder}>
-              <ActivityIndicator size="large" color="#DC2626" />
+              <ActivityIndicator size="large" color="#000" />
               <Text style={styles.mapText}>Loading Map...</Text>
             </View>
           )}
@@ -505,7 +501,7 @@ const ReserveRideDetailsAssigned = () => {
                   />
                 ) : (
                   <LinearGradient
-                    colors={["#DC2626", "#B91C1C"]}
+                    colors={["#000", "#B91C1C"]}
                     style={styles.avatar}
                   >
                     <Text style={styles.avatarText}>
@@ -525,7 +521,7 @@ const ReserveRideDetailsAssigned = () => {
                 </Text>
                 {rideData?.assignedDriverId?.average_rating > 0 && (
                   <View style={styles.ratingContainer}>
-                    <Star size={14} color="#DC2626" fill="#DC2626" />
+                    <Star size={14} color="#000" fill="#000" />
                     <Text style={styles.ratingText}>
                       {rideData.assignedDriverId.average_rating}
                     </Text>
@@ -619,7 +615,7 @@ const ReserveRideDetailsAssigned = () => {
           </View>
           <View style={styles.locationDivider} />
           <View style={styles.locationItem}>
-            <MapPin size={16} color="#DC2626" />
+            <MapPin size={16} color="#000" />
             <View style={styles.locationTextContainer}>
               <Text style={styles.locationLabel}>Drop Location</Text>
               <Text style={styles.locationText}>{rideData.dropAddress}</Text>
@@ -702,7 +698,7 @@ const ReserveRideDetailsAssigned = () => {
               style={styles.moreOption}
               onPress={() => handleMoreOptions("police")}
             >
-              <Shield size={20} color="#DC2626" />
+              <Shield size={20} color="#000" />
               <Text style={styles.moreOptionText}>Call Police</Text>
             </TouchableOpacity>
 
@@ -718,7 +714,7 @@ const ReserveRideDetailsAssigned = () => {
               style={[styles.moreOption, styles.cancelOption]}
               onPress={() => handleMoreOptions("cancel")}
             >
-              <X size={20} color="#DC2626" />
+              <X size={20} color="#000" />
               <Text style={[styles.moreOptionText, styles.cancelText]}>
                 Cancel Ride
               </Text>
@@ -859,7 +855,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: "#DC2626",
+    color: "#000",
     fontWeight: "500",
   },
 
@@ -999,7 +995,7 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 50,
     borderWidth: 3,
-    borderColor: "#DC2626",
+    borderColor: "#000",
     elevation: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -1084,7 +1080,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1109,7 +1105,7 @@ const styles = StyleSheet.create({
   earningAmount: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#DC2626",
+    color: "#000",
     marginBottom: 4,
   },
   earningAmountGreen: {
@@ -1219,7 +1215,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#F3F4F6",
   },
   actionButton: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
@@ -1280,7 +1276,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#F3F4F6",
   },
   cancelText: {
-    color: "#DC2626",
+    color: "#000",
   },
 
   // OTP Modal
@@ -1338,7 +1334,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: "#DC2626",
+    backgroundColor: "#000",
     alignItems: "center",
   },
   otpVerifyText: {

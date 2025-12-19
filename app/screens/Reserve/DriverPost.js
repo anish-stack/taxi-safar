@@ -1,23 +1,25 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Image,
-ScrollView,
+  ScrollView,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import mini from "../../assets/mini.png";
 import sedan from "../../assets/sedan.png";
 import suv from "../../assets/suv.png";
-import inova from "../../assets/inova.png"
+import inova from "../../assets/inova.png";
 import { useNavigation } from "@react-navigation/native";
 import { Plus } from "lucide-react-native";
+import { calculateDistance } from "../../utils/utils";
 
 export default function DriverPost({
   _id,
   vehicleName = "Maruti WagonR",
+  item = {},
   vehicleType = "mini",
   totalAmount = "₹8,000",
   requirement = {},
@@ -28,8 +30,20 @@ export default function DriverPost({
   tripType = "One way Trip - 60 km",
   date = "08 Mar, 2025",
   time = "07:00 PM",
+  onPress,
 }) {
   const navigation = useNavigation();
+  const [distance, setDistance] = useState(0);
+
+
+
+    // useEffect(() => {
+    //   const [pickupLng, pickupLat] = trip.pickupLocation.coordinates;
+    //   const [dropLng, dropLat] = trip.dropLocation.coordinates;
+  
+    //   const dist = calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
+    //   setDistance(dist);
+    // }, [trip]);
 
   const shortenAddress = (address) => {
     if (!address) return "";
@@ -39,9 +53,22 @@ export default function DriverPost({
   };
 
   const vehicleImage =
-    vehicleType === "mini" ? mini : vehicleType === "sedan" ? sedan : vehicleType === "suv"? suv:inova;
+    vehicleType === "mini"
+      ? mini
+      : vehicleType === "sedan"
+      ? sedan
+      : vehicleType === "suv"
+      ? suv
+      : inova;
   const capacityMap = { mini: 4, sedan: 4, suv: 6 };
-  const VehicleName = vehicleType === "mini" ? "Maruti WagonR" : vehicleType === "sedan" ? "Maruti Swift Dzire" : vehicleType === "suv" ? "Maruti Ertiga SUV":"Innova Crysta";
+  const VehicleName =
+    vehicleType === "mini"
+      ? "Maruti WagonR"
+      : vehicleType === "sedan"
+      ? "Maruti Swift Dzire"
+      : vehicleType === "suv"
+      ? "Maruti Ertiga SUV"
+      : "Innova Crysta";
   const capacity = capacityMap[vehicleType] || 6;
 
   // Badges Logic
@@ -75,16 +102,32 @@ export default function DriverPost({
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      onPress={() => navigation.navigate("DriverPostDetails", { rideId: _id })}
+      onPress={() => {
+        const screenName =
+          item?.rideStatus === "driver-assigned"
+            ? "ReserveRideDetailsAssigned"
+            : "DriverPostDetails";
+
+        console.log("Redirecting to:", screenName);
+
+        navigation.navigate(screenName, {
+          rideId: _id,
+          type: "rides_post",
+        });
+      }}
       style={styles.card}
     >
       {/* Top Row */}
       <View style={styles.topRow}>
         <View style={styles.row}>
-          <Image source={vehicleImage} style={styles.carImage} resizeMode="contain" />
+          <Image
+            source={vehicleImage}
+            style={styles.carImage}
+            resizeMode="contain"
+          />
           <View>
             <Text style={styles.vehicleName}>{VehicleName || vehicleName}</Text>
-            <Text style={{fontSize:10}}>Any Other Similar AC Taxi</Text>
+            <Text style={{ fontSize: 10 }}>Any Other Similar AC Taxi</Text>
             <View
               style={{
                 flexDirection: "row",
@@ -96,7 +139,7 @@ export default function DriverPost({
               {/* Passengers Icon */}
               <Image
                 source={require("./passengers.png")}
-                style={{ width: 22, height: 22, resizeMode: "contain", }}
+                style={{ width: 22, height: 22, resizeMode: "contain" }}
               />
 
               {/* Capacity Text with Plus Icon */}
@@ -141,7 +184,6 @@ export default function DriverPost({
             <View style={styles.ribbonBadge}>
               <Text style={styles.ribbonText}>{badge}</Text>
             </View>
-            
           </View>
         ))}
       </ScrollView>
@@ -218,8 +260,8 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 10,
     marginRight: 10,
-    position:"relative",
-    top:-10,
+    position: "relative",
+    top: -10,
   },
 
   vehicleName: {
@@ -268,7 +310,7 @@ const styles = StyleSheet.create({
   badgeContainer: {
     gap: 6,
 
-    marginTop:8,
+    marginTop: 8,
     paddingRight: 10,
   },
 
@@ -283,7 +325,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5260F",
     paddingHorizontal: 8,
     height: 18,
-   borderRadius:19,
+    borderRadius: 19,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -296,14 +338,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-
-
   // Amounts
   amountRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 15,
-    
   },
 
   amountBox: {
@@ -314,7 +353,7 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 16,
     fontWeight: "700",
-      fontFamily: "SFProDisplay-Bold",
+    fontFamily: "SFProDisplay-Bold",
 
     color: "#000",
   },
@@ -336,8 +375,8 @@ const styles = StyleSheet.create({
   amountLabel: {
     fontSize: 12,
     color: "#000",
-    marginBottom:4,
-    fontWeight:"700",
+    marginBottom: 4,
+    fontWeight: "700",
     fontFamily: "SFProDisplay-Bold",
   },
 
@@ -346,7 +385,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F2F5F6",
     padding: 10,
     borderRadius: 12,
-  
   },
 
   addressRow: {

@@ -581,7 +581,7 @@ Amount to Pay: ₹${commissionAmount}
               size={18}
               color="#fff"
             />
-            <Text style={styles.actionButtonText}>
+            <Text style={[styles.actionButtonText,{color:"#fff"}]}>
               {paymentLinkSent ? "Link Sent" : "Send Payment Link"}
             </Text>
           </TouchableOpacity>

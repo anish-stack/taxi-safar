@@ -230,7 +230,7 @@ router.get("/chats-initialized", protect, foundChatInitialized);
 // ---------------------------------------------
 // 🔥 MY ASSIGNED RIDES
 // ---------------------------------------------
-router.get("/get-my-assigned-rides", protect, FetchMyAssignedRides);
+router.get("/get-my-assigned-rides-two/:id",  FetchMyAssignedRides);
 
 
 // ---------------------------------------------
