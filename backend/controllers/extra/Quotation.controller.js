@@ -289,7 +289,7 @@ const generateHTMLTemplate = (
     height: 60px;
   }
 
-  .logo svg {
+  .logo img {
     width: 100%;
     height: 100%;
   }

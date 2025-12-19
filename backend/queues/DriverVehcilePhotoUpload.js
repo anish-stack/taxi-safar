@@ -283,8 +283,8 @@ vehiclePhotoUploadQueue.process(async (job) => {
       },
       
       rc_verification_data: rcData,
-      approval_status: "pending",
-      is_active: false,
+      approval_status: "approved",
+      is_active: true,
     });
 
     log(currentStep, 'Vehicle created successfully', { vehicleId: vehicle._id });

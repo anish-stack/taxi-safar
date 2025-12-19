@@ -805,6 +805,7 @@ exports.adminChangeStatusWithoutAnyRestriction = async (req, res) => {
 exports.FetchNearByTaxiSafarRides = async (req, res) => {
   try {
     const driverId = req.user?._id;
+    const { applyRadius } = req.query;
 
     if (!driverId) {
       return res.status(401).json({
@@ -836,8 +837,7 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Your location is missing or outdated. Please update your location.",
+        message: "Your location is missing or outdated.",
       });
     }
 
@@ -852,118 +852,96 @@ exports.FetchNearByTaxiSafarRides = async (req, res) => {
 
     const searchRadiusKm = driver.currentRadius || 5;
     const maxDistanceMeters = searchRadiusKm * 1000;
-    const vehicleType = driver.current_vehicle_id?.vehicle_type || null;
+    const vehicleType = driver.current_vehicle_id?.vehicle_type;
 
     if (!vehicleType) {
       return res.status(400).json({
         success: false,
-        message:
-          "No vehicle assigned. Please select a vehicle to search rides.",
+        message: "Vehicle not selected.",
       });
     }
 
-    console.log(`Searching rides for Driver: ${driver.driver_name}`);
-    console.log(
-      `Location: [${longitude}, ${latitude}] | Radius: ${searchRadiusKm}km | Vehicle: ${vehicleType}`
-    );
+    /** ---------------------------
+     * Cache Key (radius aware)
+     * --------------------------*/
+    const nearbyRidesCacheKey = `nearby:rides:${driverId}:${vehicleType}:${applyRadius}`;
 
-    const nearbyRidesCacheKey = `nearby:rides:${driverId}:${vehicleType}:${searchRadiusKm}`;
-
-    // Check cache first
-    const cachedNearbyRides = await publisher.get(nearbyRidesCacheKey);
-    if (cachedNearbyRides) {
-      console.log(`Cache HIT for nearby rides`);
-      return res.status(200).json(JSON.parse(cachedNearbyRides));
+    const cached = await publisher.get(nearbyRidesCacheKey);
+    if (cached) {
+      return res.status(200).json(JSON.parse(cached));
     }
 
-    // Current date at start of day (00:00:00) in UTC or local — adjust as needed
+    /** ---------------------------
+     * Date Filter (Today + Future)
+     * --------------------------*/
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0); // Start of today
+    todayStart.setHours(0, 0, 0, 0);
 
+    /** ---------------------------
+     * Geo Query Builder
+     * --------------------------*/
+    const geoQuery = {
+      $near: {
+        $geometry: {
+          type: "Point",
+          coordinates: [longitude, latitude],
+        },
+      },
+    };
+
+    // ✅ Apply radius only when requested
+    if (applyRadius === "true") {
+      geoQuery.$near.$maxDistance = maxDistanceMeters;
+    }
+
+    /** ---------------------------
+     * Main Query
+     * --------------------------*/
     const nearbyRides = await TaxiSafariRide.find({
       trip_status: "searching",
       vehicle_type: vehicleType,
       created_by: { $ne: driverId },
-      departure_date: { $gte: todayStart }, // Only today and future dates
-      pickup_location: {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [longitude, latitude],
-          },
-          $maxDistance: maxDistanceMeters,
-        },
-      },
+      departure_date: { $gte: todayStart },
+      pickup_location: geoQuery,
     })
-      .sort({ createdAt: -1 })
+      // ❌ DO NOT sort by createdAt (breaks distance order)
       .limit(20)
       .select(
         "-invoice_id -routePolyline -trip_id -user_id -contact -card -upi -bank -wallet -acquirer_data -all_details -refund_amount -refund_status"
       )
       .lean();
 
-    const rideCount = nearbyRides.length;
-
-    console.log(`Found ${rideCount} nearby ride(s) with valid departure date.`);
-
-    if (rideCount === 0) {
-      const [totalPending, matchingVehicleType] = await Promise.all([
-        TaxiSafariRide.countDocuments({ 
-          trip_status: "searching",
-          departure_date: { $gte: todayStart } // Also filter counts by date
-        }),
-        TaxiSafariRide.countDocuments({
-          trip_status: "searching",
-          vehicle_type: vehicleType,
-          departure_date: { $gte: todayStart }
-        }),
-      ]);
-
+    if (!nearbyRides.length) {
       const response = {
         success: true,
-        message: "No nearby rides available at the moment.",
-        debug: {
-          your_vehicle_type: vehicleType,
-          total_searching_rides_today_or_later: totalPending,
-          rides_matching_your_vehicle_today_or_later: matchingVehicleType,
-          search_radius_km: searchRadiusKm,
-          your_location: [longitude, latitude],
-        },
-        tips: [
-          "Try increasing your search radius",
-          "Wait for new ride requests",
-          "Ensure your vehicle type matches customer needs",
-          "Check if you're online and location is updated",
-        ],
+        message: "No nearby rides available.",
+        applyRadius: applyRadius === "true",
+        radius_used_km: applyRadius === "true" ? searchRadiusKm : "NOT APPLIED",
+        driver_location: [longitude, latitude],
         data: [],
       };
 
-      // Cache empty result for shorter time
       await publisher.setEx(nearbyRidesCacheKey, 300, JSON.stringify(response));
-
       return res.status(200).json(response);
     }
 
     const response = {
       success: true,
       message: "Nearby rides fetched successfully.",
-      count: rideCount,
-      search_radius_km: searchRadiusKm,
+      applyRadius: applyRadius === "true",
+      radius_used_km: applyRadius === "true" ? searchRadiusKm : "NOT APPLIED",
+      count: nearbyRides.length,
       driver_location: [longitude, latitude],
-      data: nearbyRides,
+      data: nearbyRides, // 🔥 nearest → farthest
     };
 
-    // Cache successful results longer
     await publisher.setEx(nearbyRidesCacheKey, 600, JSON.stringify(response));
-
     return res.status(200).json(response);
   } catch (error) {
-    console.error("Error in FetchNearByTaxiSafarRides:", error);
-
+    console.error("FetchNearByTaxiSafarRides error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch nearby rides.",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -1483,9 +1461,7 @@ exports.completeRide = async (req, res) => {
 
       const a =
         Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) *
-          Math.cos(toRad(lat2)) *
-          Math.sin(dLon / 2) ** 2;
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
@@ -1630,12 +1606,10 @@ exports.completeRide = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to complete ride. Transaction rolled back.",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
-
 
 exports.rideStatus = async (req, res) => {
   const { rideId } = req.params;
@@ -1656,20 +1630,18 @@ exports.rideStatus = async (req, res) => {
       return res.status(200).json({
         success: true,
         status: ride.trip_status,
-        source: "taxi"
+        source: "taxi",
       });
     }
 
     // 2️⃣ Check RidePost
-    ride = await RidePost.findById(rideId)
-      .select("rideStatus -_id")
-      .lean();
+    ride = await RidePost.findById(rideId).select("rideStatus -_id").lean();
 
     if (ride) {
       return res.status(200).json({
         success: true,
         status: ride.rideStatus,
-        source: "post"
+        source: "post",
       });
     }
 
@@ -1678,15 +1650,14 @@ exports.rideStatus = async (req, res) => {
     return res.status(404).json({
       success: false,
       message: "Ride not found",
-      status: "not_found"
+      status: "not_found",
     });
-
   } catch (error) {
     console.error("rideStatus error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      status: "error"
+      status: "error",
     });
   }
 };

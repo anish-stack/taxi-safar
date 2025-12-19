@@ -15,7 +15,7 @@ const ridesPostSchema = new mongoose.Schema(
     contactType: {
       type: String,
     },
-    // Trip Details
+
     tripType: {
       type: String,
       required: true,

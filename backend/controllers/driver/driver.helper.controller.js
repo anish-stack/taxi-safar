@@ -12,50 +12,36 @@ exports.toggleStatus = async (req, res) => {
     const driverId = req.user?._id;
     const { status } = req.body;
 
-    // ✅ Quick validation
     if (typeof status !== "boolean") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status value (must be boolean)",
-      });
+      return res.status(400).json({ success: false, message: "Invalid status" });
     }
 
     if (!driverId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized access - driver not found in token",
-      });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // ✅ Fast update (atomic, returns updated document)
-    const updatedDriver = await Driver.findByIdAndUpdate(
-      driverId,
-      { is_online: status },
-      { new: true, select: "is_online updatedAt" }
-    ).lean();
+    // ⚡ Fastest Mongo operation
+    const result = await Driver.updateOne(
+      { _id: driverId },
+      { $set: { is_online: status } }
+    );
 
-    if (!updatedDriver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Driver not found" });
     }
 
-    // ✅ Send instant response
     return res.status(200).json({
       success: true,
       message: `Driver is now ${status ? "online" : "offline"}`,
-      is_online: updatedDriver.is_online,
+      is_online: status,
     });
-  } catch (error) {
-    console.error("❌ Toggle Status Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while toggling status",
-      error: error.message,
-    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+
 exports.updateDriverLocation = async (req, res) => {
   try {
     const driverId = req.user?._id; // from JWT middleware
