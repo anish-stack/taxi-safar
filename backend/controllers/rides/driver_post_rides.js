@@ -785,22 +785,28 @@ exports.searchNearbyRides = async (req, res) => {
     /* ---------------------------
        GEO NEAR (Always Sorted)
     ----------------------------*/
-    const geoNearStage = {
-      $geoNear: {
-        near: {
-          type: "Point",
-          coordinates: [longitude, latitude], // ✅ lng, lat
-        },
-        distanceField: "distanceInMeters",
-        spherical: true,
-        query: {
-          rideStatus: "pending",
-          vehcleType: currentVehicleType,
-          driverPostId: { $ne: driverId },
-          ...dateTimeFilter,
-        },
-      },
-    };
+const geoNearStage = {
+  $geoNear: {
+    key: "pickupLocation",
+    near: {
+      type: "Point",
+      coordinates: [longitude, latitude],
+    },
+    distanceField: "distanceInMeters",
+    spherical: true,
+    query: {
+      rideStatus: "pending",
+      vehicleType: currentVehicleType,
+      driverPostId: { $ne: driverId },
+      ...dateTimeFilter,
+    },
+  },
+};
+
+if (applyRadius === "true") {
+  geoNearStage.$geoNear.maxDistance = maxDistanceMeters;
+}
+
 
     // Apply radius only if required
     if (applyRadius === "true") {
