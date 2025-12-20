@@ -224,7 +224,6 @@ exports.updateInsuranceStatus = async (req, res) => {
 
     // --- Push Notification to Driver ---
     const driver = updated.driverId;
-    console.log("driver", driver);
     if (driver && driver.fcm_token) {
       let title = `${driver?.driver_name} Your Insurance Status has been Updated`;
       let body = `Your insurance status is now: ${status}`;

@@ -45,7 +45,6 @@ exports.toggleStatus = async (req, res) => {
 exports.updateDriverLocation = async (req, res) => {
   try {
     const driverId = req.user?._id; // from JWT middleware
-    console.log("driver", req.user?.driver_name);
     if (!driverId) {
       return res
         .status(401)

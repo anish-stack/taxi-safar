@@ -25,7 +25,6 @@ exports.addAmountOnWallet = async (req, res) => {
     }
 
     const driver = await Driver.findById(driverId);
-    console.log("Driver Fetched:", !!driver);
 
     if (!driver) {
       console.log("❌ Driver not found!");

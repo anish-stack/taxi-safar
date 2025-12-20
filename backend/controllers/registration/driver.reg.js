@@ -1472,7 +1472,6 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       .populate("current_vehicle_id")
       .lean();
 
-    console.log("Driver Found:", driver ? "YES" : "NO");
 
     // ============================== FETCH CACHE ==============================
     console.log("🔍 Checking cache for device:", device_id);

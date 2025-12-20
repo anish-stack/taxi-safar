@@ -198,7 +198,15 @@ router.get("/company-details/:id",  getCompanyDetails);
 router.post("/post-ride", protect, postRide);
 router.get("/post-rides", getAllRides);
 router.get("/post-rides/:rideId", getRideById);
-router.get("/fetch-nearby-rides", protect, searchNearbyRides);
+router.get(
+  "/fetch-nearby-rides",
+  (req, res, next) => {
+    console.log("📍 fetch-nearby-rides API HIT");
+    next();
+  },
+  protect,
+  searchNearbyRides
+);
 router.get("/get-my-ride", protect, getMyRide);
 router.delete("/delete-post-ride/:rideId", protect, deleteRide);
 

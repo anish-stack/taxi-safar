@@ -707,6 +707,9 @@ exports.searchNearbyRides = async (req, res) => {
     const driverId = req.user?._id;
     const { applyRadius } = req.query;
 
+    /* ---------------------------
+       Auth Check
+    ----------------------------*/
     if (!driverId) {
       return res.status(401).json({
         success: false,
@@ -714,9 +717,13 @@ exports.searchNearbyRides = async (req, res) => {
       });
     }
 
+    /* ---------------------------
+       Fetch Driver
+    ----------------------------*/
     const driver = await Driver.findById(driverId)
       .select("driver_name current_location current_vehicle_id currentRadius")
-      .populate("current_vehicle_id");
+      .populate("current_vehicle_id")
+      .lean();
 
     if (!driver) {
       return res.status(404).json({
@@ -724,10 +731,10 @@ exports.searchNearbyRides = async (req, res) => {
         message: "Driver not found.",
       });
     }
-
+    console.log("driverId",driver.current_location.coordinates)
     if (
       !driver.current_location ||
-      !driver.current_location.coordinates
+      !Array.isArray(driver.current_location.coordinates)
     ) {
       return res.status(400).json({
         success: false,
@@ -735,27 +742,30 @@ exports.searchNearbyRides = async (req, res) => {
       });
     }
 
+    /* ---------------------------
+       Coordinates (lng, lat)
+    ----------------------------*/
     const [longitude, latitude] = driver.current_location.coordinates;
 
-    if (
-      isNaN(longitude) ||
-      isNaN(latitude)
-    ) {
+    if (isNaN(longitude) || isNaN(latitude)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid driver location.",
+        message: "Invalid driver coordinates.",
       });
     }
 
+    /* ---------------------------
+       Vehicle & Radius
+    ----------------------------*/
     const currentVehicleType =
       driver.current_vehicle_id?.vehicle_type || null;
 
     const maxDistanceMeters =
       (driver.currentRadius || 5) * 1000;
 
-    /** ---------------------------
-     * Date & Time Filter
-     * --------------------------*/
+    /* ---------------------------
+       Date & Time Filter
+    ----------------------------*/
     const now = new Date();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -772,39 +782,38 @@ exports.searchNearbyRides = async (req, res) => {
       ],
     };
 
-    /** ---------------------------
-     * Geo Query Builder
-     * --------------------------*/
-    const geoQuery = {
-      $near: {
-        $geometry: {
+    /* ---------------------------
+       GEO NEAR (Always Sorted)
+    ----------------------------*/
+    const geoNearStage = {
+      $geoNear: {
+        near: {
           type: "Point",
-          coordinates: [longitude, latitude],
+          coordinates: [longitude, latitude], // ✅ lng, lat
+        },
+        distanceField: "distanceInMeters",
+        spherical: true,
+        query: {
+          rideStatus: "pending",
+          vehcleType: currentVehicleType,
+          driverPostId: { $ne: driverId },
+          ...dateTimeFilter,
         },
       },
     };
 
-    // ✅ Apply radius ONLY if applyRadius === "true"
+    // Apply radius only if required
     if (applyRadius === "true") {
-      geoQuery.$near.$maxDistance = maxDistanceMeters;
+      geoNearStage.$geoNear.maxDistance = maxDistanceMeters;
     }
 
-    /** ---------------------------
-     * Main Query
-     * --------------------------*/
-    const rides = await RidesPost.find({
-      pickupLocation: geoQuery,
-      rideStatus: "pending",
-      vehcleType: currentVehicleType,
-      driverPostId: { $ne: driverId },
-      ...dateTimeFilter,
-    })
-      .populate(
-        "driverPostId",
-        "driver_name driver_contact_number average_rating"
-      )
-      .limit(20)
-      .lean();
+    /* ---------------------------
+       Aggregate Query
+    ----------------------------*/
+    const rides = await RidesPost.aggregate([
+      geoNearStage,
+      { $limit: 20 },
+    ]);
 
     if (!rides.length) {
       return res.status(200).json({
@@ -813,20 +822,26 @@ exports.searchNearbyRides = async (req, res) => {
         applyRadius: applyRadius === "true",
         radius_used_in_meters:
           applyRadius === "true" ? maxDistanceMeters : "NOT APPLIED",
-        driver_location: driver.current_location.coordinates,
+        driver_location: [longitude, latitude],
         data: [],
       });
     }
 
+    /* ---------------------------
+       Final Response
+    ----------------------------*/
     return res.status(200).json({
       success: true,
       message: "Rides fetched successfully.",
       applyRadius: applyRadius === "true",
       radius_used_in_meters:
         applyRadius === "true" ? maxDistanceMeters : "NOT APPLIED",
-      driver_location: driver.current_location.coordinates,
+      driver_location: [longitude, latitude],
       count: rides.length,
-      data: rides, // 🔥 Already sorted nearest → farthest
+      data: rides.map((ride) => ({
+        ...ride,
+        distance_km: (ride.distanceInMeters / 1000).toFixed(2),
+      })),
     });
   } catch (error) {
     console.error("searchNearbyRides error:", error);
