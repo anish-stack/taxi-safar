@@ -1,16 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="56dp"
     android:layout_height="56dp"
-    android:background="@drawable/floating_icon_bg"
-    android:gravity="center">
+    app:cardCornerRadius="28dp"
+    app:cardElevation="0dp"
+    app:cardBackgroundColor="#F2F5F6"
+    app:cardUseCompatPadding="false"
+    app:strokeWidth="2dp"
+    app:strokeColor="#000000">
 
     <ImageView
         android:id="@+id/floating_icon"
-        android:layout_width="60dp"
-        android:layout_height="60dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center"
         android:src="@drawable/ic_taxi_safar_logo"
-        android:scaleType="fitCenter"
+        android:scaleType="centerInside"
         android:contentDescription="Taxi Safar Driver" />
 
-</FrameLayout>
+</androidx.cardview.widget.CardView>
