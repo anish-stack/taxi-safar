@@ -7,12 +7,13 @@ import {
   FlatList,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import { API_URL_APP_CHAT } from "../../constant/api";
+import { API_URL_APP, API_URL_APP_CHAT } from "../../constant/api";
 import axios from "axios";
 import useDriverStore from "../../store/driver.store";
 import messaging from "@react-native-firebase/messaging";
 import { useNavigation } from "@react-navigation/native";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+import loginStore from "../../store/auth.store";
 
 const OPTIONS = ["All Rides", "B2B Bookings", "B2C Bookings"];
 
@@ -24,9 +25,9 @@ export default function RideFilterDropdown({
 
   // console.log( refreshing,"<<-----------------");
   const navigation = useNavigation();
-
+  const [notification,setNotifications] = useState(0)
   const { driver, fetchDriverDetails } = useDriverStore();
-
+  const {token} = loginStore()
   const [isOpen, setIsOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
@@ -38,20 +39,35 @@ export default function RideFilterDropdown({
   useEffect(() => {
     fetchDriverDetails();
   }, []);
-  const fetchUnreadMessages = async () => {
-    if (!driver?._id) return;
+const fetchUnreadMessages = async () => {
+  if (!driver?._id || !token) return;
 
-    try {
-      const res = await axios.get(
-        `${API_URL_APP_CHAT}/api/chat/driver/${driver._id}`
-      );
+  try {
+    const [chatRes, notificationRes] = await Promise.all([
+      axios.get(`${API_URL_APP_CHAT}/api/chat/driver/${driver._id}`),
+      axios.get(`${API_URL_APP}/api/v1/notifications`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }),
+    ]);
 
-      const count = res?.data?.chats?.[0]?.unreadCount || 0;
-      setUnreadChatCount(count);
-    } catch (e) {
-      console.log("Unread chat fetch error:", e);
-    }
-  };
+    // Chat unread count
+    const unreadChats =
+      chatRes?.data?.chats?.[0]?.unreadCount ?? 0;
+
+    // Notifications unread count (if needed later)
+    const unreadNotifications =
+      notificationRes?.data?.unreadCount ?? 0;
+
+    // console.log("Notifications:", unreadNotifications);
+    setNotifications(unreadNotifications)
+    setUnreadChatCount(unreadChats);
+    // setUnreadNotificationCount(unreadNotifications); // optional
+  } catch (error) {
+    console.log("Unread fetch error:", error?.message || error);
+  }
+};
 
   useEffect(() => {
     const unsubscribe = messaging().onMessage(() => fetchUnreadMessages());
@@ -141,7 +157,13 @@ export default function RideFilterDropdown({
           style={styles.iconBtn}
           onPress={() => navigation.navigate("notification")}
         >
+
           <Icon name="notifications-outline" size={20} color="#000" />
+           {notification > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{notification}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     </View>

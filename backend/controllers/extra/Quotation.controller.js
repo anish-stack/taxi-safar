@@ -541,7 +541,7 @@ const documentLabel = isInvoice ? "Invoice No." : "Quotation No.";
         background: #f8f8f8;
         padding: 10px;
         margin-top: 10px;
-         margin-top: 10px;
+          margin-bottom: 10px;
         display: flex;
         justify-content: space-between;
         font-size: 12px;
@@ -593,7 +593,9 @@ const documentLabel = isInvoice ? "Invoice No." : "Quotation No.";
     <div class="company-info">
       ${companyInfo.address.replace(/\n/g, '<br />')}<br />
       Contact No: ${companyInfo.phone}<br />
-      Email: ${companyInfo.email}
+      Email: ${companyInfo.email} <br />
+       <div class="doc-label">Quotation No : LC20250102001</div>
+
     </div>
   </div>
 
@@ -603,13 +605,6 @@ const documentLabel = isInvoice ? "Invoice No." : "Quotation No.";
     <div class="logo">
       <img src="${companyInfo.logo}" alt="Company Logo" />
     </div>` : ''}
-
-    <!-- Quotation / Invoice Number -->
-    <div class="document-number">
-      <div class="doc-label">${documentLabel}</div>
-      <div class="doc-value">${documentNumber}</div>
-      <div class="doc-date">Date: ${formatDate(quotation.invoice_date || new Date())}</div>
-    </div>
   </div>
 </div>
 
@@ -1747,5 +1742,5 @@ const q = {
 
 // Fixed: Pass c.company_id instead of c.company
 // const html = generateHTMLTemplate(q, c.company_id);
-console.log("HTML generated successfully!");
+// console.log("HTML generated successfully!");
 // console.log(html);

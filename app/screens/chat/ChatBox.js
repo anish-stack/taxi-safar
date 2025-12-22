@@ -58,7 +58,7 @@ const ChatBox = ({ route, navigation }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [samneWalaDriver, setSamneWalaDriver] = useState(null);
   const [error, setError] = useState(null);
-
+  
   // console.log(samneWalaDriver)
   // Initialize Socket.IO connection
   useEffect(() => {
@@ -171,7 +171,7 @@ const ChatBox = ({ route, navigation }) => {
     }
   };
 
-  console.log(".company_driver_id)", company);
+ 
 
   const retryFetchMessages = () => {
     setRefreshing(true);
@@ -837,7 +837,7 @@ Amount to Pay: ₹${commissionAmount}
                 style={[
                   styles.actionButtonText,
                   styles.secondaryButtonText,
-                  !detailsSent && styles.disabledButtonText,
+                
                 ]}
               >
                 Request Payment Link

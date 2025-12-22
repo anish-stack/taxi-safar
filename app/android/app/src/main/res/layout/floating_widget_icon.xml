@@ -7,8 +7,8 @@
 
     <ImageView
         android:id="@+id/floating_icon"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
         android:src="@drawable/ic_taxi_safar_logo"
         android:scaleType="fitCenter"
         android:contentDescription="Taxi Safar Driver" />

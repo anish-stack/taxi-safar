@@ -27,6 +27,7 @@ import {
   Send,
   DollarSign,
   Share2,
+  Plus,
 } from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import axios from "axios";
@@ -42,6 +43,11 @@ import useDriverStore from "../../store/driver.store";
 import loginStore from "../../store/auth.store";
 import { io } from "socket.io-client";
 import { Colors } from "../../constant/ui";
+import mini from "../../assets/mini.png";
+import sedan from "../../assets/sedan.png";
+import suv from "../../assets/suv.png";
+import inova from "../../assets/inova.png";
+import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
@@ -273,18 +279,13 @@ const ReserveRideDetailsRedesigned = () => {
 
       const detailsText = `🚗 Driver Details  
 ━━━━━━━━━━━━━━━━━━  
-👤 Name: ${driver?.driver_name || "N/A"}  
-📞 Contact: ${driver?.driver_contact_number || "N/A"}  
+👤 Name: ${driver.driver_name || "N/A"}  
+📞 Contact: ${driver.driver_contact_number || "N/A"}  
 
 🚙 Vehicle Details  
-• Number: ${vehicle?.vehicle_number || "N/A"}  
-• Name: ${vehicle?.vehicle_name || "N/A"}  
-• Fuel Type: ${vehicle?.fuel_type || "N/A"}  
-
-🖼 Vehicle Photos  
-• Front: ${frontUrl ? frontUrl : "N/A"}  
-• Back: ${backUrl ? backUrl : "N/A"}  
-• Interior: ${interiorUrl ? interiorUrl : "N/A"}  
+• Number: ${vehicle.vehicle_number || "N/A"}  
+• Name: ${vehicle.vehicle_name || "N/A"}  
+• Fuel Type: ${vehicle.fuel_type || "N/A"}  
 `;
 
       socketRef.current.emit("send_message", {
@@ -338,22 +339,22 @@ const ReserveRideDetailsRedesigned = () => {
     Alert.alert("Success", "Payment link request sent");
   };
 
-const shareBookingDetails = async () => {
-  try {
-    const vehicleType = (rideData?.vehicleType || "").toLowerCase();
+  const shareBookingDetails = async () => {
+    try {
+      const vehicleType = (rideData?.vehicleType || "").toLowerCase();
 
-    const vehicleMap = {
-      mini: { name: "Maruti WagonR", capacity: 4 },
-      sedan: { name: "Maruti Swift Dzire", capacity: 4 },
-      suv: { name: "Maruti Ertiga / Innova", capacity: 6 },
-    };
+      const vehicleMap = {
+        mini: { name: "Maruti WagonR", capacity: 4 },
+        sedan: { name: "Maruti Swift Dzire", capacity: 4 },
+        suv: { name: "Maruti Ertiga / Innova", capacity: 6 },
+      };
 
-    const vehicleInfo = vehicleMap[vehicleType] || {
-      name: "Any Available Vehicle",
-      capacity: "As per availability",
-    };
+      const vehicleInfo = vehicleMap[vehicleType] || {
+        name: "Any Available Vehicle",
+        capacity: "As per availability",
+      };
 
-    const shareText = `🚗 *Taxi Safar – Booking Details*
+      const shareText = `🚗 *Taxi Safar – Booking Details*
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 *Trip Details*
@@ -379,14 +380,14 @@ const shareBookingDetails = async () => {
 Thank you for choosing *Taxi Safar*!
 Safe & Happy Journey 🚖`;
 
-    await Share.share({
-      title: "Taxi Safar Booking Details",
-      message: shareText,
-    });
-  } catch (error) {
-    console.error("Share booking details error:", error);
-  }
-};
+      await Share.share({
+        title: "Taxi Safar Booking Details",
+        message: shareText,
+      });
+    } catch (error) {
+      console.error("Share booking details error:", error);
+    }
+  };
 
   const handleStartRide = async () => {
     try {
@@ -540,6 +541,27 @@ Safe & Happy Journey 🚖`;
     if (req?.foodAllowed) items.push("Food Allowed");
     return items.length ? items.join(", ") : "None";
   };
+
+  const capacityMap = { mini: 4, sedan: 4, suv: 6 };
+
+  const vehicleImage =
+    rideData?.vehicleType === "mini"
+      ? mini
+      : rideData?.vehicleType === "sedan"
+      ? sedan
+      : rideData?.vehicleType === "suv"
+      ? suv
+      : inova;
+
+  const VehicleName =
+    rideData?.vehicleType === "mini"
+      ? "Maruti WagonR"
+      : rideData?.vehicleType === "sedan"
+      ? "Maruti Swift Dzire"
+      : rideData?.vehicleType === "suv"
+      ? "Maruti Ertiga SUV"
+      : "Innova Crysta";
+  const capacity = capacityMap[rideData?.vehicleType] || 6;
 
   if (loading) {
     return (
@@ -722,7 +744,7 @@ Safe & Happy Journey 🚖`;
                         cardDriverStyles.chatButton,
                         chatLoading && cardDriverStyles.chatButtonDisabled,
                       ]}
-                      onPress={initChat}
+                      onPress={sendDriverDetails}
                       disabled={chatLoading}
                     >
                       {chatLoading ? (
@@ -738,7 +760,7 @@ Safe & Happy Journey 🚖`;
                       cardDriverStyles.chatButton,
                       chatLoading && cardDriverStyles.chatButtonDisabled,
                     ]}
-                    onPress={initChat}
+                    onPress={sendDriverDetails}
                     disabled={chatLoading}
                   >
                     {chatLoading ? (
@@ -822,30 +844,95 @@ Safe & Happy Journey 🚖`;
             )}
           </View>
         </View>
-
         <View style={styles.card}>
+          <View style={styles.vehicleSection}>
+            <View style={styles.vehicleInfo}>
+              <Text style={styles.vehicleName}>{VehicleName}</Text>
+              <Text
+                style={{
+                  fontWeight: "400",
+                  fontSize: 12,
+                  color: "#9AA0A6",
+                  marginTop: 4,
+                }}
+              >
+                Any Other Similar AC Taxi
+              </Text>
+                     <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6, // spacing between items
+                padding: 4,
+              }}
+            >
+              {/* Passengers Icon */}
+              <Image
+                source={require("./passengers.png")}
+                style={{ width: 22, height: 22, resizeMode: "contain" }}
+              />
+
+              {/* Capacity Text with Plus Icon */}
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "bold" }}>
+                  {capacity}
+                </Text>
+                <Plus size={12} />
+              </View>
+
+              {/* Luggage Icon */}
+              <Image
+                source={require("./luggage.png")}
+                style={{
+                  width: 16,
+                  height: 16,
+                  resizeMode: "contain",
+                  marginLeft: 0,
+                }}
+              />
+            </View>
+            </View>
+            <Image
+              source={vehicleImage}
+              style={styles.vehicleImage}
+              resizeMode="contain"
+            />
+        
+          </View>
+        </View>
+        <View style={styles.card}>
+          {/* Pickup */}
           <View style={styles.locationItem}>
             <Navigation size={16} color="#4A90E2" />
-            <Text style={styles.locationText}>{rideData.pickupAddress}</Text>
+            <Text style={styles.locationText}>{rideData?.pickupAddress}</Text>
           </View>
 
-          {rideData.viaAddress && (
-            <>
-              <View style={styles.locationDivider} />
-              <View style={styles.locationItem}>
-                <View style={styles.viaDot} />
-                <Text style={styles.locationText}>{rideData.viaAddress}</Text>
+          {/* Stops (Multiple) */}
+          {Array.isArray(rideData?.stops) &&
+            rideData.stops.length > 0 &&
+            rideData.stops.map((stop, index) => (
+              <View key={`stop-${index}`}>
+                <View style={styles.locationDivider} />
+                <View style={styles.locationItem}>
+                  <View style={styles.viaDot} />
+                  <Text style={styles.locationText}>{stop?.location}</Text>
+                </View>
               </View>
-            </>
-          )}
+            ))}
+
+          {/* Trip Type Badge */}
           <View style={styles.tripTypeBadge}>
             <Text style={styles.tripTypeText}>
-              {isRoundTrip ? "Round Trip" : "One way Trip"} - {distance} km
+              {isRoundTrip ? "Round Trip" : "One Way Trip"} · {distance} km
             </Text>
           </View>
+
+          {/* Drop */}
           <View style={styles.locationItem}>
             <MapPin size={16} color="#FF3B30" />
-            <Text style={styles.locationText}>{rideData.dropAddress}</Text>
+            <Text style={styles.locationText}>{rideData?.dropAddress}</Text>
           </View>
         </View>
 
@@ -1463,6 +1550,28 @@ const styles = StyleSheet.create({
   },
   chatButtonDisabled: {
     opacity: 0.6,
+  },
+
+  vehicleSection: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  vehicleName: {
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+    color: "#111827",
+  },
+  vehiclePlate: {
+    fontSize: moderateScale(20),
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: verticalScale(4),
+  },
+  vehicleImage: {
+    width: scale(120),
+    height: verticalScale(60),
   },
 });
 
