@@ -29,7 +29,11 @@ const ImageUploader = memo(({ title, uri, onPress }) => {
     <>
       <Text style={styles.label}>{title}</Text>
 
-      <TouchableOpacity style={styles.imageBox} onPress={onPress} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.imageBox}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
         {/* Image */}
         {uri && (
           <Image
@@ -118,7 +122,8 @@ export default function CompanyDetails({ navigation }) {
 
   const pickImage = useCallback(
     async (type) => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
         showAlert(
           "warning",
@@ -144,7 +149,10 @@ export default function CompanyDetails({ navigation }) {
   );
 
   const onPickLogo = useCallback(() => pickImage("logo"), [pickImage]);
-  const onPickSignature = useCallback(() => pickImage("signature"), [pickImage]);
+  const onPickSignature = useCallback(
+    () => pickImage("signature"),
+    [pickImage]
+  );
 
   const fetchCompany = useCallback(async () => {
     try {
@@ -192,7 +200,11 @@ export default function CompanyDetails({ navigation }) {
 
   const verifyGst = useCallback(async () => {
     if (gstNumber.length !== 15) {
-      showAlert("warning", "Invalid GST", "Please enter a valid 15-digit GST number");
+      showAlert(
+        "warning",
+        "Invalid GST",
+        "Please enter a valid 15-digit GST number"
+      );
       return;
     }
 
@@ -206,7 +218,8 @@ export default function CompanyDetails({ navigation }) {
 
       if (response.data.success) {
         const verified = response.data.data;
-        const companyNameValue = verified.business_name || verified.legal_name || "";
+        const companyNameValue =
+          verified.business_name || verified.legal_name || "";
         let addressValue = "";
         if (verified.address && typeof verified.address === "object") {
           const parts = [];
@@ -217,7 +230,10 @@ export default function CompanyDetails({ navigation }) {
             parts.push(verified.address.street);
           if (verified.address.city && verified.address.city !== "Default City")
             parts.push(verified.address.city);
-          if (verified.address.state && verified.address.state !== "Default State")
+          if (
+            verified.address.state &&
+            verified.address.state !== "Default State"
+          )
             parts.push(verified.address.state);
           if (verified.address.pincode && verified.address.pincode !== "000000")
             parts.push(verified.address.pincode);
@@ -227,7 +243,8 @@ export default function CompanyDetails({ navigation }) {
         }
 
         const emailValue = verified.email || verified.emailId || "";
-        const phoneValue = verified.mobileNo || verified.mobile || verified.phone || "";
+        const phoneValue =
+          verified.mobileNo || verified.mobile || verified.phone || "";
 
         const filledData = {
           name: companyNameValue,
@@ -383,13 +400,16 @@ export default function CompanyDetails({ navigation }) {
     return (
       <Layout showHeader={false}>
         <BackWithLogo />
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <View
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
           <ActivityIndicator size="large" color="#000" />
           <Text style={styles.loadingText}>Loading profile details...</Text>
         </View>
       </Layout>
     );
   }
+
 
   // Show detail card if company exists and not in edit mode
   if (company && !isEditMode) {
@@ -504,7 +524,9 @@ export default function CompanyDetails({ navigation }) {
                 {/* Details Sections */}
                 <View style={styles.modalDetailSection}>
                   <Text style={styles.modalDetailLabel}>Address</Text>
-                  <Text style={styles.modalDetailValue}>{address || "N/A"}</Text>
+                  <Text style={styles.modalDetailValue}>
+                    {address || "N/A"}
+                  </Text>
                 </View>
 
                 <View style={styles.modalDetailSection}>
@@ -526,7 +548,9 @@ export default function CompanyDetails({ navigation }) {
 
                 {signature && (
                   <View style={styles.modalDetailSection}>
-                    <Text style={styles.modalDetailLabel}>Digital Signature</Text>
+                    <Text style={styles.modalDetailLabel}>
+                      Digital Signature
+                    </Text>
                     <Image
                       source={{ uri: signature }}
                       style={styles.modalSignatureImage}
@@ -554,6 +578,7 @@ export default function CompanyDetails({ navigation }) {
   const isFormVisible = activeTab === "noGst" || gstVerified;
   const isFormEditable = activeTab === "noGst" || !gstVerified;
 
+ 
   return (
     <Layout showHeader={false} showBottomTabs={false}>
       <BackWithLogo
@@ -591,7 +616,10 @@ export default function CompanyDetails({ navigation }) {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tab, activeTab === "withGst" && styles.activeTab]}
+                style={[
+                  styles.tab,
+                  activeTab === "withGst" && styles.activeTab,
+                ]}
                 onPress={() => setActiveTab("withGst")}
               >
                 <Text
@@ -725,20 +753,29 @@ export default function CompanyDetails({ navigation }) {
                 </View>
 
                 {/* Image Uploaders */}
-                <ImageUploader
-                  title="Company Logo (Transparent Background Recommended)"
-                  uri={logo}
-                  onPress={onPickLogo}
-                />
+                {/* Image Uploaders - Side by Side */}
+                <View style={styles.imageUploadersContainer}>
+                  <View style={styles.imageUploaderWrapper}>
+                    <ImageUploader
+                      title="Company Logo (Transparent Background Recommended)"
+                      uri={logo}
+                      onPress={onPickLogo}
+                    />
+                  </View>
 
-                <ImageUploader
-                  title="Digital Signature (Transparent Background Recommended)"
-                  uri={signature}
-                  onPress={onPickSignature}
-                />
-
+                  <View style={styles.imageUploaderWrapper}>
+                    <ImageUploader
+                      title="Digital Signature (Transparent Background Recommended)"
+                      uri={signature}
+                      onPress={onPickSignature}
+                    />
+                  </View>
+                </View>
                 <TouchableOpacity
-                  style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                  style={[
+                    styles.saveButton,
+                    saving && styles.saveButtonDisabled,
+                  ]}
                   onPress={handleSubmit}
                   disabled={saving}
                 >
@@ -797,7 +834,7 @@ const styles = StyleSheet.create({
 
   gstSection: { marginBottom: verticalScale(20) },
   label: {
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(11),
     fontWeight: "600",
     color: "#000",
     marginTop: verticalScale(20),
@@ -809,7 +846,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  gstInputContainer: { flexDirection: "row", alignItems: "flex-end", gap: scale(12) },
+  gstInputContainer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: scale(12),
+  },
   gstInput: {
     flex: 1,
     borderWidth: 1,
@@ -830,7 +871,7 @@ const styles = StyleSheet.create({
   verifyBtnDisabled: { opacity: 0.6 },
   verifyText: { color: "#fff", fontWeight: "600" },
   hint: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(10),
     color: "#6b7280",
     marginTop: verticalScale(8),
     fontStyle: "italic",
@@ -850,7 +891,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", marginHorizontal: scale(-6) },
 
   imageBox: {
-    height: 160,
+    height: verticalScale(120),
+    width: "100%",
+    flex: 1,
     borderRadius: moderateScale(16),
     overflow: "hidden",
     backgroundColor: "#f0f0f0",
@@ -883,7 +926,7 @@ const styles = StyleSheet.create({
   },
   overlayText: {
     color: "#fff",
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(11),
     fontWeight: "600",
   },
 
@@ -1102,5 +1145,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: moderateScale(16),
     fontWeight: "600",
+  },
+  imageUploadersContainer: {
+    flexDirection: "row",
+    gap: scale(16),
+    marginTop: verticalScale(20),
+    marginHorizontal: scale(16), // optional: align with other inputs
+  },
+
+  imageUploaderWrapper: {
+    flex: 1, // Each takes equal width
   },
 });

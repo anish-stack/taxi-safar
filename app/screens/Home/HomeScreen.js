@@ -1,13 +1,18 @@
 // screens/HomeScreen.js
-import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  RefreshControl,
   ActivityIndicator,
   AppState,
+  TouchableOpacity,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,24 +27,68 @@ import RideFilterDropdown from "./RideFilterDropdown";
 import DriverPostCard from "../Reserve/DriverPostCard";
 import TaxiSafarTripCard from "../Reserve/TaxiSafarTripCard";
 
-const ITEMS_PER_PAGE = 10;
-const AUTO_REFRESH_INTERVAL = 60000;
+const ITEMS_PER_PAGE = 50;
 const SCROLL_THRESHOLD = 0.5;
+const DEBOUNCE_DELAY = 300;
 
-const FILTER_OPTIONS = [
-  "All Rides",
-  "Driver Post Rides", 
-  "Taxi Safar Rides"
-];
+const FILTER_OPTIONS = ["All Rides", "Driver Post Rides", "Taxi Safar Rides"];
+
+const isFutureRideIST = (pickupDate, pickupTime) => {
+  if (!pickupDate || !pickupTime) return false;
+  const dateObj = new Date(pickupDate);
+  const [hours, minutes] = pickupTime.split(":").map(Number);
+  dateObj.setHours(hours, minutes, 0, 0);
+  const now = new Date();
+  return dateObj.getTime() > now.getTime();
+};
+
+// Skeleton Loading Component
+const SkeletonCard = () => (
+  <View style={styles.skeletonCard}>
+    <View style={styles.skeletonHeader}>
+      <View style={styles.skeletonCircle} />
+      <View style={styles.skeletonTextBlock}>
+        <View style={[styles.skeletonLine, { width: '60%' }]} />
+        <View style={[styles.skeletonLine, { width: '40%', marginTop: 8 }]} />
+      </View>
+    </View>
+    <View style={styles.skeletonBody}>
+      <View style={[styles.skeletonLine, { width: '90%' }]} />
+      <View style={[styles.skeletonLine, { width: '70%', marginTop: 8 }]} />
+      <View style={[styles.skeletonLine, { width: '80%', marginTop: 8 }]} />
+    </View>
+    <View style={styles.skeletonFooter}>
+      <View style={[styles.skeletonButton, { width: '45%' }]} />
+      <View style={[styles.skeletonButton, { width: '45%' }]} />
+    </View>
+  </View>
+);
+
+const SkeletonList = () => (
+  <View style={styles.skeletonContainer}>
+    {[1, 2, 3, 4].map((i) => (
+      <SkeletonCard key={i} />
+    ))}
+  </View>
+);
 
 // Memoized Card Components
 const MemoizedDriverPostCard = React.memo(DriverPostCard, (prev, next) => {
-  return prev.trip._id === next.trip._id && prev.trip._uniqueId === next.trip._uniqueId;
+  return (
+    prev.trip._id === next.trip._id &&
+    prev.trip._uniqueId === next.trip._uniqueId
+  );
 });
 
-const MemoizedTaxiSafarTripCard = React.memo(TaxiSafarTripCard, (prev, next) => {
-  return prev.trip._id === next.trip._id && prev.trip._uniqueId === next.trip._uniqueId;
-});
+const MemoizedTaxiSafarTripCard = React.memo(
+  TaxiSafarTripCard,
+  (prev, next) => {
+    return (
+      prev.trip._id === next.trip._id &&
+      prev.trip._uniqueId === next.trip._uniqueId
+    );
+  }
+);
 
 export default function HomeScreen({ route }) {
   const { driver, fetchDriverDetails } = useDriverStore();
@@ -63,6 +112,7 @@ export default function HomeScreen({ route }) {
   const [hasMoreDriver, setHasMoreDriver] = useState(true);
 
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("All Rides");
 
@@ -71,83 +121,60 @@ export default function HomeScreen({ route }) {
   const fetchTimeoutRef = useRef(null);
   const lastFetchTimeRef = useRef(0);
 
-  // Debounce delay in milliseconds
-  const DEBOUNCE_DELAY = 300;
-
   // Initialize services when driver goes online
   useEffect(() => {
     if (driver?.is_online !== undefined) {
       setIsDriverOnline?.(driver.is_online);
-      
+
       if (driver.is_online) {
         const init = async () => {
           try {
             await startFloatingWidget?.();
             await startPoolingService?.();
           } catch (err) {
-            console.log("Service initialization error:", err);
+            // Silent error handling
           }
         };
         init();
       }
     }
-  }, [driver?.is_online, setIsDriverOnline, startFloatingWidget, startPoolingService]);
+  }, [
+    driver?.is_online,
+    setIsDriverOnline,
+    startFloatingWidget,
+    startPoolingService,
+  ]);
 
   // Request overlay permission on mount
   useEffect(() => {
     requestOverlayPermission?.();
   }, [requestOverlayPermission]);
 
-  /**
-   * Debounced fetch function
-   */
-  const debouncedFetchRides = useCallback(
-    (taxiPageNum = 1, driverPageNum = 1, isRefresh = false) => {
-      // Clear existing timeout
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
-
-      // Check if we're fetching too frequently
-      const now = Date.now();
-      const timeSinceLastFetch = now - lastFetchTimeRef.current;
-      
-      // If it's been less than debounce delay and not a refresh, debounce it
-      if (timeSinceLastFetch < DEBOUNCE_DELAY && !isRefresh) {
-        fetchTimeoutRef.current = setTimeout(() => {
-          fetchRides(taxiPageNum, driverPageNum, isRefresh);
-        }, DEBOUNCE_DELAY);
-      } else {
-        // Execute immediately
-        fetchRides(taxiPageNum, driverPageNum, isRefresh);
-      }
-    },
-    []
-  );
 
   /**
    * Fetch rides from both APIs
    */
   const fetchRides = useCallback(
-    async (taxiPageNum = 1, driverPageNum = 1, isRefresh = false) => {
+    async (taxiPageNum = 1, driverPageNum = 1, isRefresh = false, isLoadMore = false) => {
       if (!token) return;
 
-      // Update last fetch time
       lastFetchTimeRef.current = Date.now();
 
       try {
-        if (!isRefresh && !loading) setLoading(true);
+        if (isLoadMore) {
+          setLoadingMore(true);
+        } else if (!isRefresh && !loading) {
+          setLoading(true);
+        }
         if (isRefresh) setRefreshing(true);
 
         const [taxiRes, driverRes] = await Promise.all([
-          // Taxi Safar API
           fetchWithRetry(() =>
             fetch(
               `${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${taxiPageNum}&limit=${ITEMS_PER_PAGE}`,
               { headers: { Authorization: `Bearer ${token}` } }
             ).then((res) => res.json())
           ),
-          // Driver Post API
           fetchWithRetry(() =>
             fetch(
               `${API_URL_APP}/api/v1/fetch-nearby-rides?page=${driverPageNum}&limit=${ITEMS_PER_PAGE}`,
@@ -156,37 +183,34 @@ export default function HomeScreen({ route }) {
           ),
         ]);
 
-        // ✅ Process Taxi Safar rides - add UNIQUE identifier
-        const newTaxiTrips = (taxiRes?.success && Array.isArray(taxiRes.data) 
-          ? taxiRes.data 
-          : []
+        const newTaxiTrips = (
+          taxiRes?.success && Array.isArray(taxiRes.data) ? taxiRes.data : []
         )
-          .filter(item => item && item._id) // Remove invalid items
+          .filter((item) => item && item._id)
           .map((item) => ({
             ...item,
-            _rideType: "taxi", // ← Taxi Safar identifier
-            _uniqueId: `taxi-${item._id}`, // ← Extra unique ID for safety
+            _rideType: "taxi",
+            _uniqueId: `taxi-${item._id}`,
           }));
 
-        // ✅ Process Driver Post rides - add UNIQUE identifier
-        const newDriverPosts = (driverRes?.success && Array.isArray(driverRes.data)
-          ? driverRes.data
-          : []
+        const newDriverPosts = (
+          driverRes?.success && Array.isArray(driverRes.data)
+            ? driverRes.data
+            : []
         )
-          .filter(item => item && item._id) // Remove invalid items
+          .filter((item) => item && item._id)
+          .filter((item) => isFutureRideIST(item.pickupDate, item.pickupTime))
           .map((item) => ({
             ...item,
-            _rideType: "driver", // ← Driver Post identifier
-            _uniqueId: `driver-${item._id}`, // ← Extra unique ID for safety
+            _rideType: "driver",
+            _uniqueId: `driver-${item._id}`,
           }));
 
-        // Deduplicate function
         const deduplicate = (existing, incoming) =>
           incoming.filter(
             (inc) => !existing.some((ex) => ex._uniqueId === inc._uniqueId)
           );
 
-        // Update Taxi Safar state
         if (isRefresh || taxiPageNum === 1) {
           setTaxiSafarTrips(newTaxiTrips);
         } else {
@@ -196,7 +220,6 @@ export default function HomeScreen({ route }) {
           ]);
         }
 
-        // Update Driver Post state
         if (isRefresh || driverPageNum === 1) {
           setDriverPosts(newDriverPosts);
         } else {
@@ -206,65 +229,59 @@ export default function HomeScreen({ route }) {
           ]);
         }
 
-        // Update pagination flags
         setHasMoreTaxi(newTaxiTrips.length === ITEMS_PER_PAGE);
         setHasMoreDriver(newDriverPosts.length === ITEMS_PER_PAGE);
 
-        // Increment pages if not refreshing
-        if (!isRefresh) {
-          if (newTaxiTrips.length === ITEMS_PER_PAGE) {
-            setTaxiPage((p) => p + 1);
-          }
-          if (newDriverPosts.length === ITEMS_PER_PAGE) {
-            setDriverPage((p) => p + 1);
-          }
-        }
       } catch (error) {
-        console.error("❌ Fetch rides error:", error);
+        // Silent error handling
       } finally {
         setLoading(false);
+        setLoadingMore(false);
         setRefreshing(false);
       }
     },
-    [token, loading,selectedFilter]
+    [token, loading, selectedFilter]
   );
 
   /**
-   * Pull to refresh handler
+   * Handle Load More button click
    */
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore) return;
+
+    const needsMoreTaxi = selectedFilter === "All Rides" || selectedFilter === "Taxi Safar Rides";
+    const needsMoreDriver = selectedFilter === "All Rides" || selectedFilter === "Driver Post Rides";
+
+    let nextTaxiPage = taxiPage;
+    let nextDriverPage = driverPage;
+
+    if (needsMoreTaxi && hasMoreTaxi) {
+      nextTaxiPage = taxiPage + 1;
+      setTaxiPage(nextTaxiPage);
+    }
+
+    if (needsMoreDriver && hasMoreDriver) {
+      nextDriverPage = driverPage + 1;
+      setDriverPage(nextDriverPage);
+    }
+
+    if ((needsMoreTaxi && hasMoreTaxi) || (needsMoreDriver && hasMoreDriver)) {
+      fetchRides(nextTaxiPage, nextDriverPage, false, true);
+    }
+  }, [loadingMore, selectedFilter, taxiPage, driverPage, hasMoreTaxi, hasMoreDriver]);
+
   const onRefresh = useCallback(() => {
-    console.log("🔄 Refreshing rides...");
     setTaxiPage(1);
     setDriverPage(1);
     setHasMoreTaxi(true);
     setHasMoreDriver(true);
+    setTaxiSafarTrips([]);
+    setDriverPosts([]);
     requestOverlayPermission?.();
+    fetchDriverDetails();
     fetchRides(1, 1, true);
-  }, []);
+  }, [fetchRides, requestOverlayPermission, fetchDriverDetails]);
 
-  /**
-   * Load more Taxi Safar rides
-   */
-  const loadMoreTaxi = useCallback(() => {
-    if (hasMoreTaxi && !loading && !refreshing && taxiSafarTrips.length > 0) {
-      console.log(`📄 Loading more Taxi rides - Page ${taxiPage}`);
-      debouncedFetchRides(taxiPage, driverPage);
-    }
-  }, [hasMoreTaxi, loading, refreshing, taxiSafarTrips.length, taxiPage, driverPage, debouncedFetchRides]);
-
-  /**
-   * Load more Driver Post rides
-   */
-  const loadMoreDriver = useCallback(() => {
-    if (hasMoreDriver && !loading && !refreshing && driverPosts.length > 0) {
-      console.log(`📄 Loading more Driver posts - Page ${driverPage}`);
-      debouncedFetchRides(taxiPage, driverPage);
-    }
-  }, [hasMoreDriver, loading, refreshing, driverPosts.length, taxiPage, driverPage, debouncedFetchRides]);
-
-  /**
-   * Initial fetch and app state handling
-   */
   useFocusEffect(
     useCallback(() => {
       fetchDriverDetails();
@@ -275,7 +292,6 @@ export default function HomeScreen({ route }) {
           appStateRef.current.match(/inactive|background/) &&
           nextState === "active"
         ) {
-          console.log("📱 App returned to foreground - refreshing rides");
           fetchRides(1, 1, false);
         }
         appStateRef.current = nextState;
@@ -312,127 +328,73 @@ export default function HomeScreen({ route }) {
   }, []);
 
   /**
-   * ✅ OPTIMIZED: Get filtered rides using useMemo
+   * Get filtered rides using useMemo
    */
-const filteredRides = useMemo(() => {
-  console.log(`🔍 Filtering rides - Selected: "${selectedFilter}"`);
-  console.log(`📊 Available: ${taxiSafarTrips.length} taxi, ${driverPosts.length} driver`);
+  const filteredRides = useMemo(() => {
+    let ridesToShow = [];
 
-  let ridesToShow = [];
-
-  if (selectedFilter === "B2B Bookings") {
-    ridesToShow = driverPosts.filter(item => item?._rideType === "driver");
-    console.log(`✅ B2B Filter: ${ridesToShow.length} driver post rides`);
-  } 
-  else if (selectedFilter === "B2C Bookings") {
-    ridesToShow = taxiSafarTrips.filter(item => item?._rideType === "taxi");
-    console.log(`✅ B2C Filter: ${ridesToShow.length} taxi safar rides`);
-  } 
-  else {
-    // Default case: "All Rides" or any unknown filter → show everything
-    const taxiRides = taxiSafarTrips.filter(item => item?._rideType === "taxi");
-    const driverRides = driverPosts.filter(item => item?._rideType === "driver");
-    
-    ridesToShow = [...taxiRides, ...driverRides];
-    
-    console.log(`✅ All Rides: ${ridesToShow.length} total (${taxiRides.length} taxi + ${driverRides.length} driver)`);
-  }
-
-  // Sort all results by newest first
-  const sorted = ridesToShow.sort((a, b) => {
-    const dateA = a.createdAt || a.date || 0;
-    const dateB = b.createdAt || b.date || 0;
-    return new Date(dateB) - new Date(dateA);
-  });
-
-  return sorted;
-}, [selectedFilter, taxiSafarTrips, driverPosts]);
-  /**
-   * ✅ OPTIMIZED: Render appropriate card based on _rideType
-   */
-  const renderRideCard = useCallback(({ item, index }) => {
-    // Safety check
-    if (!item || !item._id) {
-      console.warn(`⚠️ Invalid item at index ${index}`);
-      return null;
-    }
-
-    // Check ride type and render appropriate card
-    if (item._rideType === "taxi") {
-      return <MemoizedTaxiSafarTripCard trip={item} />;
-    } else if (item._rideType === "driver") {
-      return <MemoizedDriverPostCard trip={item} />;
+    if (selectedFilter === "Driver Post Rides") {
+      ridesToShow = driverPosts.filter((item) => item?._rideType === "driver");
+    } else if (selectedFilter === "Taxi Safar Rides") {
+      ridesToShow = taxiSafarTrips.filter((item) => item?._rideType === "taxi");
     } else {
-      // Fallback: if _rideType is missing
-      console.warn(`⚠️ Missing _rideType for item ${item._id}`);
-      return <MemoizedDriverPostCard trip={item} />;
-    }
-  }, []);
-
-  /**
-   * ✅ OPTIMIZED: Memoized key extractor
-   */
-  const keyExtractor = useCallback(
-    (item, index) => item?._uniqueId || item?._id || `fallback-${index}`,
-    []
-  );
-
-  /**
-   * ✅ OPTIMIZED: Memoized empty component
-   */
-  const ListEmptyComponent = useMemo(() => (
-    <View style={styles.emptySection}>
-      <Text style={styles.emptyText}>
-        {selectedFilter === "All Rides" 
-          ? "No rides available"
-          : selectedFilter === "Driver Post Rides"
-          ? "No driver posts available"
-          : "No Taxi Safar rides available"}
-      </Text>
-      <Text style={styles.emptySubtext}>
-        New rides appear in real-time
-      </Text>
-    </View>
-  ), [selectedFilter]);
-
-  /**
-   * ✅ OPTIMIZED: Memoized footer component
-   */
-  const ListFooterComponent = useMemo(() => {
-    if (loading && filteredRides.length > 0) {
-      return (
-        <View style={styles.footerLoader}>
-          <ActivityIndicator size="small" color="#DC2626" />
-        </View>
+      const taxiRides = taxiSafarTrips.filter(
+        (item) => item?._rideType === "taxi"
       );
+      const driverRides = driverPosts.filter(
+        (item) => item?._rideType === "driver"
+      );
+
+      ridesToShow = [...taxiRides, ...driverRides];
     }
-    return null;
-  }, [loading, filteredRides.length]);
+
+    // Sort by pickupDate + pickupTime
+    return ridesToShow.sort((a, b) => {
+      const dateTimeA = new Date(
+        `${a.pickupDate?.split("T")[0]}T${a.pickupTime}`
+      );
+      const dateTimeB = new Date(
+        `${b.pickupDate?.split("T")[0]}T${b.pickupTime}`
+      );
+
+      return dateTimeA - dateTimeB; // ascending (earliest first)
+    });
+  }, [selectedFilter, taxiSafarTrips, driverPosts]);
 
   /**
-   * ✅ OPTIMIZED: Debounced onEndReached handler
+   * Check if Load More button should be shown
    */
-  const handleEndReached = useCallback(() => {
+  const shouldShowLoadMore = useMemo(() => {
     if (selectedFilter === "All Rides") {
-      if (hasMoreTaxi) loadMoreTaxi();
-      if (hasMoreDriver) loadMoreDriver();
-    } else if (selectedFilter === "Driver Post Rides" && hasMoreDriver) {
-      loadMoreDriver();
-    } else if (selectedFilter === "Taxi Safar Rides" && hasMoreTaxi) {
-      loadMoreTaxi();
+      return hasMoreTaxi || hasMoreDriver;
+    } else if (selectedFilter === "Driver Post Rides") {
+      return hasMoreDriver;
+    } else if (selectedFilter === "Taxi Safar Rides") {
+      return hasMoreTaxi;
     }
-  }, [selectedFilter, hasMoreTaxi, hasMoreDriver, loadMoreTaxi, loadMoreDriver]);
+    return false;
+  }, [selectedFilter, hasMoreTaxi, hasMoreDriver]);
 
-  // Loading state
+  // Loading state with skeleton
   if (loading && taxiSafarTrips.length === 0 && driverPosts.length === 0) {
     return (
-      <Layout>
-        <SafeAreaView style={styles.container}>
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#DC2626" />
-            <Text style={styles.loadingText}>Finding nearby trips...</Text>
+      <Layout
+        scrollable={true}
+        refreshing={false}
+        onRefresh={null}
+      >
+        <DriverMap isRefresh={false} />
+        <Categories isRefresh={false} />
+        <View style={styles.contentArea}>
+          <View style={styles.filterContainer}>
+            <RideFilterDropdown
+              options={FILTER_OPTIONS}
+              selectedOption={selectedFilter}
+              onSelect={setSelectedFilter}
+            />
           </View>
-        </SafeAreaView>
+          <SkeletonList />
+        </View>
       </Layout>
     );
   }
@@ -443,48 +405,75 @@ const filteredRides = useMemo(() => {
       stopFloatingWidget={stopFloatingWidget}
       startFloatingWidget={startFloatingWidget}
       startPoolingService={startPoolingService}
+      scrollable={true}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
-      <DriverMap />
-      <Categories />
+      <DriverMap   refreshing={refreshing} />
+      <Categories   refreshing={refreshing} />
 
       <View style={styles.contentArea}>
         <View style={styles.filterContainer}>
           <RideFilterDropdown
             options={FILTER_OPTIONS}
+             refreshing={refreshing}
             selectedOption={selectedFilter}
             onSelect={setSelectedFilter}
           />
         </View>
 
-        <FlatList
-          data={filteredRides}
-          renderItem={renderRideCard}
-          keyExtractor={keyExtractor}
-          ListEmptyComponent={ListEmptyComponent}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={SCROLL_THRESHOLD}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#DC2626"]}
-              tintColor="#DC2626"
-            />
-          }
-          ListFooterComponent={ListFooterComponent}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          initialNumToRender={10}
-          updateCellsBatchingPeriod={50}
-          getItemLayout={(data, index) => ({
-            length: 200, // Approximate height of each item
-            offset: 200 * index,
-            index,
-          })}
-        />
+        <View style={styles.listContent}>
+          {filteredRides.length === 0 ? (
+            <View style={styles.emptySection}>
+              <Text style={styles.emptyText}>
+                {selectedFilter === "All Rides"
+                  ? "No rides available"
+                  : selectedFilter === "Driver Post Rides"
+                  ? "No driver posts available"
+                  : "No Taxi Safar rides available"}
+              </Text>
+              <Text style={styles.emptySubtext}>New rides appear in real-time</Text>
+            </View>
+          ) : (
+            <>
+              {filteredRides.map((item, index) => {
+                if (!item || !item._id) {
+                  return null;
+                }
+
+                const key = item?._uniqueId || item?._id || `fallback-${index}`;
+
+                if (item._rideType === "taxi") {
+                  return <MemoizedTaxiSafarTripCard key={key} trip={item} />;
+                } else if (item._rideType === "driver") {
+                  return <MemoizedDriverPostCard key={key} trip={item} />;
+                } else {
+                  return <MemoizedDriverPostCard key={key} trip={item} />;
+                }
+              })}
+
+              {/* Load More Button */}
+              {shouldShowLoadMore && (
+                <View style={styles.loadMoreContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.loadMoreButton,
+                      loadingMore && styles.loadMoreButtonDisabled
+                    ]}
+                    onPress={handleLoadMore}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.loadMoreText}>Load More Rides</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+        </View>
       </View>
     </Layout>
   );
@@ -507,7 +496,7 @@ const styles = StyleSheet.create({
   },
   contentArea: {
     flex: 1,
-    backgroundColor:"#F2F5F6",
+    backgroundColor: "#eff1f3",
   },
   filterContainer: {
     paddingHorizontal: 12,
@@ -539,5 +528,82 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: 20,
     alignItems: "center",
+  },
+  // Load More Button Styles
+  loadMoreContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  loadMoreButton: {
+    backgroundColor: "#DC2626",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 10,
+    minWidth: 200,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  loadMoreButtonDisabled: {
+    backgroundColor: "#9CA3AF",
+    opacity: 0.7,
+  },
+  loadMoreText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  // Skeleton Styles
+  skeletonContainer: {
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  skeletonCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  skeletonHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  skeletonCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#E5E7EB",
+  },
+  skeletonTextBlock: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  skeletonLine: {
+    height: 12,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 6,
+  },
+  skeletonBody: {
+    marginBottom: 16,
+  },
+  skeletonFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  skeletonButton: {
+    height: 40,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 8,
   },
 });

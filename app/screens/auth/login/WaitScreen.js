@@ -21,6 +21,7 @@ import BackWithLogo from "../../common/back_with_logo";
 import axios from "axios";
 import { API_URL_APP } from "../../../constant/api";
 import loginStore from "../../../store/auth.store";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function WaitScreen() {
   const route = useRoute();
@@ -139,7 +140,7 @@ export default function WaitScreen() {
   }
 
   return (
-    <>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#f9f9f9" }}>
       <BackWithLogo title="Profile Under Review" />
       <ScrollView
         contentContainerStyle={styles.container}
@@ -265,7 +266,7 @@ export default function WaitScreen() {
           </Animated.View>
         </View>
       </Modal>
-    </>
+    </SafeAreaView>
   );
 }
 

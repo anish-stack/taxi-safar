@@ -6,6 +6,7 @@ const { deleteFile } = require("../../middlewares/multer");
 const TaxiSafariRide = require("../../models/rides/taxi_safar_ride");
 const RidesPost = require("../../models/rides_post/Rides_Post");
 const mongoose = require("mongoose");
+const NotificationService = require("../../utils/notificationService");
 
 exports.toggleStatus = async (req, res) => {
   try {
@@ -13,7 +14,9 @@ exports.toggleStatus = async (req, res) => {
     const { status } = req.body;
 
     if (typeof status !== "boolean") {
-      return res.status(400).json({ success: false, message: "Invalid status" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid status" });
     }
 
     if (!driverId) {
@@ -27,7 +30,9 @@ exports.toggleStatus = async (req, res) => {
     );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, message: "Driver not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Driver not found" });
     }
 
     return res.status(200).json({
@@ -39,8 +44,6 @@ exports.toggleStatus = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
-
 
 exports.updateDriverLocation = async (req, res) => {
   try {
@@ -364,7 +367,7 @@ exports.addCompanyDetails = async (req, res) => {
     if (gst_number.length >= 6) {
       driverPub = gst_number.substring(0, 2) + gst_number.slice(-4);
     } else {
-      driverPub = gst_number; 
+      driverPub = gst_number;
     }
 
     const newCompany = await CompanyDetails.create({
@@ -378,6 +381,11 @@ exports.addCompanyDetails = async (req, res) => {
       gst_no: gst_number,
       signature,
     });
+    await NotificationService.sendCompanyCreatedNotification(
+      driverId,
+      company_name,
+      newCompany._id
+    );
 
     return res.status(201).json({
       success: true,
@@ -412,49 +420,39 @@ exports.getCompanyDetails = async (req, res) => {
   try {
     const { id } = req.params;
 
-    console.log("📥 Incoming ID:", id);
-
-    // ✅ Validate ObjectId
+    // Validate ObjectId
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      console.log("❌ Invalid ObjectId:", id);
       return res.status(400).json({
         success: false,
         message: "Invalid or missing ID",
       });
     }
 
-    console.log("🔍 Searching CompanyDetails by _id...");
+    // Try to find by _id
+    let details = await CompanyDetails.findById(id);
 
-    const details = await CompanyDetails.findById(id);
-
-    console.log("📄 Query Result:", details);
-
-    // ❌ Not found
+    // If not found by _id, try finding by driver field
     if (!details) {
-      console.log("❌ Company details NOT FOUND for ID:", id);
-      return res.status(404).json({
-        success: false,
-        message: "Company details not found",
-      });
+      details = await CompanyDetails.findOne({ driver: id });
+
+      if (!details) {
+        return res.status(404).json({
+          success: false,
+          message: "Company details not found",
+        });
+      }
     }
 
-    // ✅ Found
-    console.log("✅ Company details FOUND");
-    console.log("🧾 Driver in company:", details.driver?.toString());
+    // Determine how it was matched
+    const matchedBy = details.driver?.toString() === id ? "driver" : "_id";
 
-    const matchedBy =
-      details.driver?.toString() === id ? "driver" : "_id";
-
-    console.log("🎯 Matched By:", matchedBy);
-
+    // Return response
     return res.status(200).json({
       success: true,
       data: details,
       matchedBy,
     });
-
   } catch (error) {
-    console.error("🔥 Get Company Error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -462,6 +460,7 @@ exports.getCompanyDetails = async (req, res) => {
     });
   }
 };
+
 exports.updateCompanyDetails = async (req, res) => {
   try {
     const driverId = req.user.id;
@@ -506,6 +505,10 @@ exports.updateCompanyDetails = async (req, res) => {
     if (email) details.email = email;
 
     await details.save();
+    await NotificationService.sendCompanyUpdatedNotification(
+      driverId,
+      company_name
+    );
 
     return res.status(200).json({
       success: true,
@@ -574,8 +577,8 @@ exports.adminGetAllCompanyDetails = async (req, res) => {
 
 exports.FetchMyAssignedRides = async (req, res) => {
   try {
-    console.log("i am")
-    const driverId = req.params.id ||req.user.id;
+    const driverId = req.params.id;
+    const { type } = req.query; // 'reserved' or 'my_posts'
 
     // Validation
     if (!driverId) {
@@ -593,89 +596,128 @@ exports.FetchMyAssignedRides = async (req, res) => {
     // Optional status filter
     const statusFilter = req.query.status;
 
-    // Build query filters
-    const taxiSafariQuery = { driver_id: driverId };
-    const ridesPostQuery = { assignedDriverId: driverId };
-
-    if (statusFilter) {
-      taxiSafariQuery.trip_status = statusFilter;
-      ridesPostQuery.rideStatus = statusFilter;
+    // Type validation
+    if (type && !["reserved", "my_posts"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be 'reserved' or 'my_posts'",
+      });
     }
 
-    // Parallel execution with lean queries and field selection
-    const [taxiSafariRides, ridesPostRides, taxiSafariCount, ridesPostCount] =
-      await Promise.all([
-        // Fetch TaxiSafari rides with only needed fields
-        TaxiSafariRide.find(taxiSafariQuery)
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .skip(skip)
-          .lean()
-          .exec(),
+    let result = {};
 
-        // Fetch RidesPost rides with only needed fields
-        RidesPost.find(ridesPostQuery)
-          .populate("driverPostId", "driver_name driver_contact_number")
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .skip(skip)
-          .lean()
-          .exec(),
+    // RESERVED RIDES (assigned rides from both sources)
+    if (!type || type === "reserved") {
+      const taxiSafariQuery = { driver_id: driverId };
+      const ridesPostQuery = { assignedDriverId: driverId };
 
-        // Get total counts for pagination
-        TaxiSafariRide.countDocuments(taxiSafariQuery).exec(),
-        RidesPost.countDocuments(ridesPostQuery).exec(),
-      ]);
+      if (statusFilter) {
+        taxiSafariQuery.trip_status = statusFilter;
+        ridesPostQuery.rideStatus = statusFilter;
+      }
 
-    // Calculate pagination for each ride type separately
-    const taxiSafariTotalPages = Math.ceil(taxiSafariCount / limit);
-    const ridesPostTotalPages = Math.ceil(ridesPostCount / limit);
-    const totalRides = taxiSafariCount + ridesPostCount;
+      const [taxiSafariRides, ridesPostRides, taxiSafariCount, ridesPostCount] =
+        await Promise.all([
+          TaxiSafariRide.find(taxiSafariQuery)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean()
+            .exec(),
 
-    // Return separate ride types (not merged)
-    return res.status(200).json({
-      success: true,
-      message: "Rides fetched successfully",
-      data: {
-        taxi_safari_rides: {
-          rides: taxiSafariRides,
-          pagination: {
-            current_page: page,
-            total_pages: taxiSafariTotalPages,
-            total_rides: taxiSafariCount,
-            rides_per_page: limit,
-            has_next_page: page < taxiSafariTotalPages,
-            has_prev_page: page > 1,
-          },
-        },
-        rides_post_rides: {
-          rides: ridesPostRides,
-          pagination: {
-            current_page: page,
-            total_pages: ridesPostTotalPages,
-            total_rides: ridesPostCount,
-            rides_per_page: limit,
-            has_next_page: page < ridesPostTotalPages,
-            has_prev_page: page > 1,
-          },
+          RidesPost.find(ridesPostQuery)
+            .populate(
+              "driverPostId",
+              "driver_name driver_contact_number average_rating"
+            )
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean()
+            .exec(),
+
+          TaxiSafariRide.countDocuments(taxiSafariQuery).exec(),
+          RidesPost.countDocuments(ridesPostQuery).exec(),
+        ]);
+
+      // Merge and sort both rides by date
+      const allReservedRides = [
+        ...taxiSafariRides.map((r) => ({ ...r, type: "taxi_safari" })),
+        ...ridesPostRides.map((r) => ({ ...r, type: "rides_post" })),
+      ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      const totalReserved = taxiSafariCount + ridesPostCount;
+      const totalReservedPages = Math.ceil(totalReserved / limit);
+
+      result.reserved_rides = {
+        rides: allReservedRides,
+        pagination: {
+          current_page: page,
+          total_pages: totalReservedPages,
+          total_rides: totalReserved,
+          rides_per_page: limit,
+          has_next_page: page < totalReservedPages,
+          has_prev_page: page > 1,
         },
         summary: {
-          total_rides: totalRides,
+          total_rides: totalReserved,
           taxi_safari_count: taxiSafariCount,
           rides_post_count: ridesPostCount,
         },
-      },
+      };
+    }
+
+    // MY POSTS (rides posted by current driver)
+    if (!type || type === "my_posts") {
+      const myPostsQuery = { driverPostId: driverId };
+
+      if (statusFilter) {
+        myPostsQuery.rideStatus = statusFilter;
+      }
+
+      const [myPosts, myPostsCount] = await Promise.all([
+        RidesPost.find(myPostsQuery)
+          .populate(
+            "assignedDriverId",
+            "driver_name driver_contact_number average_rating"
+          )
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean()
+          .exec(),
+
+        RidesPost.countDocuments(myPostsQuery).exec(),
+      ]);
+
+      const myPostsPages = Math.ceil(myPostsCount / limit);
+
+      result.my_posts = {
+        rides: myPosts,
+        pagination: {
+          current_page: page,
+          total_pages: myPostsPages,
+          total_rides: myPostsCount,
+          rides_per_page: limit,
+          has_next_page: page < myPostsPages,
+          has_prev_page: page > 1,
+        },
+      };
+    }
+
+    console.log("FetchMyAssignedRides Result:", result);
+    return res.status(200).json({
+      success: true,
+      message: "Rides fetched successfully",
+      data: result,
     });
   } catch (error) {
     console.error("FetchMyAssignedRides Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch assigned rides",
+      message: "Failed to fetch rides",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
-
-
-

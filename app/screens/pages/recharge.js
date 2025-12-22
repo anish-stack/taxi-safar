@@ -8,6 +8,8 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft } from "lucide-react-native";
@@ -24,6 +26,8 @@ import {
 import useDriverStore from "../../store/driver.store";
 
 const PRESET_AMOUNTS = [500, 1000, 2000, 3000, 4000, 5000];
+const MIN_RECHARGE_AMOUNT = 100;
+const MAX_RECHARGE_AMOUNT = 30000;
 
 export default function RechargeScreen() {
   const navigation = useNavigation();
@@ -59,9 +63,19 @@ export default function RechargeScreen() {
 
   useEffect(() => {
     if (amount && Number(amount) > 0) {
-      setCustomAmount(Number(amount));
+      // Check if amount exceeds max limit
+      if (Number(amount) > MAX_RECHARGE_AMOUNT) {
+        setCustomAmount(MAX_RECHARGE_AMOUNT);
+        showAlert(
+          "warning",
+          "Amount Adjusted",
+          `Maximum recharge amount is ₹${MAX_RECHARGE_AMOUNT.toLocaleString()}`
+        );
+      } else {
+        setCustomAmount(Number(amount));
+      }
     } else {
-      setCustomAmount(0);
+      setCustomAmount("");
     }
   }, [amount]);
 
@@ -81,7 +95,6 @@ export default function RechargeScreen() {
     } catch (err) {
       console.log("Create Order Error:", err.response?.data || err.message);
 
-      // Pass detailed error message to caller
       throw new Error(
         err.response?.data?.message ||
           "Unable to create payment order. Please try again."
@@ -105,7 +118,6 @@ export default function RechargeScreen() {
     } catch (err) {
       console.log("Verify Payment Error:", err.response?.data || err.message);
 
-      // Pass error up to caller
       throw new Error(
         err.response?.data?.message ||
           "Failed to verify payment. Please contact support."
@@ -114,10 +126,24 @@ export default function RechargeScreen() {
   };
 
   const handleRecharge = async () => {
-    const amount = selectedAmount || customAmount;
+    const amount = selectedAmount || Number(customAmount);
 
-    if (!amount || amount < 100) {
-      showAlert("warning", "Invalid Amount", "Minimum recharge amount is ₹100");
+    // Validate amount range
+    if (!amount || amount < MIN_RECHARGE_AMOUNT) {
+      showAlert(
+        "warning",
+        "Invalid Amount",
+        `Minimum recharge amount is ₹${MIN_RECHARGE_AMOUNT}`
+      );
+      return;
+    }
+
+    if (amount > MAX_RECHARGE_AMOUNT) {
+      showAlert(
+        "warning",
+        "Amount Exceeds Limit",
+        `Maximum recharge amount is ₹${MAX_RECHARGE_AMOUNT.toLocaleString()}. Please enter a lower amount.`
+      );
       return;
     }
 
@@ -137,7 +163,6 @@ export default function RechargeScreen() {
         theme: { color: "#000" },
         modal: {
           ondismiss: () => {
-            // user closed Razorpay popup
             setLoading(false);
           },
         },
@@ -158,7 +183,7 @@ export default function RechargeScreen() {
           showAlert(
             "success",
             "Recharge Successful!",
-            `₹${amount} has been added to your wallet`,
+            `₹${amount.toLocaleString()} has been added to your wallet`,
             () => navigation.goBack()
           );
         } catch (verifyError) {
@@ -174,7 +199,6 @@ export default function RechargeScreen() {
         console.log("Razorpay Error:", rzpError);
 
         if (rzpError.code !== 2) {
-          // user cancelled = code 2
           showAlert(
             "error",
             "Payment Failed",
@@ -195,94 +219,128 @@ export default function RechargeScreen() {
     }
   };
 
-  const finalAmount = selectedAmount || customAmount || 0;
+  const handleCustomAmountChange = (text) => {
+    const num = text.replace(/[^0-9]/g, "");
+    const numValue = Number(num);
+
+    // If user enters more than max, cap it at max
+    if (numValue > MAX_RECHARGE_AMOUNT) {
+      setCustomAmount(MAX_RECHARGE_AMOUNT.toString());
+      showAlert(
+        "warning",
+        "Maximum Limit Reached",
+        `You can recharge up to ₹${MAX_RECHARGE_AMOUNT.toLocaleString()} at a time`
+      );
+    } else {
+      setCustomAmount(num);
+    }
+    
+    setSelectedAmount(null);
+  };
+
+  const finalAmount = selectedAmount || Number(customAmount) || 0;
+  const isValidAmount = finalAmount >= MIN_RECHARGE_AMOUNT && finalAmount <= MAX_RECHARGE_AMOUNT;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <ArrowLeft size={28} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Add Money to Wallet</Text>
-          <View style={{ width: 28 }} />
-        </View>
-
-        {/* Balance Card */}
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceAmount}>
-            ₹{driver?.wallet?.balance || 0}
-          </Text>
-        </View>
-
-        {/* Preset Amounts */}
-        <Text style={styles.sectionTitle}>Select Amount</Text>
-        <View style={styles.amountGrid}>
-          {PRESET_AMOUNTS.map((amt) => (
-            <TouchableOpacity
-              key={amt}
-              style={[
-                styles.amountBtn,
-                selectedAmount === amt && styles.amountBtnSelected,
-              ]}
-              onPress={() => {
-                setSelectedAmount(amt);
-                setCustomAmount(amt);
-              }}
-            >
-              <Text
-                style={[
-                  styles.amountText,
-                  selectedAmount === amt && styles.amountTextSelected,
-                ]}
-              >
-                ₹{amt}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Custom Amount */}
-        <Text style={styles.sectionTitle}>Or Enter Custom Amount</Text>
-        <View style={styles.customInput}>
-          <Text style={styles.rupee}>₹</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="100 minimum"
-            keyboardType="numeric"
-            value={String(customAmount)}
-            onChangeText={(text) => {
-              const num = text.replace(/[^0-9]/g, "");
-              setCustomAmount(num);
-              setSelectedAmount(null);
-            }}
-          />
-        </View>
-
-        {/* Pay Button */}
-        <TouchableOpacity
-          style={[
-            styles.payButton,
-            finalAmount < 100 || loading ? styles.payButtonDisabled : null,
-          ]}
-          onPress={handleRecharge}
-          disabled={finalAmount < 100 || loading}
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <ScrollView 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 20 }}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.payButtonText}>
-              Pay ₹{finalAmount > 0 ? finalAmount : "0"}
-            </Text>
-          )}
-        </TouchableOpacity>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <ArrowLeft size={28} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Add Money to Wallet</Text>
+            <View style={{ width: 28 }} />
+          </View>
 
-        <Text style={styles.note}>
-          100% secure • Instant credit • Refundable if not used
-        </Text>
-      </ScrollView>
+          {/* Balance Card */}
+          <View style={styles.balanceCard}>
+            <Text style={styles.balanceLabel}>Current Balance</Text>
+            <Text style={styles.balanceAmount}>
+              ₹{(driver?.wallet?.balance || 0).toLocaleString()}
+            </Text>
+          </View>
+
+          {/* Preset Amounts */}
+          <Text style={styles.sectionTitle}>Select Amount</Text>
+          <View style={styles.amountGrid}>
+            {PRESET_AMOUNTS.map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={[
+                  styles.amountBtn,
+                  selectedAmount === amt && styles.amountBtnSelected,
+                ]}
+                onPress={() => {
+                  setSelectedAmount(amt);
+                  setCustomAmount(amt.toString());
+                }}
+              >
+                <Text
+                  style={[
+                    styles.amountText,
+                    selectedAmount === amt && styles.amountTextSelected,
+                  ]}
+                >
+                  ₹{amt.toLocaleString()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Custom Amount */}
+          <Text style={styles.sectionTitle}>Or Enter Custom Amount</Text>
+          <View style={styles.customInput}>
+            <Text style={styles.rupee}>₹</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={`${MIN_RECHARGE_AMOUNT} - ${MAX_RECHARGE_AMOUNT.toLocaleString()}`}
+              keyboardType="numeric"
+              value={customAmount}
+              onChangeText={handleCustomAmountChange}
+              maxLength={5} // Max 5 digits (30000)
+            />
+          </View>
+
+          {/* Amount Range Info */}
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              💡 Recharge between ₹{MIN_RECHARGE_AMOUNT} - ₹{MAX_RECHARGE_AMOUNT.toLocaleString()}
+            </Text>
+          </View>
+
+          {/* Pay Button */}
+          <TouchableOpacity
+            style={[
+              styles.payButton,
+              (!isValidAmount || loading) && styles.payButtonDisabled,
+            ]}
+            onPress={handleRecharge}
+            disabled={!isValidAmount || loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.payButtonText}>
+                Pay ₹{finalAmount > 0 ? finalAmount.toLocaleString() : "0"}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.note}>
+            100% secure • Instant credit • Refundable if not used
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Universal Alert */}
       <UniversalAlert
@@ -311,14 +369,18 @@ const styles = StyleSheet.create({
   balanceCard: {
     backgroundColor: "#fff",
     margin: 16,
-    borderColor:"#000",
-    borderWidth:1,
+    borderColor: "#000",
+    borderWidth: 1,
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
   },
-  balanceLabel: { color: "#000",    fontWeight: "800",
- fontSize: 16, opacity: 0.9 },
+  balanceLabel: {
+    color: "#000",
+    fontWeight: "800",
+    fontSize: 16,
+    opacity: 0.9,
+  },
   balanceAmount: {
     color: "#000",
     fontSize: 40,
@@ -368,9 +430,24 @@ const styles = StyleSheet.create({
   },
   rupee: { fontSize: 28, fontWeight: "bold", color: "#374151" },
   input: { flex: 1, fontSize: 20, marginLeft: 8, color: "#000" },
+  infoBox: {
+    backgroundColor: "#FFF9E6",
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFE066",
+  },
+  infoText: {
+    fontSize: 13,
+    color: "#856404",
+    textAlign: "center",
+  },
   payButton: {
     backgroundColor: "#000",
     margin: 16,
+    marginTop: 24,
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: "center",

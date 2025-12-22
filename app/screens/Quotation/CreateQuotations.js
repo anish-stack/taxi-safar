@@ -42,7 +42,7 @@ export default function CreateQuotationForm({ navigation, route }) {
   const termsConditionsRef = useRef(null);
   // console.log(id)
   const [documentType, setDocumentType] = useState("quotation");
-  const [multiStop, setMultiStop] = useState(false);
+  const [multiStop, setMultiStop] = useState(true);
   const [stops, setStops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -139,12 +139,13 @@ export default function CreateQuotationForm({ navigation, route }) {
       } else {
         showAlert(
           "warning",
-          "Company Required",
-          "Please add company details first.",
+          "Agent Profile Required",
+          "Please add Agent details first.",
           () => {
             navigation.navigate("company-details");
           }
         );
+        setCompany(null);
       }
     } catch (err) {
       showAlert("error", "Error", "Failed to load company details");
@@ -584,6 +585,31 @@ export default function CreateQuotationForm({ navigation, route }) {
       </SafeAreaView>
     );
   }
+if (!loading && !company) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.noCompanyContainer}>
+        <Ionicons name="business-outline" size={60} color="#9CA3AF" />
+        <Text style={styles.noCompanyTitle}>
+        Agent Profile Details Required
+        </Text>
+        <Text style={styles.noCompanyText}>
+          Please add your Agent Profile details to create quotation or invoice.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.addCompanyBtn}
+          onPress={() => navigation.navigate("company-details")}
+        >
+          <Text style={styles.addCompanyBtnText}>
+            Add Company Details
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -998,10 +1024,18 @@ export default function CreateQuotationForm({ navigation, route }) {
                     />
                   </View>
                 </View>
-                <View style={[styles.inputGroup]}>
-                  <Text style={styles.inputLabel}>Fare </Text>
-                  <Text style={styles.fareDisplay}>₹{fare.toFixed(2)}</Text>
-                </View>
+              
+
+            
+                            <Text style={styles.sectionTitle}>Fare </Text>
+                            <View style={styles.earningContainer}>
+                              <Text style={styles.earningAmount}>
+                                ₹{fare.toFixed(2)}
+                              </Text>
+                             
+                            </View>
+                         
+                
               </>
             ) : (
               <>
@@ -1027,10 +1061,13 @@ export default function CreateQuotationForm({ navigation, route }) {
                   </View>
                 </View>
 
-                <View>
-                  <Text style={styles.inputLabel}>Fare (Auto Calculated)</Text>
-                  <Text style={styles.fareDisplay}>₹{fare.toFixed(2)}</Text>
-                </View>
+                <Text style={styles.sectionTitle}>Fare </Text>
+                            <View style={styles.earningContainer}>
+                              <Text style={styles.earningAmount}>
+                                ₹{fare.toFixed(2)}
+                              </Text>
+                             
+                            </View>
               </>
             )}
 
@@ -1441,6 +1478,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#000",
   },
+  
+  earningContainer: {
+    backgroundColor: "#ECFDF5",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom:12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  earningAmount: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#059669",
+    marginBottom: 4,
+  },
+  earningLabel: {
+    fontSize: 12,
+    color: "#065F46",
+  },
   textArea: {
     height: 80,
     textAlignVertical: "top",
@@ -1642,6 +1699,38 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 6,
   },
+  noCompanyContainer: {
+  flex: 1,
+  justifyContent: "center",
+  alignItems: "center",
+  padding: 24,
+  backgroundColor: "#F9FAFB",
+},
+noCompanyTitle: {
+  fontSize: 20,
+  fontWeight: "700",
+  marginTop: 16,
+  color: "#111827",
+},
+noCompanyText: {
+  fontSize: 14,
+  color: "#6B7280",
+  textAlign: "center",
+  marginTop: 8,
+  marginBottom: 24,
+},
+addCompanyBtn: {
+  backgroundColor: "#000",
+  paddingHorizontal: 24,
+  paddingVertical: 14,
+  borderRadius: 12,
+},
+addCompanyBtnText: {
+  color: "#fff",
+  fontSize: 16,
+  fontWeight: "600",
+},
+
   cancelText: {
     color: "#fff",
     fontSize: 14,

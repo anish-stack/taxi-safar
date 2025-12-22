@@ -214,6 +214,12 @@ export default function LoginScreen({ navigation }) {
                     setMobile(text);
                     setMobileError("");
                   }}
+                    onSubmitEditing={() => {
+    if (!loading) {
+      handleGetOtp();
+    }
+  }}
+  returnKeyType="done" 
                   placeholderTextColor={Colors.placeholder}
                 />
               </View>

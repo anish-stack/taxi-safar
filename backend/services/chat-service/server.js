@@ -209,16 +209,16 @@ app.get("/api/chat/:chatId", async (req, res) => {
     const { chatId } = req.params;
     const { driver_id } = req.query;
 
-    const chat = await ChatRidesPost.findById(chatId)
+    let chat = await ChatRidesPost.findById(chatId)
       .populate("init_driver_id", "driver_name driver_contact_number")
       .populate("other_driver_id", "driver_name driver_contact_number")
-      .populate("ride_post_id", "pickupAddress dropAddress pickupDate");
+      .populate("ride_post_id");
 
     if (!chat) {
-      return res.status(404).json({
-        success: false,
-        message: "Chat not found",
-      });
+    chat = await ChatRidesPost.findOne({ride_post_id:chatId})
+      .populate("init_driver_id", "driver_name driver_contact_number")
+      .populate("other_driver_id", "driver_name driver_contact_number")
+      .populate("ride_post_id");
     }
 
     // Filter deleted messages for this driver
@@ -407,6 +407,7 @@ app.put("/api/chat/:chatId/read", async (req, res) => {
   try {
     const { chatId } = req.params;
     const { driver_id } = req.body;
+    console.log(`Mark Read Request: chatId=${req.params}, driver_id=${driver_id}`);
 
     const chat = await ChatRidesPost.findById(chatId);
     if (!chat) {
@@ -498,17 +499,15 @@ io.on("connection", (socket) => {
   // Join specific chat room
   socket.on("join_chat", (data) => {
     const { chatId } = data;
-    socket.join(`chat_${chatId}`);
+    socket.join(`chat_${chatId}`,data);
     console.log(`Driver ${socket.driver_id} joined chat ${chatId}`);
   });
 
   // Send message via Socket
   socket.on("send_message", async (data) => {
     try {
-      const { chatId, sender, text, messageType, imageUrl, paymentUrl,
-        amount } = data;
-        console.log(data)
-
+      const { chatId, sender, text, messageType, imageUrl, paymentUrl, amount  ,vehiclePhotos} = data;
+      console.log(`📩 Incoming Message from Driver ${vehiclePhotos} in Chat ${chatId}`);
       const chat = await ChatRidesPost.findById(chatId);
       if (!chat) {
         socket.emit("error", { message: "Chat not found" });
@@ -522,6 +521,7 @@ io.on("connection", (socket) => {
         paymentUrl: paymentUrl || "",
         amount: amount || "",
         imageUrl: imageUrl || "",
+        vehiclePhotos: vehiclePhotos || {},
         isRead: false,
         sentAt: new Date(),
       };

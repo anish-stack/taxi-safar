@@ -10,9 +10,11 @@ const AadharDetails = require("../../models/driver/AadharDetails");
 const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
+const DrivingLicense = require("../../models/driver/DriverLicense");
 const {
   addVehicleUploadJob,
 } = require("../../queues/DriverVehcilePhotoUpload");
+const TempDataSchema = require("../../models/TempDataSchema");
 const gstCache = new Map(); // GST cache
 const rateLimitMap = new Map(); // Rate limit tracker
 
@@ -64,8 +66,8 @@ function validateRequiredFields(body) {
  */
 function validateRequiredDocuments(files) {
   const requiredDocs = [
-    { fieldname: "aadhaarFrontDocument", label: "Aadhaar Front" },
-    { fieldname: "aadhaarBackDocument", label: "Aadhaar Back" },
+    // { fieldname: "aadhaarFrontDocument", label: "Aadhaar Front" },
+    // { fieldname: "aadhaarBackDocument", label: "Aadhaar Back" },
     { fieldname: "panDocument", label: "PAN Card" },
     { fieldname: "licenseFrontDocument", label: "License Front" },
     { fieldname: "licenseBackDocument", label: "License Back" },
@@ -447,13 +449,6 @@ exports.registerDriver = async (req, res) => {
       3
     )}s`;
 
-    console.log("\n========== REGISTRATION COMPLETED ==========");
-    console.log(`Driver ID: ${driver._id}`);
-    console.log(`Referral ID: ${driver.referral_id}`);
-    console.log(`Documents ID: ${documents._id}`);
-    console.log(`Execution Time: ${executionTime}`);
-    console.log("============================================\n");
-
     return res.status(201).json({
       success: true,
       message: "Driver registered successfully.",
@@ -660,6 +655,124 @@ exports.login = async (req, res) => {
       success: false,
       message: "Server error during login.",
       error: error.message,
+    });
+  }
+};
+
+exports.tempData = async (req, res) => {
+  try {
+    const data = req.body;
+
+    const saved = await TempDataSchema.create({
+      data: data,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Data saved successfully",
+      data: saved,
+      id: saved._id,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+exports.ValidateToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // ❌ No token → Not logged in
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Not logged in",
+        code: "NO_TOKEN",
+      });
+    }
+
+    try {
+      // ✅ Access token valid
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      return res.status(200).json({
+        success: true,
+        message: "Token is valid",
+        data: decoded,
+      });
+    } catch (err) {
+      // ❌ Invalid token (not expired)
+      if (err.name !== "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token",
+          code: "INVALID_TOKEN",
+        });
+      }
+
+      // ⏳ Access token expired → decode
+      const decodedExpired = jwt.decode(token);
+
+      if (!decodedExpired?.id) {
+        return res.status(401).json({
+          success: false,
+          message: "Not logged in",
+          code: "INVALID_PAYLOAD",
+        });
+      }
+
+      // 🔍 Find driver
+      const driver = await Driver.findById(decodedExpired.id);
+
+      if (!driver || !driver.refresh_token) {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired, please login again",
+          code: "NO_REFRESH_TOKEN",
+        });
+      }
+
+      // 🔐 Verify refresh token
+      try {
+        jwt.verify(driver.refresh_token, process.env.JWT_REFRESH_SECRET);
+      } catch (refreshErr) {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired, please login again",
+          code: "REFRESH_EXPIRED",
+        });
+      }
+
+      // 🔄 Generate NEW tokens using model methods
+      const accessToken = driver.generateAuthToken(); // 30 days
+      const refreshToken = driver.generateRefreshToken(); // 60 days
+
+      // 💾 Save refresh token in DB
+      driver.refresh_token = refreshToken;
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      });
+      await driver.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Token refreshed",
+        token: accessToken,
+        refreshToken,
+      });
+    }
+  } catch (error) {
+    console.error("ValidateToken Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
     });
   }
 };
@@ -907,16 +1020,16 @@ exports.addVehicleDetails = async (req, res) => {
     const { driverId } = req.params;
     const files = req.files || [];
     const body = req.body || {};
-
-    console.log("files", files);
-    
+    console.log("body", body);
+   
     /* ----------------------------
        1️⃣ Validate Driver
     -----------------------------*/
+
     currentStep = "DRIVER_VALIDATION";
     if (!driverId) {
       log(currentStep, "Driver ID missing");
-      await cleanupFiles(files);
+      cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: "Driver ID is required",
@@ -933,8 +1046,6 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
-    log(currentStep, "Driver validated", { driverId: driver._id });
-
     /* ----------------------------
        2️⃣ Parse RC Data
     -----------------------------*/
@@ -944,9 +1055,7 @@ exports.addVehicleDetails = async (req, res) => {
     if (body.rcData) {
       try {
         rcData =
-          typeof body.rcData === "string"
-            ? JSON.parse(body.rcData)
-            : body.rcData;
+          typeof body.rcData === "string" ? JSON.parse(body.rcData) : body.rcData;
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
         cleanupFiles(files);
@@ -966,25 +1075,22 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
-    log(currentStep, "RC data parsed successfully", rcData);
-
     /* ----------------------------
-       3️⃣ Validate Required Fields
+       3️⃣ Validate Required Body Fields
     -----------------------------*/
     currentStep = "BODY_VALIDATION";
-    const { vehicleType, vehicleNumber } = body;
+    const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } = body;
 
     if (!vehicleType || !vehicleNumber) {
-      log(currentStep, "Required fields missing", {
-        vehicleType,
-        vehicleNumber,
-      });
+      log(currentStep, "Required fields missing", { vehicleType, vehicleNumber });
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: "vehicleType and vehicleNumber are required",
       });
     }
+
+
 
     /* ----------------------------
        4️⃣ Check Duplicate Vehicle
@@ -1005,62 +1111,30 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     /* ----------------------------
-       5️⃣ Validate Files
+       5️⃣ Validate Required Files
     -----------------------------*/
     currentStep = "FILE_VALIDATION";
-
     const requiredFiles = {
-      rcFront: {
-        file: files.find((f) => f.fieldname === "rcFront"),
-        message: "Please re-upload RC Front Side Photo",
-      },
-      rcBack: {
-        file: files.find((f) => f.fieldname === "rcBack"),
-        message: "Please re-upload RC Back Side Photo",
-      },
-      insurance: {
-        file: files.find((f) => f.fieldname === "insurance"),
-        message: "Please upload Insurance Document",
-      },
-      permit: {
-        file: files.find((f) => f.fieldname === "permit"),
-        message: "Please upload Vehicle Permit Document",
-      },
-      vehicleFront: {
-        file: files.find((f) => f.fieldname === "vehicleFront"),
-        message: "Please upload Vehicle Front Photo",
-      },
-      vehicleBack: {
-        file: files.find((f) => f.fieldname === "vehicleBack"),
-        message: "Please upload Vehicle Back Photo",
-      },
-      vehicleInterior: {
-        file: files.find((f) => f.fieldname === "vehicleInterior"),
-        message: "Please upload Vehicle Interior Photo",
-      },
+      rcFront: { file: files.find((f) => f.fieldname === "rcFront"), message: "Please re-upload RC Front Side Photo" },
+      rcBack: { file: files.find((f) => f.fieldname === "rcBack"), message: "Please re-upload RC Back Side Photo" },
+      insurance: { file: files.find((f) => f.fieldname === "insurance"), message: "Please upload Insurance Document" },
+      permit: { file: files.find((f) => f.fieldname === "permit"), message: "Please upload Vehicle Permit Document" },
+      vehicleFront: { file: files.find((f) => f.fieldname === "vehicleFront"), message: "Please upload Vehicle Front Photo" },
+      vehicleBack: { file: files.find((f) => f.fieldname === "vehicleBack"), message: "Please upload Vehicle Back Photo" },
+      vehicleInterior: { file: files.find((f) => f.fieldname === "vehicleInterior"), message: "Please upload Vehicle Interior Photo" },
     };
-    
-    const missingEntry = Object.values(requiredFiles).find(
-      (item) => !item.file
-    );
 
-    if (missingEntry) {
-      log(currentStep, "Missing required file", missingEntry.message);
-      await cleanupFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: missingEntry.message,
-      });
+    const missingFile = Object.values(requiredFiles).find((item) => !item.file);
+    if (missingFile) {
+      log(currentStep, "Missing required file", missingFile.message);
+      cleanupFiles(files);
+      return res.status(400).json({ success: false, message: missingFile.message });
     }
 
-    log(currentStep, "All required files present");
-
     /* ----------------------------
-       6️⃣ Add Job to Queue
+       6️⃣ Prepare File Paths
     -----------------------------*/
-    currentStep = "QUEUE_JOB_ADD";
-
-    // ✅ FIX: Access .file.path instead of just .path
+    currentStep = "FILE_PATHS";
     const filePaths = {
       rcFront: requiredFiles.rcFront.file.path,
       rcBack: requiredFiles.rcBack.file.path,
@@ -1071,29 +1145,16 @@ exports.addVehicleDetails = async (req, res) => {
       vehicleInterior: requiredFiles.vehicleInterior.file.path,
     };
 
-    // Prepare vehicle data
-    const vehicleData = {
-      vehicleType,
-      vehicleNumber,
-    };
+    // Optional legalDoc
+    const legalDocFile = files.find((f) => f.fieldname === "legalDoc");
+    if (legalDocFile) filePaths.legalDoc = legalDocFile.path;
 
-    console.log("filePaths", filePaths);
+    /* ----------------------------
+       7️⃣ Queue Vehicle Upload Job
+    -----------------------------*/
+    currentStep = "QUEUE_JOB_ADD";
+    const vehicleData = { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation };
 
-    // Validate all file paths exist
-    const invalidPath = Object.entries(filePaths).find(([key, path]) => !path);
-    if (invalidPath) {
-      log(currentStep, "Invalid file path detected", { 
-        field: invalidPath[0],
-        path: invalidPath[1] 
-      });
-      await cleanupFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: `Invalid file path for ${invalidPath[0]}`,
-      });
-    }
-
-    // Add job to Bull queue
     const job = await addVehicleUploadJob({
       driverId: driver._id.toString(),
       vehicleData,
@@ -1101,30 +1162,20 @@ exports.addVehicleDetails = async (req, res) => {
       rcData,
     });
 
-    log(currentStep, "Job added to queue successfully", {
-      jobId: job.id,
-      driverId: driver._id,
-    });
-
     /* ----------------------------
-       7️⃣ Return Response
+       8️⃣ Return Response
     -----------------------------*/
-    return res.status(202).json({
+    return res.status(200).json({
       success: true,
-      message:
-        "Vehicle upload job queued successfully. Processing in background.",
+      message: "Vehicle upload  successfully.",
       jobId: job.id,
       driverId: driver._id,
       status: "processing",
       note: "You will be notified once the upload is complete",
     });
   } catch (error) {
-    console.error(`\n🔥 ERROR at step: ${currentStep}`);
-    console.error(error);
-
-    // Cleanup files on error
-    await cleanupFiles(req.files || []);
-
+    console.error(`🔥 ERROR at step: ${currentStep}`, error);
+    cleanupFiles(req.files || []);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -1132,7 +1183,8 @@ exports.addVehicleDetails = async (req, res) => {
       error: error.message,
     });
   }
-}
+};
+
 /* ----------------------------
    Get Job Status Endpoint
 -----------------------------*/
@@ -1271,7 +1323,9 @@ exports.addBankDetails = async (req, res) => {
 
     // ------------------------------- FIND DRIVER -------------------------------
     console.log("🔍 Finding driver...");
-    const driver = await Driver.findById(driverId);
+    const driver = await Driver.findById(driverId)
+      .populate("current_vehicle_id")
+      .populate("document_id");
 
     console.log("👀 Driver Found:", driver);
 
@@ -1302,7 +1356,13 @@ exports.addBankDetails = async (req, res) => {
       await bankDetails.save();
 
       driver.BankDetails = bankDetails._id;
-      driver.account_status = "active"; // ⭐ FIXED
+
+      if (driver?.current_vehicle_id.approval_status === "pending") {
+        driver.account_status = "pending";
+      } else {
+        driver.account_status = "active";
+      }
+
       await driver.save();
 
       console.log("💾 Bank details updated successfully!");
@@ -1332,7 +1392,12 @@ exports.addBankDetails = async (req, res) => {
 
     // Link with driver
     driver.BankDetails = newBankDetails._id;
-    driver.account_status = "active"; // ⭐ FIXED for NEW case also
+
+    if (driver?.current_vehicle_id.approval_status === "pending") {
+      driver.account_status = "pending";
+    } else {
+      driver.account_status = "active";
+    }
     await driver.save();
 
     console.log("💾 Driver updated with new BankDetails!");
@@ -1471,7 +1536,6 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
       .populate("document_id")
       .populate("current_vehicle_id")
       .lean();
-
 
     // ============================== FETCH CACHE ==============================
     console.log("🔍 Checking cache for device:", device_id);
@@ -1635,15 +1699,162 @@ exports.sendOtpOnAadharNumber = async (req, res) => {
   }
 };
 
-// ========================================
-// Helper Function: Send Aadhaar OTP
-// ========================================
-async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
-  console.log("===============================================");
-  console.log("📨 Starting Aadhaar OTP Process");
-  console.log("Aadhaar:", aadhaarNumber);
-  console.log("===============================================");
+exports.sendOtpOnAadharNumberForRc = async (req, res) => {
+  try {
+    const { aadhaarNumber } = req.body;
 
+    // Validation
+    if (!aadhaarNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter your Aadhaar number to continue.",
+      });
+    }
+
+    if (!/^\d{12}$/.test(aadhaarNumber)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid Aadhaar number. Please enter a valid 12-digit number.",
+      });
+    }
+
+    // Send OTP
+    const otpResponse = await sendAadhaarOtp(aadhaarNumber, res, {
+      redirect: "verify-aadhaar",
+      message: "Please verify your Aadhaar to activate your account. OTP sent!",
+    });
+
+    if (!otpResponse.success) {
+      return res.status(400).json(otpResponse);
+    }
+
+    return res.status(200).json({
+      success: true,
+      request_id: otpResponse.request_id,
+    });
+  } catch (error) {
+    console.error("🔥 Aadhaar OTP Controller Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again shortly.",
+    });
+  }
+};
+
+exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
+  try {
+    const {
+      request_id,
+      otp,
+      aadhaarNumber,
+      rcOwnerName,
+      driverId,
+      rcNumber,
+      relation: ownerRelation,
+      deviceId,
+    } = req.body;
+
+    console.log("🔹 Verify Aadhaar OTP (RC):", req.body);
+
+    // ---------- Validation ----------
+    if (!request_id || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP and request ID are required.",
+      });
+    }
+
+    if (!aadhaarNumber || !/^\d{12}$/.test(aadhaarNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Aadhaar number.",
+      });
+    }
+    const tempData = await TempDataSchema.findOne({
+      "rc.rcNumber": "UP16MT5222",
+    }).lean();
+    const ownerName = tempData?.rc?.apiResponse?.owner_name;
+    console.log("Owner Name from TempData:", ownerName);
+
+    // ---------- Verify OTP ----------
+    const response = await axios.post(
+      "https://api.quickekyc.com/api/v1/aadhaar-v2/submit-otp",
+      {
+        key: process.env.QUICKEKYC_API_KEY,
+        request_id: request_id.toString(),
+        otp,
+      },
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 20000,
+      }
+    );
+
+    const apiData = response.data;
+    console.log("📩 Aadhaar OTP Verify Response:", apiData);
+
+    if (apiData.status !== "success") {
+      return res.status(400).json({
+        success: false,
+        message: apiData.message || "OTP verification failed.",
+      });
+    }
+
+
+    const aadhaarData = apiData.data;
+    const aadhaarName = aadhaarData?.full_name || "";
+
+    // ---------- Name Match ----------
+    let nameMatched = false;
+    let matchScore = 0;
+
+    if (aadhaarName && ownerName) {
+      matchScore = nameMatchScore(
+        aadhaarName,
+        ownerName
+      );
+      nameMatched = matchScore >= 0.5;
+    }
+
+    console.log("🧾 Aadhaar Name:", aadhaarName);
+    console.log("🚗 RC Owner Name:", ownerName);
+    console.log("📊 Name Match Score:", matchScore);
+
+    // ---------- Final Response (SUCCESS ALWAYS after OTP) ----------
+    return res.status(200).json({
+      success: true,
+      message: nameMatched
+        ? "Aadhaar verified successfully and name matched."
+        : "Aadhaar verified successfully, but name did not fully match.",
+
+      aadhaar_verified: true,
+      name_matched: nameMatched,
+      name_match_score: matchScore,
+
+      aadhaar_name: aadhaarName,
+      rc_owner_name: ownerName,
+
+      request_id,
+      driverId,
+      ownerRelation,
+      deviceId,
+    });
+  } catch (error) {
+    console.error("🔥 Aadhaar OTP Verify Error:", {
+      message: error.message,
+      apiResponse: error.response?.data,
+    });
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again shortly.",
+    });
+  }
+};
+
+async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
   try {
     console.log("➡ Sending OTP request to QuickeKYC");
 
@@ -1784,8 +1995,6 @@ exports.verifyAadhaarOtp = async (req, res) => {
       { headers: { "Content-Type": "application/json" }, timeout: 20000 }
     );
 
-    console.log("📥 QuickEKYC OTP Response:", response.data);
-
     if (response.data.status !== "success") {
       return res.status(400).json({
         success: false,
@@ -1853,15 +2062,24 @@ const normalizeName = (name = "") =>
     .trim()
     .replace(/\s+/g, " ");
 
-const splitName = (name = "") => normalizeName(name).split(" ");
+const splitName = (name) => {
+  if (!name) return [];
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z\s]/g, "")
+    .split(/\s+/)
+    .filter((p) => p.length > 0);
+};
 
-const expandInitials = (parts, fullParts) =>
-  parts.map((p) => {
-    if (p.length === 1) {
-      return fullParts.find((fp) => fp.startsWith(p)) || p;
+const expandInitials = (parts, reference) => {
+  return parts.map((part, i) => {
+    if (part.length === 1 && reference[i] && reference[i].startsWith(part)) {
+      return reference[i];
     }
-    return p;
+    return part;
   });
+};
 
 const nameMatchScore = (aadhaar, dl) => {
   let aParts = splitName(aadhaar);
@@ -1873,8 +2091,12 @@ const nameMatchScore = (aadhaar, dl) => {
   dParts = expandInitials(dParts, aParts);
   aParts = expandInitials(aParts, dParts);
 
-  // First name must match strictly
-  if (aParts[0] !== dParts[0]) return 0;
+  // Check if any part from one name exists in the other (flexible matching)
+  const hasCommonPart = aParts.some((p1) =>
+    dParts.some((p2) => p1 === p2 || p2.includes(p1) || p1.includes(p2))
+  );
+
+  if (!hasCommonPart) return 0;
 
   const common = aParts.filter((p) => dParts.includes(p));
   const maxLen = Math.max(aParts.length, dParts.length);
@@ -1882,42 +2104,62 @@ const nameMatchScore = (aadhaar, dl) => {
   return common.length / maxLen; // 0 → 1
 };
 
-const isNameMatch = (aadhaarName, dlName) => {
-  const aParts = splitName(aadhaarName);
+const isNameMatch = (tempDataName, dlName) => {
+  const tParts = splitName(tempDataName);
   const dParts = splitName(dlName);
 
-  console.log("🧩 Aadhaar Parts:", aParts);
-  console.log("🧩 DL Parts:", dParts);
+  console.log("🧩 TempData Name Parts:", tParts);
+  console.log("🧩 DL Name Parts:", dParts);
 
-  // ❌ junk / fraud protection
+  // Fraud protection
   if (!dParts.length || dParts[0].length < 2) return false;
-  if (aParts.length < 2) return false;
+  if (tParts.length < 1) return false;
 
-  const score = nameMatchScore(aadhaarName, dlName);
-
+  const score = nameMatchScore(tempDataName, dlName);
   console.log("📊 Name Match Score:", score);
 
-  // ✅ Indian KYC safe threshold
-  return score >= 0.3;
+  // 50% threshold as per requirement
+  return score >= 0.5;
 };
-
-/* -------------------------------------------------
-   🚘 VERIFY DRIVING LICENSE
--------------------------------------------------- */
 
 exports.verifyDrivingLicense = async (req, res) => {
   try {
-    console.log("\n================ DL VERIFY START ================");
-    console.log("📥 Incoming Body:", req.body);
+    const { licenseNumber, dob, deviceId } = req.body;
 
-    const { licenseNumber, dob, aadhaarName, deviceId } = req.body;
+    /* ---------------- BASIC VALIDATION ---------------- */
+    if (!licenseNumber || !dob || !deviceId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields (DL number, DOB, deviceId).",
+      });
+    }
 
-    /* ---------------- VALIDATION ---------------- */
-    if (!licenseNumber || !dob || !aadhaarName || !deviceId) {
+    /* ---------------- GET TEMPDATA ---------------- */
+    const tempData = await TempDataSchema.findOne({
+      "data.deviceId": deviceId,
+    });
+
+    if (!tempData || !tempData.data) {
+      return res.status(400).json({
+        success: false,
+        message: "User data not found. Please complete registration first.",
+      });
+    }
+
+    const userName = tempData.data.name;
+
+    // Initialize DL retry tracking if not exists
+    if (!tempData.data.dlRetryCount) {
+      tempData.data.dlRetryCount = 0;
+    }
+
+    /* ---------------- CHECK RETRY LIMIT ---------------- */
+    if (tempData.data.dlRetryCount >= 3) {
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields (DL number, DOB, Aadhaar name, deviceId).",
+          "Maximum retry limit reached (3 attempts). Please contact support.",
+        retryExhausted: true,
       });
     }
 
@@ -1925,109 +2167,132 @@ exports.verifyDrivingLicense = async (req, res) => {
     const settings = await AppSettings.findOne();
     const BYPASS = settings?.ByPassApi === true;
 
-    console.log("⚙️ BYPASS MODE:", BYPASS);
-
-   
-
     /* ---------------- BYPASS MODE ---------------- */
     if (BYPASS) {
-      console.log("🟢 BYPASS ENABLED");
-
-      const fakeDL = {
-        license_number: "DLTEST000000",
-        name: aadhaarName,
-        state: "Uttar Pradesh",
-        permanent_address: "Test Address",
-        permanent_zip: "226001",
-      };
-
-      // cached.dl_data = fakeDL;
-      // cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
-      // cached.isDlisExpired = false;
-      // await cached.save();
-
       return res.status(200).json({
         success: true,
         message: "DL verified successfully (BYPASS MODE)",
-        dlData: fakeDL,
+        dlData: {
+          license_number: licenseNumber,
+          name: userName,
+        },
         bypassUsed: true,
       });
     }
 
-    /* ---------------- DL API CALL ---------------- */
-    console.log("🔵 Calling QuickEKYC DL API");
+    /* ---------------- CASE 1: TRY EXTERNAL API ---------------- */
+    try {
+      const apiPayload = {
+        key: process.env.QUICKEKYC_API_KEY,
+        id_number: licenseNumber,
+        dob: new Date(dob).toISOString().split("T")[0], //""YYYY-MM-DD"",
+      };
 
-    const apiPayload = {
-      key: process.env.QUICKEKYC_API_KEY,
-      id_number: licenseNumber,
-      dob: new Date(dob).toISOString().split("T")[0],
-    };
+      const apiResponse = await axios.post(
+        "https://api.quickekyc.com/api/v1/driving-license/driving-license",
+        apiPayload,
+        { timeout: 20000 }
+      );
+      console.log("📥 DL API Response:", apiResponse.data);
+      if (apiResponse.data.status !== "success") {
+        throw new Error("DL verification failed");
+      }
 
-    console.log("📤 API Payload:", apiPayload);
+      const dlInfo = apiResponse.data.data;
+      const dlName = dlInfo.name || dlInfo.full_name || "";
 
-    const apiResponse = await axios.post(
-      "https://api.quickekyc.com/api/v1/driving-license/driving-license",
-      apiPayload,
-      { timeout: 20000 }
-    );
+      console.log("✅ DL API Success");
+      console.log("👤 TempData Name:", userName);
+      console.log("🪪 DL Name:", dlName);
 
-    console.log("📥 API Response:", apiResponse.data);
+      /* -------- NAME MATCHING CHECK -------- */
+      const nameMatches = isNameMatch(userName, dlName);
 
-    if (apiResponse.data.status !== "success") {
-      return res.status(400).json({
-        success: false,
-        message: apiResponse.data.message || "DL verification failed",
+      if (!nameMatches) {
+        // Increment retry count
+        tempData.data.dlRetryCount += 1;
+        await tempData.save();
+
+        const remainingRetries = 3 - tempData.data.dlRetryCount;
+
+        console.log(`❌ Name Mismatch. Retries left: ${remainingRetries}`);
+
+        return res.status(400).json({
+          success: false,
+          message: `Name mismatch detected. You have entered wrong DL details. Please retry with correct information.`,
+          remainingRetries: remainingRetries,
+          nameMismatch: true,
+        });
+      }
+
+      /* -------- NAME MATCHED - SAVE VERIFIED DL -------- */
+      console.log("✅ Name Match Success!");
+
+      await DrivingLicense.create({
+        licenseNumber,
+        dob,
+        name: dlName,
+        deviceId,
+        status: "VERIFIED",
+        verifiedAt: new Date(),
+        rawResponse: dlInfo,
+      });
+
+      // Reset retry count on success
+      tempData.data.dlRetryCount = 0;
+      tempData.data.dlVerified = true;
+      tempData.data.dlDetails = {
+        licenseNumber,
+        name: dlName,
+        verifiedAt: new Date(),
+      };
+      await tempData.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Driving License verified successfully!",
+        dlData: dlInfo,
+        manualVerification: false,
+      });
+    } catch (apiError) {
+      /* ---------------- CASE 2: API FAILED - MANUAL VERIFICATION ---------------- */
+      console.error("⚠️ DL API FAILED:", apiError);
+
+      // Save pending DL
+      await DrivingLicense.create({
+        licenseNumber,
+        dob,
+        name: userName,
+        deviceId,
+        status: "PENDING_VERIFICATION",
+        retryCount: 0,
+        nextRetryAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+
+      // Update tempData with pending status
+      tempData.data.dlVerificationPending = true;
+      tempData.data.dlDetails = {
+        licenseNumber,
+        submittedAt: new Date(),
+      };
+      await tempData.save();
+
+      return res.status(200).json({
+        success: true,
+        manualVerification: true,
+        message:
+          "We are unable to verify your Driving License at the moment. Please continue and upload your DL document. We will verify it within the next 24 hours.",
+        dlData: {
+          license_number: licenseNumber,
+          name: userName,
+        },
       });
     }
-
-    const dlInfo = apiResponse.data.data;
-
-    /* ---------------- NAME MATCH ---------------- */
-    // console.log(
-    //   "🔍 Comparing Names:",
-    //   aadhaarData.full_name,
-    //   "↔",
-    //   dlInfo.name
-    // );
-
-    // const matched = isNameMatch(aadhaarData.full_name, dlInfo.name);
-
-    // if (!matched) {
-    //   console.log("❌ Name mismatch");
-    //   return res.status(400).json({
-    //     success: false,
-    //     nameMismatch: true,
-    //     message: `Aadhaar name "${aadhaarData.full_name}" does not match DL name "${dlInfo.name}"`,
-    //   });
-    // }
-
-    // console.log("✅ Name matched successfully");
-
-    /* ---------------- SAVE CACHE ---------------- */
-    // cached.dl_data = dlInfo;
-    // cached.dl_data_expires = new Date(Date.now() + 6 * 60 * 60 * 1000);
-    // cached.isDlisExpired = false;
-    // await cached.save();
-
-    console.log("🎉 DL VERIFIED SUCCESSFULLY");
-
-    return res.status(200).json({
-      success: true,
-      message: "Driving License verified successfully!",
-      dlData: dlInfo,
-      address: {
-        address: dlInfo.permanent_address,
-        pincode: dlInfo.permanent_zip,
-      },
-      fromCache: false,
-      bypassUsed: false,
-    });
   } catch (error) {
     console.error("🔥 DL VERIFY ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Something went wrong while verifying Driving License.",
-      error: error.message,
     });
   }
 };
@@ -2037,189 +2302,206 @@ exports.verifyDrivingLicense = async (req, res) => {
 -------------------------------------------------- */
 
 exports.verifyRcDetails = async (req, res) => {
-  const TRACE_ID = `RC-${Date.now()}`;
-
   try {
-    console.log(
-      `\n================ RC VERIFY START [${TRACE_ID}] ================`
-    );
-    console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
+    const { rcNumber, deviceId,  driverId } = req.body;
 
-    const { rcNumber, deviceId, isByPass } = req.body;
-
-    /* ---------------- VALIDATION ---------------- */
-    console.log("🧪 Validating input fields");
-
+    /* ---------------- BASIC VALIDATION ---------------- */
     if (!rcNumber || !deviceId) {
-      console.warn("⚠️ Validation failed → Missing fields");
       return res.status(400).json({
         success: false,
         message: "RC number and deviceId are required.",
+        errorCode: "MISSING_FIELDS",
       });
     }
 
-    /* ---------------- DRIVER (BY DEVICE ID) ---------------- */
-    console.log("👤 Fetching driver using deviceId:", deviceId);
-
-    const driverDetails = await Driver.findOne({ device_id: deviceId }).lean();
+    /* ---------------- DRIVER CHECK ---------------- */
+    let driverDetails = await Driver.findById(driverId).lean();
 
     if (!driverDetails) {
-      console.error("❌ No driver linked to this device");
-      return res.status(404).json({
+      driverDetails = await Driver.findOne({
+        device_id: deviceId,
+      }).lean();
+    }
+
+    if (!driverDetails) {
+      return res.status(400).json({
         success: false,
-        message: "Driver not found for this device.",
+        message: "Driver details not found.",
+        errorCode: "DRIVER_NOT_FOUND",
       });
     }
 
-    console.log("✔ Driver Found:", {
-      id: driverDetails._id,
-      name: driverDetails.driver_name,
-      mobile: driverDetails.mobile,
-      device_id: driverDetails.device_id,
-    });
-
-    /* ---------------- RC API ---------------- */
-    console.log("🌐 Calling QuickEKYC RC API");
-    console.log("➡️ RC Number:", rcNumber.toUpperCase());
-
-    let response;
+    /* ---------------- RC API CALL ---------------- */
     try {
-      response = await axios.post(
+      console.log("🔍 Hitting RC API...");
+
+      const response = await axios.post(
         "https://api.quickekyc.com/api/v1/rc/rc_sp",
         {
           key: process.env.QUICKEKYC_API_KEY,
-          id_number: rcNumber.toUpperCase(),
+          id_number: rcNumber,
         },
         {
           headers: { "Content-Type": "application/json" },
           timeout: 20000,
         }
       );
-    } catch (apiError) {
-      console.error("❌ RC API Request Failed:", apiError.message);
-      
-      // Check if it's a network/timeout error
-      if (apiError.code === 'ECONNABORTED' || apiError.code === 'ETIMEDOUT') {
-        console.error("⏱️ API Timeout - Parivahan might be slow or down");
-        return res.status(503).json({
-          success: false,
-          message: "RC verification service is temporarily unavailable. Please try again in a few minutes.",
-          errorType: "SERVICE_TIMEOUT",
-          retryable: true,
+
+      /* ---------- API RESPONSE VALIDATION ---------- */
+      if (response.data?.status !== "success" || !response.data?.data) {
+        throw new Error("RC verification failed");
+      }
+
+      let rcInfo = response.data.data;
+
+      console.log("✅ RC API Success");
+
+      /* ---------------- BIKE DETECTION ---------------- */
+      const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
+
+      const isBike =
+        vehicleCategory.includes("2W") ||
+        vehicleCategory.includes("TWO") ||
+        vehicleCategory.includes("MOTORCYCLE") ||
+        vehicleCategory.includes("SCOOTER");
+
+        const isByPass = await AppSettings.findOne().then(setting => setting?.ByPassApi || false);
+        console.log("BYPASS SETTING:", isByPass);
+      /* ---------------- BYPASS MODE ---------------- */
+      if (isByPass === true) {
+        if (isBike) {
+          rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: "RC verified successfully (BYPASS MODE).",
+          rcData: rcInfo,
+          bikeDetected: isBike,
+          bypassUsed: true,
         });
       }
-      
-      throw apiError; // Re-throw other errors
-    }
 
-    console.log("⬅️ RC API Response:", JSON.stringify(response.data, null, 2));
-
-    /* ---------------- PARIVAHAN DOWN DETECTION ---------------- */
-    if (response.data.status === 'error' && response.data.status_code === 500) {
-      console.error("🚨 PARIVAHAN IS DOWN - Internal Server Error from API");
-      console.error("Response:", response.data);
-      
-      return res.status(503).json({
-        success: false,
-        message: "Government RC verification service (Parivahan) is currently down. Please try again after some time.",
-        errorType: "PARIVAHAN_DOWN",
-        retryable: true,
-        details: {
-          apiMessage: response.data.message,
-          requestId: response.data.request_id,
-          timestamp: new Date().toISOString(),
-        }
-      });
-    }
-
-    /* ---------------- OTHER API FAILURES ---------------- */
-    if (response.data.status !== "success" || !response.data.data) {
-      console.error("❌ RC API Failure", response.data);
-      
-      // Different error messages based on status code
-      let errorMessage = "RC verification failed.";
-      let errorType = "VERIFICATION_FAILED";
-      
-      if (response.data.status_code === 404) {
-        errorMessage = "RC number not found in records. Please check the number and try again.";
-        errorType = "RC_NOT_FOUND";
-      } else if (response.data.status_code === 400) {
-        errorMessage = "Invalid RC number format. Please check and try again.";
-        errorType = "INVALID_RC_FORMAT";
-      }
-      
-      return res.status(400).json({
-        success: false,
-        message: response.data.message || errorMessage,
-        errorType,
-        retryable: response.data.status_code === 500,
-      });
-    }
-
-    let rcInfo = response.data.data;
-
-    /* ---------------- BIKE DETECTION ---------------- */
-    const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
-    const isBike =
-      vehicleCategory.includes("2W") ||
-      vehicleCategory.includes("TWO") ||
-      vehicleCategory.includes("MOTORCYCLE") ||
-      vehicleCategory.includes("SCOOTER");
-
-    console.log("🚘 Vehicle Category:", vehicleCategory);
-    console.log("🚲 Bike Detected:", isBike);
-
-    /* ---------------- BYPASS MODE ---------------- */
-    if (isByPass === true) {
-      console.warn("⚡ BYPASS MODE ENABLED");
-
+      /* ---------------- BIKE BLOCK ---------------- */
       if (isBike) {
-        console.warn("🛠 Overriding bike → CAR");
-        rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
+        return res.status(400).json({
+          success: false,
+          message: "Two-wheelers are not allowed. Please register a car.",
+          errorCode: "BIKE_NOT_ALLOWED",
+          bikeDetected: true,
+        });
       }
 
-      console.log("📝 Bypass mode active - skipping strict validations");
+      /* ---------------- CASE 1 & 2: NAME MATCHING ---------------- */
+      const nameOfDriver = driverDetails?.driver_name || "";
+      const nameOnRc = rcInfo.owner_name || "";
+
+      console.log("👤 Driver Name:", nameOfDriver);
+      console.log("🪪 RC Owner Name:", nameOnRc);
+
+      const nameMatches = isNameMatch(nameOfDriver, nameOnRc);
+
+      /* -------- CASE 2: NAME MISMATCH -------- */
+      if (!nameMatches) {
+        console.log("❌ Name Mismatch Detected");
+
+        try {
+          // Find the existing TempData for this device
+          const tempData = await TempDataSchema.findOne({
+            "data.deviceId": deviceId,
+          });
+          console.log("💾 RC Mismatch data saved in TempData:", tempData);
+
+          if (tempData) {
+            // Save RC mismatch data inside the `data` object
+            tempData.rc = {
+              rcNumber: rcNumber,
+              apiResponse: rcInfo,
+              driverName: nameOfDriver,
+              rcOwnerName: nameOnRc,
+              mismatchDetectedAt: new Date(),
+              status: "NAME_MISMATCH",
+            };
+
+            await tempData.save();
+            console.log("💾 RC Mismatch data saved in TempData:", tempData._id);
+          } else {
+            console.warn("⚠️ TempData not found for deviceId:", deviceId);
+          }
+        } catch (saveError) {
+          console.error("⚠️ Failed to save RC mismatch data:", saveError);
+        }
+
+        // Respond with structured error for frontend
+        return res.status(400).json({
+          success: false,
+          message:
+            "Name mismatch detected. The name on the RC does not match the driver's name.",
+          errorCode: "RC_NAME_MISMATCH",
+          nameMismatch: true,
+          rcData: rcInfo,
+          driverName: nameOfDriver,
+          rcOwnerName: nameOnRc,
+        });
+      }
+
+      /* ---------------- CASE 1: SUCCESS - NAME MATCHED ---------------- */
+      console.log("✅ Name Match Success!");
+
+      // Save successful RC verification in TempData
+      try {
+        const tempData = await TempDataSchema.findOne({
+          "data.deviceId": deviceId,
+        });
+
+        if (tempData) {
+          tempData.data.rcVerified = true;
+          tempData.data.rcDetails = {
+            rcNumber: rcNumber,
+            ownerName: nameOnRc,
+            vehicleCategory: rcInfo.vehicle_category,
+            verifiedAt: new Date(),
+            apiResponse: rcInfo,
+          };
+
+          await tempData.save();
+          console.log("💾 RC verification data saved in TempData");
+        }
+      } catch (saveError) {
+        console.error("⚠️ Failed to save RC data:", saveError);
+      }
 
       return res.status(200).json({
         success: true,
-        message: "RC verified successfully (BYPASS MODE).",
+        message: "RC verified successfully.",
         rcData: rcInfo,
-        bikeDetected: isBike,
-        bypassUsed: true,
+        bikeDetected: false,
+        bypassUsed: false,
+        nameMatched: true,
+      });
+    } catch (apiError) {
+      /* ---------------- CASE 3: API FAILURE - MANUAL VERIFICATION ---------------- */
+      console.error("⚠️ RC API FAILED:", apiError.message);
+
+      return res.status(200).json({
+        success: true,
+        manualVerification: true,
+        message:
+          "We are unable to verify your RC at the moment. Please continue and upload your RC document. We will verify it within the next 24 hours.",
+        errorCode: "RC_API_FAILURE",
+        rcData: {
+          rc_number: rcNumber,
+          owner_name: driverDetails.driver_name,
+        },
       });
     }
-
-    /* ---------------- BIKE BLOCK ---------------- */
-    if (isBike) {
-      console.warn("🚫 Bike detected → blocked");
-      return res.status(400).json({
-        success: false,
-        message: "Two-wheelers are not allowed. Please register a car.",
-        errorType: "BIKE_NOT_ALLOWED",
-        bikeDetected: true,
-      });
-    }
-
-    console.log(`🎉 RC VERIFIED SUCCESSFULLY [${TRACE_ID}]`);
-    console.log("✔ RC Data:", rcInfo);
-    
-    return res.status(200).json({
-      success: true,
-      message: "RC verified successfully.",
-      rcData: rcInfo,
-      bikeDetected: false,
-      bypassUsed: false,
-    });
-    
   } catch (error) {
-    console.error(`🔥 RC VERIFY ERROR [${TRACE_ID}]`);
-    console.error(error);
+    console.error("🔥 RC VERIFY ERROR:", error);
 
     return res.status(500).json({
       success: false,
       message: "Something went wrong during RC verification.",
-      error: error.message,
-      errorType: "INTERNAL_ERROR",
+      errorCode: "INTERNAL_ERROR",
     });
   }
 };
@@ -2457,7 +2739,6 @@ exports.verifyOtpMobile = async (req, res) => {
   }
 };
 
-// 📌 3️⃣ GET DETAILS AFTER VERIFICATION
 exports.getDriverDetailsOfDriverMobile = async (req, res) => {
   try {
     const { contact_number } = req.query;
@@ -2691,13 +2972,18 @@ exports.changeActiveVehcile = async (req, res) => {
 exports.updatePrefrences = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { accept_mini_rides, accept_sedan_rides, accept_suv_rides } =
-      req.body;
+    const {
+      accept_mini_rides,
+      accept_sedan_rides,
+      accept_suv_rides,
+      char_dham, // ✅ independent preference
+    } = req.body;
 
     const driver = await Driver.findById(userId).populate(
       "current_vehicle_id",
       "vehicle_type"
     );
+
     if (!driver) {
       return res.status(404).json({
         success: false,
@@ -2706,8 +2992,7 @@ exports.updatePrefrences = async (req, res) => {
     }
 
     /* ------------------------------------------------
-       1️⃣ Build FINAL preference state (MERGED)
-       (This fixes your issue)
+       1️⃣ Build FINAL preference state (merged)
     ------------------------------------------------ */
     const finalPreferences = {
       accept_mini_rides:
@@ -2724,27 +3009,36 @@ exports.updatePrefrences = async (req, res) => {
         typeof accept_suv_rides === "boolean"
           ? accept_suv_rides
           : driver.preferences.accept_suv_rides,
+
+      // ✅ Char Dham (NO restriction)
+      char_dham:
+        typeof char_dham === "boolean"
+          ? char_dham
+          : driver.preferences.char_dham,
     };
 
     /* ------------------------------------------------
-       2️⃣ Allowed preferences by vehicle type
+       2️⃣ Allowed ride-type preferences by vehicle
+       (❌ char_dham intentionally excluded)
     ------------------------------------------------ */
     let allowedKeys = [];
     let errorMessage = "";
 
-    if (driver.current_vehicle_id?.vehicle_type === "mini") {
+    const vehicleType = driver.current_vehicle_id?.vehicle_type;
+
+    if (vehicleType === "mini") {
       allowedKeys = ["accept_mini_rides"];
       errorMessage =
         "Mini drivers must keep Mini rides enabled to receive bookings.";
     }
 
-    if (driver.current_vehicle_id?.vehicle_type === "sedan") {
+    if (vehicleType === "sedan") {
       allowedKeys = ["accept_mini_rides", "accept_sedan_rides"];
       errorMessage =
         "Sedan drivers must enable at least one option: Mini or Sedan.";
     }
 
-    if (driver.current_vehicle_id?.vehicle_type === "suv") {
+    if (vehicleType === "suv") {
       allowedKeys = [
         "accept_mini_rides",
         "accept_sedan_rides",
@@ -2755,7 +3049,8 @@ exports.updatePrefrences = async (req, res) => {
     }
 
     /* ------------------------------------------------
-       3️⃣ Validate FINAL state (important)
+       3️⃣ Validate ONLY ride-type preferences
+       (❌ char_dham not involved)
     ------------------------------------------------ */
     const hasAtLeastOneEnabled = allowedKeys.some(
       (key) => finalPreferences[key] === true
@@ -2769,11 +3064,15 @@ exports.updatePrefrences = async (req, res) => {
     }
 
     /* ------------------------------------------------
-       4️⃣ Save only allowed preferences
+       4️⃣ Save preferences
     ------------------------------------------------ */
+    // save allowed ride types
     allowedKeys.forEach((key) => {
       driver.preferences[key] = finalPreferences[key];
     });
+
+    // ✅ always save char_dham separately
+    driver.preferences.char_dham = finalPreferences.char_dham;
 
     await driver.save();
 
@@ -2815,6 +3114,7 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
 
     const vehicle = driver.current_vehicle_id;
     const category = (vehicle.vehicle_type || "").toUpperCase();
+
     if (!category) {
       return res.status(400).json({
         success: false,
@@ -2829,13 +3129,15 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
       accept_mini_rides: driver.preferences?.accept_mini_rides ?? false,
       accept_sedan_rides: driver.preferences?.accept_sedan_rides ?? false,
       accept_suv_rides: driver.preferences?.accept_suv_rides ?? false,
+
+      // ✅ NEW: Char Dham (always allowed)
+      char_dham: driver.preferences?.char_dham ?? false,
     };
 
     const updatedFields = {};
 
-    // 3️⃣ Apply rules per vehicle category
+    // 3️⃣ Vehicle category rules
     if (category === "MINI") {
-      // MINI → only accept_mini_rides
       if (!preferences.accept_mini_rides) {
         preferences.accept_mini_rides = true;
         updatedFields["preferences.accept_mini_rides"] = true;
@@ -2843,33 +3145,32 @@ exports.getPreferencesViaVehicleCategory = async (req, res) => {
       preferences.accept_sedan_rides = false;
       preferences.accept_suv_rides = false;
     } else if (category === "SEDAN") {
-      // SEDAN → accept_mini_rides and accept_sedan_rides
       if (!preferences.accept_sedan_rides) {
         preferences.accept_sedan_rides = true;
         preferences.accept_mini_rides = true;
-
         updatedFields["preferences.accept_sedan_rides"] = true;
       }
-      // MINI stays as driver saved (could be on/off)
       preferences.accept_suv_rides = false;
     } else if (category === "SUV") {
-      // SUV → accept_mini_rides + accept_sedan_rides + accept_suv_rides
       if (!preferences.accept_suv_rides) {
         preferences.accept_suv_rides = true;
         updatedFields["preferences.accept_suv_rides"] = true;
       }
-      // MINI & SEDAN stay as driver saved
-    } else {
-      // OTHER → all allowed, do not force ON
     }
 
-    // 4️⃣ Save auto-corrected preferences
+    // 4️⃣ ✅ FORCE ENABLE CHAR DHAM FOR ALL DRIVERS
+    if (!preferences.char_dham) {
+      preferences.char_dham = true;
+      updatedFields["preferences.char_dham"] = true;
+    }
+
+    // 5️⃣ Save auto-corrected preferences
     if (Object.keys(updatedFields).length > 0) {
       console.log("🔁 Auto-correcting preferences:", updatedFields);
       await Driver.updateOne({ _id: driver._id }, { $set: updatedFields });
     }
 
-    // 5️⃣ Response
+    // 6️⃣ Response
     return res.status(200).json({
       success: true,
       message: "Preferences loaded successfully",

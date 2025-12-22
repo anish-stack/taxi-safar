@@ -20,9 +20,7 @@ import {
   IndianRupee,
   X,
   Clock,
-  Calendar,
   Filter,
-  TrendingUp,
   TrendingDown,
 } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -96,23 +94,11 @@ const WalletScreen = () => {
 
   useEffect(() => {
     fetchWallet();
-  }, [token,navigation]);
+  }, [token, navigation]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchWallet(true);
-  };
-
-  const handleWithdraw = () => {
-    if (!wallet || wallet.availableBalance < 100) {
-      showAlert(
-        "warning",
-        "Cannot Withdraw",
-        "Minimum withdrawal is ₹100 and must be available (not locked)"
-      );
-      return;
-    }
-    navigation.navigate("WithdrawScreen");
   };
 
   const openTransactionDetails = (transaction) => {
@@ -158,12 +144,17 @@ const WalletScreen = () => {
 
   const totalLocked = wallet?.totalLocked || 0;
   const availableBalance = wallet?.balance || 0;
-  const totalEarnings = wallet?.totalEarnings || 0;
   const totalWithdrawals = wallet?.totalWithdrawals || 0;
   const pendingSettlement = wallet?.pendingSettlement || 0;
 
   return (
-    <Layout showHeader={true} title="My Wallet">
+    <Layout
+      scrollable={true}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      showHeader={true}
+      title="My Wallet"
+    >
       <SafeAreaView style={styles.container}>
         <FlatList
           data={filteredTransactions}
@@ -189,21 +180,20 @@ const WalletScreen = () => {
                 </Text>
 
                 <View style={styles.balanceBreakdown}>
-                   <View style={styles.breakdownItem}>
+                  <View style={styles.breakdownItem}>
+                    <Lock size={20} color="#F59E0B" />
+                    <Text style={styles.breakdownLabel}>Hold Balance</Text>
+                    <Text style={styles.breakdownValue}>
+                      ₹{totalLocked.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.breakdownItem}>
                     <IndianRupee size={20} color="#10B981" />
                     <Text style={styles.breakdownLabel}>Total Balance</Text>
                     <Text style={[styles.breakdownValue, styles.availableText]}>
                       ₹{availableBalance.toLocaleString()}
                     </Text>
                   </View>
-                  <View style={styles.breakdownItem}>
-                    <Lock size={20} color="#F59E0B" />
-                    <Text style={styles.breakdownLabel}>Locked</Text>
-                    <Text style={styles.breakdownValue}>
-                      ₹{totalLocked.toLocaleString()}
-                    </Text>
-                  </View>
-                 
                 </View>
               </View>
 
@@ -264,26 +254,26 @@ const WalletScreen = () => {
 
               {/* Action Buttons */}
               <View style={styles.actionRow}>
-            
                 <TouchableOpacity
                   style={[
                     styles.actionButton,
                     availableBalance < 100 && styles.disabledButton,
                   ]}
-                  onPress={handleWithdraw}
+                  onPress={() => navigation.navigate("withdraw",{
+                    availableBalance: availableBalance
+                  })}
                   disabled={availableBalance < 100}
                 >
                   <IndianRupee size={24} color="#6366F1" />
                   <Text style={styles.actionText}>Withdraw</Text>
                 </TouchableOpacity>
-                    <TouchableOpacity
+                <TouchableOpacity
                   style={styles.actionButton}
                   onPress={() => navigation.navigate("recharge")}
                 >
                   <Plus size={24} color="#000" />
                   <Text style={styles.actionText}>Add Money</Text>
                 </TouchableOpacity>
-
               </View>
 
               {/* Transactions Header with Filter */}
@@ -548,7 +538,7 @@ const WalletScreen = () => {
 export default WalletScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB",paddingBottom:50, },
+  container: { flex: 1, backgroundColor: "#F9FAFB", paddingBottom: 150 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: "#6B7280" },
 

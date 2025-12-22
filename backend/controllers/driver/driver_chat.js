@@ -11,8 +11,8 @@ exports.foundChatInitialized = async (req, res) => {
       ],
     })
       .populate("ride_post_id")
-      .populate("init_driver_id", "driver_name profile_image")
-      .populate("other_driver_id", "driver_name profile_image")
+      .populate("init_driver_id", "driver_name profile_photo")
+      .populate("other_driver_id", "driver_name profile_photo")
       .sort({ lastMessageAt: -1 });
 
     // Add role flags + full ride data

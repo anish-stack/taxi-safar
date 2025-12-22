@@ -10,11 +10,11 @@ import {
   FlatList,
   Modal,
   ScrollView,
-  Animated,
   Alert,
   Pressable,
-  PanResponder,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -24,9 +24,8 @@ import {
   ChevronLeft,
   Search,
   Filter,
-  Plus,
-  MessageCircle,
   X,
+  MapPin,
 } from "lucide-react-native";
 
 import DriverPostCard from "./DriverPostCard";
@@ -37,9 +36,34 @@ import loginStore from "../../store/auth.store";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const SLIDER_WIDTH = SCREEN_WIDTH - 80; // padding 40 each side
 const MAX_PRICE = 100000;
 const MIN_PRICE = 0;
+
+const POPULAR_CITIES = [
+  "Delhi",
+  "Bangalore",
+  "Mumbai",
+  "Pune",
+  "Hyderabad",
+  "Chennai",
+  "Kolkata",
+  "Jaipur",
+  "Ahmedabad",
+  "Lucknow",
+  "Gurgaon",
+  "Noida",
+  "Chandigarh",
+  "Indore",
+];
+
+const isFutureRideIST = (pickupDate, pickupTime) => {
+  if (!pickupDate || !pickupTime) return false;
+  const dateObj = new Date(pickupDate);
+  const [hours, minutes] = pickupTime.split(":").map(Number);
+  dateObj.setHours(hours, minutes, 0, 0);
+  const now = new Date();
+  return dateObj.getTime() > now.getTime();
+};
 
 export default function ReserveScreen({ route }) {
   const { filter } = route.params || {};
@@ -56,81 +80,27 @@ export default function ReserveScreen({ route }) {
   const { token } = loginStore();
   const navigation = useNavigation();
 
+  // Location States
+  const [showFromDropdown, setShowFromDropdown] = useState(false);
+  const [showToDropdown, setShowToDropdown] = useState(false);
+
   const [filters, setFilters] = useState({
     tripType: "all",
-    priceRange: [100, 100000],
-    sortBy: "",
+    fromCity: "",
+    toCity: "",
+    sortBy: "newest",
   });
 
   const [tempFilters, setTempFilters] = useState(filters);
 
   const tabs = ["All Trip", "B2B Bookings", "B2C Bookings"];
+  const LIMIT_PER_PAGE = 10;
 
-  // === Custom Range Slider Logic ===
-  const minThumbRef = useRef(new Animated.Value(0)).current;
-  const maxThumbRef = useRef(new Animated.Value(SLIDER_WIDTH)).current;
-
-  const updateSliderPositions = () => {
-    const [min, max] = tempFilters.priceRange;
-    const minX = (min / MAX_PRICE) * SLIDER_WIDTH;
-    const maxX = (max / MAX_PRICE) * SLIDER_WIDTH;
-    minThumbRef.setValue(minX);
-    maxThumbRef.setValue(maxX);
-  };
-
-  useEffect(() => {
-    if (filterVisible) updateSliderPositions();
-  }, [tempFilters.priceRange, filterVisible]);
-
-  const minPanResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderMove: (_, gesture) => {
-      let newX = gesture.moveX - 40;
-      newX = Math.max(
-        0,
-        Math.min(
-          newX,
-          SLIDER_WIDTH * (tempFilters.priceRange[1] / MAX_PRICE) - 20
-        )
-      );
-      const newMin =
-        Math.round(((newX / SLIDER_WIDTH) * MAX_PRICE) / 1000) * 1000;
-      if (newMin <= tempFilters.priceRange[1]) {
-        setTempFilters((prev) => ({
-          ...prev,
-          priceRange: [newMin, prev.priceRange[1]],
-        }));
-      }
-    },
-  });
-
-  const maxPanResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderMove: (_, gesture) => {
-      let newX = gesture.moveX - 40;
-      newX = Math.min(
-        SLIDER_WIDTH,
-        Math.max(
-          newX,
-          SLIDER_WIDTH * (tempFilters.priceRange[0] / MAX_PRICE) + 20
-        )
-      );
-      const newMax =
-        Math.round(((newX / SLIDER_WIDTH) * MAX_PRICE) / 1000) * 1000;
-      if (newMax >= tempFilters.priceRange[0]) {
-        setTempFilters((prev) => ({
-          ...prev,
-          priceRange: [prev.priceRange[0], newMax],
-        }));
-      }
-    },
-  });
-
-  // === API & Data Loading (unchanged) ===
+  // === API & Data Loading ===
   const fetchTaxiSafarTrips = async (pageNum = 1) => {
     return await fetchWithRetry(async () => {
       const response = await fetch(
-        `${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${pageNum}&limit=10`,
+        `${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -141,11 +111,23 @@ export default function ReserveScreen({ route }) {
   const fetchDriverPosts = async (pageNum = 1) => {
     return await fetchWithRetry(async () => {
       const response = await fetch(
-        `${API_URL_APP}/api/v1/fetch-nearby-rides?page=${pageNum}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${API_URL_APP}/api/v1/fetch-nearby-rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
+
       const data = await response.json();
-      return data.success ? data.data || [] : [];
+
+      if (!data.success || !Array.isArray(data.data)) {
+        return [];
+      }
+
+      const futureRides = data.data.filter((item) =>
+        isFutureRideIST(item.pickupDate, item.pickupTime)
+      );
+
+      return futureRides;
     });
   };
 
@@ -172,7 +154,7 @@ export default function ReserveScreen({ route }) {
         setTaxiSafarTrips(trips);
       }
 
-      setHasMoreData(posts.length === 10 || trips.length === 10);
+      setHasMoreData(posts.length === LIMIT_PER_PAGE || trips.length === LIMIT_PER_PAGE);
     } catch (error) {
       Alert.alert("Error", "Failed to load data");
     } finally {
@@ -191,8 +173,9 @@ export default function ReserveScreen({ route }) {
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMoreData && !loading) {
-      setPage((prev) => prev + 1);
-      loadData(page + 1, true);
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadData(nextPage, true);
     }
   }, [loadingMore, hasMoreData, loading, page, activeTab]);
 
@@ -251,14 +234,31 @@ export default function ReserveScreen({ route }) {
       });
     }
 
-    // Price Filter
-    const [minP, maxP] = filters.priceRange;
-    data = data.filter((item) => {
-      const price = parseFloat(
-        item.original_amount || item.totalAmount || item.driverEarning || 0
-      );
-      return price >= minP && price <= maxP;
-    });
+    // From City Filter
+    if (filters.fromCity.trim()) {
+      const query = filters.fromCity.toLowerCase();
+      data = data.filter((item) => {
+        const from = (
+          item.pickup_address ||
+          item.pickupAddress ||
+          ""
+        ).toLowerCase();
+        return from.includes(query);
+      });
+    }
+
+    // To City Filter
+    if (filters.toCity.trim()) {
+      const query = filters.toCity.toLowerCase();
+      data = data.filter((item) => {
+        const to = (
+          item.destination_address ||
+          item.dropAddress ||
+          ""
+        ).toLowerCase();
+        return to.includes(query);
+      });
+    }
 
     // Sorting
     data.sort((a, b) => {
@@ -298,13 +298,28 @@ export default function ReserveScreen({ route }) {
     );
   };
 
-  const renderFooter = () =>
-    loadingMore ? (
-      <View style={styles.loadingMore}>
-        <ActivityIndicator size="small" color="#DC2626" />
-        <Text style={styles.loadingMoreText}>Loading more...</Text>
-      </View>
-    ) : null;
+  const renderFooter = () => {
+    if (loadingMore) {
+      return (
+        <View style={styles.loadingMore}>
+          <ActivityIndicator size="small" color="#DC2626" />
+          <Text style={styles.loadingMoreText}>Loading more...</Text>
+        </View>
+      );
+    }
+    if (hasMoreData && filteredData.length > 0) {
+      return (
+        <TouchableOpacity
+          style={styles.loadMoreButton}
+          onPress={loadMore}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.loadMoreText}>Load More Trips</Text>
+        </TouchableOpacity>
+      );
+    }
+    return null;
+  };
 
   if (loading && filteredData.length === 0) {
     return (
@@ -329,26 +344,6 @@ export default function ReserveScreen({ route }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reserved Trip</Text>
         <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={() => navigation.navigate("chat")}
-        >
-          <MessageCircle size={24} color="#000" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search & Filter */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputWrapper}>
-          <Search size={20} color="#999" style={{ marginRight: 12 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by area"
-            placeholderTextColor="#999"
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-        </View>
-        <TouchableOpacity
           style={styles.filterButton}
           onPress={() => {
             setTempFilters(filters);
@@ -358,6 +353,25 @@ export default function ReserveScreen({ route }) {
           <Filter size={20} color="#000" />
         </TouchableOpacity>
       </View>
+
+
+      {/* Active Filters Display */}
+      {(filters.fromCity || filters.toCity) && (
+        <View style={styles.activeFiltersContainer}>
+          {filters.fromCity && (
+            <View style={styles.filterTag}>
+              <MapPin size={14} color="#FFF" />
+              <Text style={styles.filterTagText}>From: {filters.fromCity}</Text>
+            </View>
+          )}
+          {filters.toCity && (
+            <View style={styles.filterTag}>
+              <MapPin size={14} color="#FFF" />
+              <Text style={styles.filterTagText}>To: {filters.toCity}</Text>
+            </View>
+          )}
+        </View>
+      )}
 
       <TabSelector
         activeTab={activeTab}
@@ -376,8 +390,6 @@ export default function ReserveScreen({ route }) {
             colors={["#DC2626"]}
           />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.3}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -391,196 +403,163 @@ export default function ReserveScreen({ route }) {
         contentContainerStyle={styles.listContent}
       />
 
-   
-
       {/* Filter Modal */}
       <Modal visible={filterVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.filterModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filters</Text>
-              <TouchableOpacity onPress={() => setFilterVisible(false)}>
-                <X size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.keyboardAvoidingContainer}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.filterModal}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Filters</Text>
+                <TouchableOpacity onPress={() => setFilterVisible(false)}>
+                  <X size={24} color="#000" />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Trip Type */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  borderWidth: 1,
-                  borderColor: "#ddd",
-                  marginHorizontal:12,
-                  borderRadius: 22,
-                  marginTop:13,
-                  paddingHorizontal: 12,
-                  height: 48,
-                  backgroundColor: "#fff",
-                }}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={styles.scrollContent}
               >
-                <Search size={20} color="#999" />
+                {/* Location Section */}
+                <View style={styles.locationSection}>
+                  <Text style={styles.sectionTitle}>📍 Travel Route</Text>
 
-                <TextInput
-                  style={{
-                    flex: 1,
-                    marginLeft: 10,
-                    fontSize: 14,
-                    
-                    color: "#111",
-                    paddingVertical: 0, // important for Android
+                  {/* From City */}
+                  <View style={styles.locationInputContainer}>
+                    <Text style={styles.locationLabel}>From City</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter departure city"
+                      placeholderTextColor="#999"
+                      value={tempFilters.fromCity}
+                      onChangeText={(text) =>
+                        setTempFilters({ ...tempFilters, fromCity: text })
+                      }
+                    />
+                  </View>
+
+                  {/* To City */}
+                  <View style={styles.locationInputContainer}>
+                    <Text style={styles.locationLabel}>To City</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter destination city"
+                      placeholderTextColor="#999"
+                      value={tempFilters.toCity}
+                      onChangeText={(text) =>
+                        setTempFilters({ ...tempFilters, toCity: text })
+                      }
+                    />
+                  </View>
+                </View>
+
+                {/* Trip Type */}
+                <View style={styles.filterSection}>
+                  <Text style={styles.sectionTitle}>🛣️ Trip Type</Text>
+                  <View style={styles.chipContainer}>
+                    {["all", "oneWay", "roundTrip"].map((type) => (
+                      <Pressable
+                        key={type}
+                        style={[
+                          styles.chip,
+                          tempFilters.tripType === type && styles.chipActive,
+                        ]}
+                        onPress={() =>
+                          setTempFilters({
+                            ...tempFilters,
+                            tripType: type,
+                          })
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            tempFilters.tripType === type &&
+                              styles.chipTextActive,
+                          ]}
+                        >
+                          {type === "all"
+                            ? "All"
+                            : type === "oneWay"
+                            ? "One Way"
+                            : "Round Trip"}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Sort By */}
+                <View style={styles.filterSection}>
+                  <Text style={styles.sectionTitle}>⬇️ Sort By</Text>
+                  <View style={styles.chipContainer}>
+                    {["newest", "priceLow", "priceHigh"].map((sort) => (
+                      <Pressable
+                        key={sort}
+                        style={[
+                          styles.chip,
+                          tempFilters.sortBy === sort && styles.chipActive,
+                        ]}
+                        onPress={() =>
+                          setTempFilters({
+                            ...tempFilters,
+                            sortBy: sort,
+                          })
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            tempFilters.sortBy === sort &&
+                              styles.chipTextActive,
+                          ]}
+                        >
+                          {sort === "newest"
+                            ? "Newest First"
+                            : sort === "priceLow"
+                            ? "Price: Low → High"
+                            : "Price: High → Low"}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </ScrollView>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.resetBtn}
+                  onPress={() => {
+                    setTempFilters({
+                      tripType: "all",
+                      fromCity: "",
+                      toCity: "",
+                      sortBy: "newest",
+                    });
                   }}
-                  placeholder="Search by area"
-                  placeholderTextColor="#999"
-                  value={searchText}
-                  onChangeText={setSearchText}
-                />
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resetText}>Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={() => {
+                    setFilters(tempFilters);
+                    setFilterVisible(false);
+                    setPage(1);
+                    loadData(1, false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.applyText}>Apply Filters</Text>
+                </TouchableOpacity>
               </View>
-
-              <Text style={styles.filterLabel}>Trip Type</Text>
-              <View style={styles.chipContainer}>
-                {["all", "oneWay", "roundTrip"].map((type) => (
-                  <Pressable
-                    key={type}
-                    style={[
-                      styles.chip,
-                      tempFilters.tripType === type && styles.chipActive,
-                    ]}
-                    onPress={() =>
-                      setTempFilters({ ...tempFilters, tripType: type })
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        tempFilters.tripType === type && styles.chipTextActive,
-                      ]}
-                    >
-                      {type === "all"
-                        ? "All"
-                        : type === "oneWay"
-                        ? "One Way"
-                        : "Round Trip"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {/* Sort By */}
-              <Text style={styles.filterLabel}>Sort By</Text>
-              <View style={styles.chipContainer}>
-                {["newest", "priceLow", "priceHigh"].map((sort) => (
-                  <Pressable
-                    key={sort}
-                    style={[
-                      styles.chip,
-                      tempFilters.sortBy === sort && styles.chipActive,
-                    ]}
-                    onPress={() =>
-                      setTempFilters({ ...tempFilters, sortBy: sort })
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        tempFilters.sortBy === sort && styles.chipTextActive,
-                      ]}
-                    >
-                      {sort === "newest"
-                        ? "Newest First"
-                        : sort === "priceLow"
-                        ? "Price: Low → High"
-                        : "Price: High → Low"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {/* Price Range */}
-              <Text style={styles.filterLabel}>Price Range</Text>
-              <View style={styles.priceDisplay}>
-                <Text style={styles.priceText}>
-                  ₹{tempFilters.priceRange[0].toLocaleString()}
-                </Text>
-                <Text style={styles.priceText}>
-                  ₹{tempFilters.priceRange[1].toLocaleString()}
-                </Text>
-              </View>
-
-              <View style={styles.sliderContainer}>
-                <View style={styles.track} />
-                <View
-                  style={[
-                    styles.activeTrack,
-                    {
-                      left:
-                        (tempFilters.priceRange[0] / MAX_PRICE) * SLIDER_WIDTH,
-                      width:
-                        ((tempFilters.priceRange[1] -
-                          tempFilters.priceRange[0]) /
-                          MAX_PRICE) *
-                        SLIDER_WIDTH,
-                    },
-                  ]}
-                />
-
-                {/* Min Thumb */}
-                <View
-                  {...minPanResponder.panHandlers}
-                  style={[
-                    styles.thumb,
-                    {
-                      left:
-                        (tempFilters.priceRange[0] / MAX_PRICE) * SLIDER_WIDTH -
-                        12,
-                    },
-                  ]}
-                />
-
-                {/* Max Thumb */}
-                <View
-                  {...maxPanResponder.panHandlers}
-                  style={[
-                    styles.thumb,
-                    {
-                      left:
-                        (tempFilters.priceRange[1] / MAX_PRICE) * SLIDER_WIDTH -
-                        12,
-                    },
-                  ]}
-                />
-              </View>
-            </ScrollView>
-
-            {/* Action Buttons */}
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.resetBtn}
-                onPress={() => {
-                  setTempFilters({
-                    tripType: "all",
-                    priceRange: [0, 100000],
-                    sortBy: "newest",
-                  });
-                }}
-              >
-                <Text style={styles.resetText}>Reset</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.applyBtn}
-                onPress={() => {
-                  setFilters(tempFilters);
-                  setFilterVisible(false);
-                  setPage(1);
-                  loadData(1, false);
-                }}
-              >
-                <Text style={styles.applyText}>Apply Filters</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -595,35 +574,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
   },
-  headerTitle: { fontSize: 18, fontWeight: "600", color: "#000" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#000" },
+
   searchContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "#F5F5F5",
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FFF",
+    gap: 10,
   },
   searchInputWrapper: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFF",
+    backgroundColor: "#F5F5F5",
     borderRadius: 25,
     paddingHorizontal: 16,
-    height: 50,
+    height: 48,
   },
   searchInput: { flex: 1, fontSize: 16, color: "#000" },
   filterButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#FFF",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#F5F5F5",
     justifyContent: "center",
     alignItems: "center",
   },
-  listContent: { paddingHorizontal: 4, paddingBottom: 100 },
+
+  activeFiltersContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  filterTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DC2626",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  filterTagText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  listContent: { paddingHorizontal: 8, paddingBottom: 20 },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -637,6 +644,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptySubtext: { fontSize: 14, color: "#666" },
+
   loadingMore: {
     flexDirection: "row",
     justifyContent: "center",
@@ -645,24 +653,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingMoreText: { fontSize: 14, color: "#666" },
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginVertical: 20,
+    paddingVertical: 14,
+    backgroundColor: "#DC2626",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadMoreText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+
   centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: "#666" },
-  addButton: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#000",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 
   // Modal
   modalOverlay: {
@@ -672,79 +679,86 @@ const styles = StyleSheet.create({
   },
   filterModal: {
     backgroundColor: "#FFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: "90%",
     paddingBottom: verticalScale(40),
+  },
+  keyboardAvoidingContainer: {
+    flex: 1,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderBottomWidth: 1,
-    borderColor: "#EEE",
+    borderBottomColor: "#E0E0E0",
   },
-  modalTitle: { fontSize: 18, fontWeight: "600" },
-  filterLabel: {
+  modalTitle: { fontSize: 20, fontWeight: "700", color: "#000" },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+
+  sectionTitle: {
     fontSize: 16,
+    fontWeight: "700",
+    color: "#000",
+    marginBottom: 12,
+  },
+
+  locationSection: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  locationInputContainer: {
+    marginBottom: 14,
+  },
+  locationLabel: {
+    fontSize: 13,
     fontWeight: "600",
-    marginLeft: 20,
-    marginTop: 10,
-    marginBottom: 10,
+    color: "#333",
+    marginBottom: 8,
+  },
+  dropdownWrapper: {
+    position: "relative",
+    zIndex: 10,
+  },
+  textInput: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 14,
+    color: "#000",
+  },
+
+  filterSection: {
+    paddingHorizontal: 20,
+    marginTop: 20,
   },
   chipContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: 20,
-    gap: 10,
+    gap: 8,
   },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     backgroundColor: "#F1F1F1",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
   },
-  chipActive: { backgroundColor: "#000" },
-  chipText: { color: "#666", fontSize: 14 },
-  chipTextActive: { color: "#FFF", fontWeight: "600" },
-
-  priceDisplay: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 40,
-    marginBottom: 10,
-  },
-  priceText: { fontSize: 16, fontWeight: "600", color: "#000" },
-
-  sliderContainer: {
-    height: 50,
-    justifyContent: "center",
-    paddingHorizontal: 40,
-    position: "relative",
-  },
-  track: {
-    height: 6,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 3,
-    width: "100%",
-  },
-  activeTrack: {
-    height: 6,
+  chipActive: {
     backgroundColor: "#000",
-    borderRadius: 3,
-    position: "absolute",
-  },
-  thumb: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#FFF",
-    borderWidth: 3,
     borderColor: "#000",
-    position: "absolute",
-    top: 11,
   },
+  chipText: { color: "#666", fontSize: 13, fontWeight: "500" },
+  chipTextActive: { color: "#FFF", fontWeight: "600" },
 
   modalActions: {
     flexDirection: "row",
@@ -759,13 +773,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     alignItems: "center",
   },
-  resetText: { fontSize: 16, color: "#666", fontWeight: "600" },
+  resetText: { fontSize: 14, color: "#666", fontWeight: "600" },
   applyBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: "#000",
+    backgroundColor: "#DC2626",
     alignItems: "center",
   },
-  applyText: { fontSize: 16, color: "#FFF", fontWeight: "600" },
+  applyText: { fontSize: 14, color: "#FFF", fontWeight: "700" },
 });

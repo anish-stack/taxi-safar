@@ -94,6 +94,10 @@ import AllCategories from "./screens/AllCategories/AllCategories";
 import AllVehicles from "./screens/pages/AllVehicles";
 import Preferences from "./screens/pages/Preferences";
 import useSettings from "./hooks/Settings";
+import Earnings from "./screens/pages/Earnings";
+import Withdraw from "./screens/pages/Withdraw";
+import ErrorBoundary from "./ErrorBoundary";
+import Notifications from "./screens/Notifications";
 
 const Stack = createNativeStackNavigator();
 
@@ -132,7 +136,7 @@ const UpdateLoadingScreen = ({ message = "Updating app..." }) => (
 );
 
 export default function App() {
-  const { token } = loginStore();
+  const { token ,setToken, logout } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
 
   // Fetch settings
@@ -318,6 +322,7 @@ export default function App() {
     }
   };
 
+ 
   /**
    * Initialize notifications and fetch driver details
    */
@@ -579,6 +584,7 @@ export default function App() {
         await initializeNotifications(token);
         setupNotificationRefresh(token);
       } else if (!token && isLocationTrackingActiveRef.current) {
+        logout()
         console.log("🔑 Token removed, stopping services...");
         await stopLocationTracking();
 
@@ -605,6 +611,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <NavigationContainer>
       <View style={{ flex: 1 }}>
         {Platform.OS === "android" && (
@@ -710,10 +717,18 @@ export default function App() {
           {/* Vehicles */}
           <Stack.Screen name="all-vehicle" component={AllVehicles} />
 
-          {/* Insurance */}
           <Stack.Screen name="Insurance" component={InsurnaceIntro} />
+
+          {/* Insurance */}
+          <Stack.Screen name="earnings" component={Earnings} />
+          <Stack.Screen name="withdraw" component={Withdraw} />
+
+          {/*  */}
           <Stack.Screen name="CreateInsurance" component={ApplyForInsurance} />
           <Stack.Screen name="AllInsurance" component={AllInsurance} />
+
+          <Stack.Screen name="notification" component={Notifications} />
+
 
           {/* Others */}
           <Stack.Screen name="BuySellTaxi" component={BuySellTaxi} />
@@ -722,6 +737,7 @@ export default function App() {
         </Stack.Navigator>
       </View>
     </NavigationContainer>
+    </ErrorBoundary>
   );
 }
 

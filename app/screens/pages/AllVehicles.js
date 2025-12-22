@@ -156,7 +156,7 @@ export default function AllVehicles({ navigation }) {
 
         <View style={styles.vehicleInfo}>
           <Text style={styles.vehicleNumber}>{item.vehicle_number}</Text>
-          <Text style={styles.vehicleName}>{item.vehicle_name}</Text>
+          {/* <Text style={styles.vehicleName}>{item.vehicle_name}</Text> */}
 
           <View style={styles.detailsRow}>
             <View style={styles.detailItem}>
@@ -296,20 +296,20 @@ export default function AllVehicles({ navigation }) {
                     label="Vehicle Number"
                     value={selectedVehicle.vehicle_number}
                   />
-                  <DetailRow label="Vehicle Name" value={selectedVehicle.vehicle_name} />
+                  {/* <DetailRow label="Vehicle Name" value={selectedVehicle.vehicle_name} />
                   <DetailRow label="Vehicle Type" value={selectedVehicle.vehicle_type} />
                   <DetailRow label="Fuel Type" value={selectedVehicle.fuel_type} />
                   <DetailRow label="Brand" value={selectedVehicle.vehicle_brand} />
                   <DetailRow
                     label="Seating Capacity"
                     value={selectedVehicle.seating_capacity}
-                  />
+                  /> */}
                 </View>
 
                 {/* Insurance Details Section */}
                 <View style={styles.modalSection}>
                   <Text style={styles.sectionTitle}>Insurance Details</Text>
-                  <DetailRow
+                  {/* <DetailRow
                     label="Insurance Expiry"
                     value={
                       selectedVehicle.insurance?.expiry_date
@@ -318,7 +318,7 @@ export default function AllVehicles({ navigation }) {
                           ).toLocaleDateString()
                         : "N/A"
                     }
-                  />
+                  /> */}
                   <DetailRow
                     label="Insurance Verified"
                     value={selectedVehicle.insurance?.verified ? "Yes" : "No"}

@@ -5,7 +5,7 @@ const vehicleSchema = new mongoose.Schema(
     driver_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
-      required: true,
+      required: false,
       index: true,
     },
 
@@ -18,7 +18,7 @@ const vehicleSchema = new mongoose.Schema(
     vehicle_ownership: {
       type: String,
       enum: ["owner", "driver"],
-      required: true,
+      required: false,
       default: "owner",
     },
 
@@ -26,26 +26,26 @@ const vehicleSchema = new mongoose.Schema(
     vehicle_type: {
       type: String,
       enum: ["mini", "sedan", "suv", "premium", "auto"],
-      required: true,
+      required: false,
       lowercase: true,
       index: true,
     },
 
     vehicle_brand: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
 
     vehicle_name: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
 
     vehicle_number: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
       uppercase: true,
       trim: true,
@@ -138,6 +138,7 @@ const vehicleSchema = new mongoose.Schema(
         type: String,
         trim: true,
       },
+      relation: { type: String },
       father_name: {
         type: String,
         trim: true,
@@ -214,6 +215,15 @@ const vehicleSchema = new mongoose.Schema(
         public_id: { type: String, trim: true },
         url: { type: String, trim: true },
       },
+      legal_doc: {
+        url: { type: String },
+        public_id: { type: String },
+      },
+    },
+
+    legal_doc: {
+      url: { type: String },
+      public_id: { type: String },
     },
 
     // Insurance details
@@ -229,7 +239,7 @@ const vehicleSchema = new mongoose.Schema(
       expiry_date: {
         type: Date,
         default: new Date(),
-        // required: true,
+        // required: false,
         index: true,
       },
       verified: {
@@ -271,7 +281,7 @@ const vehicleSchema = new mongoose.Schema(
       },
       expiry_date: {
         type: Date,
-        required: true,
+        required: false,
         index: true,
       },
       verified: {

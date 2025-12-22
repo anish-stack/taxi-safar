@@ -9,6 +9,7 @@ import {
   FlatList,
   Alert,
   Dimensions,
+  AppState,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import logo from "../../assets/taxisafar-logo.png";
@@ -20,7 +21,7 @@ import { useNavigation } from "@react-navigation/native";
 
 import { FloatingWidgetService } from "../../services/NativeModules";
 
-const KM = [5, 10, 15, 20, 25, 30];
+const KM = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // Responsive breakpoints
@@ -52,107 +53,158 @@ export default function Header({
   const [modalVisible, setModalVisible] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
-  // Refs to track service calls
+  // Refs to track service calls and prevent race conditions
   const isTogglingRef = useRef(false);
+  const servicesStateRef = useRef({
+    floatingWidget: false,
+    poolingService: false,
+  });
+  const appState = useRef(AppState.currentState);
 
-  // Sync UI with store
+  // Sync UI with store - SINGLE SOURCE OF TRUTH
   useEffect(() => {
+    console.log("📊 Store is_online changed:", is_online);
     setLocalStatus(!!is_online);
     if (currentRadius) setRadius(currentRadius);
   }, [is_online, currentRadius]);
 
+  // Monitor app state changes
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      
+      // When app comes to foreground, sync floating widget with online status
+      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+        syncFloatingWidget();
+      }
+      
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  // Sync floating widget with current online status
+  const syncFloatingWidget = async () => {
+    try {
+      const currentOnlineStatus = useDriverStore.getState().is_online;
+      
+      if (currentOnlineStatus && !servicesStateRef.current.floatingWidget) {
+        await startFloatingWidget?.();
+        servicesStateRef.current.floatingWidget = true;
+      } else if (!currentOnlineStatus && servicesStateRef.current.floatingWidget) {
+        await stopFloatingWidget?.();
+        servicesStateRef.current.floatingWidget = false;
+      }
+    } catch (error) {
+      console.error("❌ Sync error:", error);
+    }
+  };
 
   // Handle Online/Offline toggle
   const handleToggle = async () => {
-    // Prevent multiple simultaneous toggles
+    // CRITICAL: Prevent multiple simultaneous toggles
     if (isToggling || isTogglingRef.current) {
-      console.log("⏸️ Toggle already in progress, ignoring");
       return;
     }
 
+    // Lock toggle immediately
     isTogglingRef.current = true;
     setIsToggling(true);
-    
+
     const newStatus = !localStatus;
     const previousStatus = localStatus;
 
 
-    // Optimistically update UI
-    setLocalStatus(newStatus);
-
     try {
       if (newStatus) {
-        // Going ONLINE
-        console.log("🟢 Going ONLINE");
-        
-        // Update store first
-        toggle(newStatus);
-        
-        // Start services with error handling
-        try {
-          if (startFloatingWidget) {
-            console.log("🎯 Starting floating widget...");
+        // ========== GOING ONLINE ==========
+
+        // Step 1: Update store FIRST
+        toggle(true);
+        setLocalStatus(true);
+
+        // Step 2: Start Floating Widget
+        if (startFloatingWidget && !servicesStateRef.current.floatingWidget) {
+          try {
             await startFloatingWidget();
-            console.log("✅ Floating widget started");
+            servicesStateRef.current.floatingWidget = true;
+          } catch (widgetError) {
+            console.error("❌ Floating widget start failed:", widgetError);
+            // Don't throw, continue with pooling
           }
-        } catch (widgetError) {
-          console.error("❌ Floating widget error:", widgetError);
-          // Continue even if widget fails
         }
 
-        try {
-          if (startPoolingService) {
-            console.log("🚀 Starting pooling service...");
+        // Step 3: Start Pooling Service
+        if (startPoolingService && !servicesStateRef.current.poolingService) {
+          try {
             await startPoolingService();
-            console.log("✅ Pooling service started");
+            servicesStateRef.current.poolingService = true;
+          } catch (poolingError) {
+            console.error("❌ Pooling service start failed:", poolingError);
           }
-        } catch (poolingError) {
-          console.error("❌ Pooling service error:", poolingError);
-          // Continue even if pooling fails
         }
 
       } else {
-        // Going OFFLINE
-        console.log("🔴 Going OFFLINE");
-        
-        // Stop services first with error handling
-        try {
-          if (stopPoolingService) {
+      
+        // Step 1: Stop Pooling Service FIRST
+        if (stopPoolingService && servicesStateRef.current.poolingService) {
+          try {
             console.log("🛑 Stopping pooling service...");
             await stopPoolingService();
-            console.log("✅ Pooling service stopped");
+            servicesStateRef.current.poolingService = false;
+            console.log("✅ Pooling service stopped successfully");
+          } catch (poolingError) {
+            console.error("❌ Pooling service stop failed:", poolingError);
           }
-        } catch (poolingError) {
-          console.error("❌ Error stopping pooling:", poolingError);
-          // Continue even if pooling stop fails
         }
 
-        try {
-          if (stopFloatingWidget) {
+        // Step 2: Stop Floating Widget
+        if (stopFloatingWidget && servicesStateRef.current.floatingWidget) {
+          try {
             console.log("🛑 Stopping floating widget...");
             await stopFloatingWidget();
-            console.log("✅ Floating widget stopped");
+            servicesStateRef.current.floatingWidget = false;
+            console.log("✅ Floating widget stopped successfully");
+          } catch (widgetError) {
+            console.error("❌ Floating widget stop failed:", widgetError);
           }
-        } catch (widgetError) {
-          console.error("❌ Error stopping widget:", widgetError);
-          // Continue even if widget stop fails
         }
 
-        // Update store after stopping services
-        toggle(newStatus);
+        // Step 3: Update store LAST (after services stopped)
+        toggle(false);
+        setLocalStatus(false);
       }
 
       // Fetch updated driver details
       await fetchDriverDetails();
-      
-      console.log(`✅ Toggle complete: ${newStatus ? "ONLINE" : "OFFLINE"}`);
+
+      console.log(`✅ Toggle complete: Now ${newStatus ? "ONLINE" : "OFFLINE"}`);
+      console.log("📊 Services state:", servicesStateRef.current);
 
     } catch (error) {
-      console.error("❌ Toggle failed:", error);
+      console.error("❌ Toggle failed with error:", error);
 
-      // Revert UI and store
+      // ROLLBACK: Revert everything
       setLocalStatus(previousStatus);
       toggle(previousStatus);
+
+      // Try to stop services if going online failed
+      if (newStatus) {
+        try {
+          if (servicesStateRef.current.floatingWidget) {
+            await stopFloatingWidget?.();
+            servicesStateRef.current.floatingWidget = false;
+          }
+          if (servicesStateRef.current.poolingService) {
+            await stopPoolingService?.();
+            servicesStateRef.current.poolingService = false;
+          }
+        } catch (cleanupError) {
+          console.error("❌ Cleanup failed:", cleanupError);
+        }
+      }
 
       Alert.alert(
         "Error",
@@ -160,8 +212,12 @@ export default function Header({
         [{ text: "OK" }]
       );
     } finally {
-      setIsToggling(false);
-      isTogglingRef.current = false;
+      // CRITICAL: Release lock with small delay to prevent rapid clicks
+      setTimeout(() => {
+        setIsToggling(false);
+        isTogglingRef.current = false;
+        console.log("🔓 Toggle lock released");
+      }, 500); // 500ms delay prevents accidental double-clicks
     }
   };
 
@@ -187,10 +243,25 @@ export default function Header({
     init();
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - ENSURE EVERYTHING STOPS
   useEffect(
     () => () => {
-      LocationService.stopTracking().catch(() => {});
+      console.log("🧹 Component unmounting, cleaning up...");
+      
+      // Stop all services
+      Promise.all([
+        stopFloatingWidget?.().catch(() => {}),
+        stopPoolingService?.().catch(() => {}),
+        LocationService.stopTracking().catch(() => {}),
+      ]).then(() => {
+        console.log("✅ Cleanup complete");
+      });
+      
+      // Reset service state
+      servicesStateRef.current = {
+        floatingWidget: false,
+        poolingService: false,
+      };
     },
     []
   );
@@ -199,38 +270,37 @@ export default function Header({
     <View style={styles.container}>
       {/* LOGO */}
       <View style={styles.logoContainer}>
-        <Image 
-          source={logo} 
+        <Image
+          source={logo}
           style={[
             styles.logo,
             isSmallScreen && styles.logoSmall,
             isMediumScreen && styles.logoMedium,
-          ]} 
-          resizeMode="contain" 
+          ]}
+          resizeMode="contain"
         />
       </View>
 
       {/* ONLINE / OFFLINE BUTTON */}
-<TouchableOpacity
-  style={[
-    styles.toggleButton,
-    { backgroundColor: localStatus ? "#4CAF50" : "#E5260F" },
-    isToggling && { opacity: 0.7 },
-  ]}
-  onPress={handleToggle}
-  disabled={isToggling}
-  activeOpacity={0.8}
->
-  {/* ONLINE: dot left, OFFLINE: dot right */}
-  {localStatus && <View style={[styles.toggleDot, { marginRight: 10 }]} />}
-  
-  <Text style={styles.toggleText}>
-    {isToggling ? "Wait..." : localStatus ? "ONLINE" : "OFFLINE"}
-  </Text>
-  
-  {!localStatus && <View style={[styles.toggleDot, { marginLeft: 10 }]} />}
-</TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.toggleButton,
+          { backgroundColor: localStatus ? "#4CAF50" : "#E5260F" },
+          isToggling && { opacity: 0.5 },
+        ]}
+        onPress={handleToggle}
+        disabled={isToggling}
+        activeOpacity={0.8}
+      >
+        {/* ONLINE: dot left, OFFLINE: dot right */}
+        {localStatus && <View style={[styles.toggleDot, { marginRight: 10 }]} />}
 
+        <Text style={styles.toggleText}>
+          {isToggling ? "WAIT..." : localStatus ? "ONLINE" : "OFFLINE"}
+        </Text>
+
+        {!localStatus && <View style={[styles.toggleDot, { marginLeft: 10 }]} />}
+      </TouchableOpacity>
 
       {/* RIGHT SIDE ICONS */}
       <View style={styles.rightContainer}>
@@ -242,7 +312,7 @@ export default function Header({
           ]}
           onPress={() => setModalVisible(true)}
         >
-          <Text 
+          <Text
             style={[
               styles.radiusText,
               isSmallScreen && styles.radiusTextSmall,
@@ -250,13 +320,12 @@ export default function Header({
           >
             {radius}km
           </Text>
-          <Icon 
-            name="chevron-down" 
-            size={isSmallScreen ? 14 : 16} 
-            color="#000" 
+          <Icon
+            name="chevron-down"
+            size={isSmallScreen ? 14 : 16}
+            color="#000"
           />
         </TouchableOpacity>
-
       </View>
 
       <Modal
@@ -310,19 +379,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#F2F5F6",
-    // borderRadius: 12,
     paddingVertical: isSmallScreen ? 8 : 10,
     paddingHorizontal: isSmallScreen ? 10 : 16,
-
   },
 
-  // Logo styles
-  logoContainer: { 
+  logoContainer: {
     flex: 0,
     marginRight: isSmallScreen ? 6 : 8,
   },
-  logo: { 
-    width: 140, 
+  logo: {
+    width: 140,
     height: 40,
   },
   logoSmall: {
@@ -334,7 +400,6 @@ const styles = StyleSheet.create({
     height: 35,
   },
 
-  // Status button styles
   statusButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -375,14 +440,12 @@ const styles = StyleSheet.create({
     height: 8,
   },
 
-  // Right container
   rightContainer: {
     flexDirection: "row",
     alignItems: "center",
     flex: 0,
   },
 
-  // Radius button
   radiusButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -407,7 +470,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
-  // Icon buttons
   iconButton: {
     backgroundColor: "#f5f5f5",
     padding: 8,
@@ -419,7 +481,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Badge
   badge: {
     position: "absolute",
     top: -3,
@@ -438,7 +499,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -475,38 +535,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
   },
-  modalItemSelected: { 
+  modalItemSelected: {
     backgroundColor: "#f0f9ff",
   },
-  modalItemText: { 
-    fontSize: 15, 
+  modalItemText: {
+    fontSize: 15,
     color: "#333",
   },
- 
+
   toggleButton: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 50,
-  paddingVertical: 6,
-  paddingHorizontal: 8,
-  minWidth: 90,
-},
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 50,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minWidth: 90,
+  },
 
-toggleDot: {
-  width: 14,
-  height: 14,
-  borderRadius: 7,
-  backgroundColor: "#fff",
-},
+  toggleDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#fff",
+  },
 
-toggleText: {
-  color: "#fff",
-  fontWeight: "bold",
-  fontSize: 12,
-},
+  toggleText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 12,
+  },
 
-  modalItemTextSelected: { 
+  modalItemTextSelected: {
     fontWeight: "bold",
     color: "#4CAF50",
   },

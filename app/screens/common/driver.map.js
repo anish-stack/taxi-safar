@@ -31,7 +31,7 @@ const DEFAULT_RADIUS_KM = 5;
 /* -----------------------------------
    Component
 ----------------------------------- */
-export default function DriverMap() {
+export default function DriverMap({  refreshing }) {
   const { location, is_online, driver } = useDriverStore();
 
   const [currentLocation, setCurrentLocation] = useState(DEFAULT_COORDS);
@@ -73,7 +73,7 @@ export default function DriverMap() {
     };
 
     fetchBanners();
-  }, []);
+  }, [refreshing]);
 
   /* -----------------------------------
      Fetch Location (Silent)
@@ -101,7 +101,7 @@ export default function DriverMap() {
     } finally {
       locationFetchingRef.current = false;
     }
-  }, [location]);
+  }, [location ,refreshing]);
 
   useEffect(() => {
     fetchLocation();
@@ -188,12 +188,12 @@ export default function DriverMap() {
         pitchEnabled={false}
         toolbarEnabled={false}
       >
-        <Marker coordinate={currentLocation}>
+        {/* <Marker coordinate={currentLocation}>
           <Image
-            source={require("../../assets/car-marker.png")}
+            source={require("./rec.png")}
             style={styles.marker}
           />
-        </Marker>
+        </Marker> */}
 
         <Circle
           center={currentLocation}

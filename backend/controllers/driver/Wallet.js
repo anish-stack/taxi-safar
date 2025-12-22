@@ -3,6 +3,8 @@ const Wallet = require("../../models/driver/Wallet");
 const Transaction = require("../../models/driver/Transaction");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const NotificationService = require("../../utils/notificationService");
+const sendNotification = require("../../utils/sendNotification");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY,
@@ -136,8 +138,8 @@ exports.verifyPayment = async (req, res) => {
     const transaction = await Transaction.findOne({
       razorpayOrderId: razorpay_order_id,
       driver: driverId,
-      status: { $ne: "completed" }, // Prevent double completion
-    }).populate("driver");
+      status: { $ne: "completed" },
+    }).populate("driver", "driver_name phone fcm_token");
 
     if (!transaction) {
       return res.status(404).json({
@@ -146,7 +148,6 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    // Step 3: Ensure driver exists and populate properly
     if (!transaction.driver) {
       return res.status(404).json({
         success: false,
@@ -170,7 +171,6 @@ exports.verifyPayment = async (req, res) => {
     wallet.balance += transaction.amount;
     wallet.totalEarnings += transaction.amount;
 
-    // Avoid duplicate transaction entries
     if (!wallet.transactions.includes(transaction._id)) {
       wallet.transactions.push(transaction._id);
     }
@@ -184,13 +184,39 @@ exports.verifyPayment = async (req, res) => {
     transaction.completedAt = new Date();
     await transaction.save();
 
-    // Step 7: Update Driver's wallet reference if missing or incorrect
+    // Step 7: Link wallet to driver if needed
     if (!transaction.driver.wallet || transaction.driver.wallet.toString() !== wallet._id.toString()) {
       await Driver.findByIdAndUpdate(
         driverId,
         { wallet: wallet._id },
         { new: true }
       );
+    }
+
+    /* =======================
+       🔔 Send Payment Success Notification to Driver
+    ======================= */
+    try {
+      await sendNotification.sendNotification(transaction?.driver.fcm_token, "💰 Payment Successful!", `₹${transaction.amount} has been added to your wallet.`);
+      await NotificationService.sendUniversalNotification({
+        driverId,
+        title: "💰 Payment Received!",
+        message: `₹${transaction.amount} has been successfully added to your wallet. Current balance: ₹${wallet.balance}`,
+        type: "payment",
+        icon: "Wallet",
+        relatedData: {
+          action: "wallet_credited",
+          transactionId: transaction._id,
+          amount: transaction.amount,
+          newBalance: wallet.balance,
+          paymentMethod: "razorpay",
+          completedAt: transaction.completedAt,
+        },
+      });
+
+      console.log(`🔔 Wallet credit notification sent to driver ${driverId} for ₹${transaction.amount}`);
+    } catch (notifError) {
+      console.warn("⚠️ Failed to send payment notification:", notifError.message);
     }
 
     // Success Response
@@ -462,8 +488,6 @@ exports.getAllTransactions = async (req, res) => {
 };
 
 
-
-
 exports.requestWithdrawal = async (req, res) => {
   try {
     const { amount } = req.body;
@@ -476,13 +500,13 @@ exports.requestWithdrawal = async (req, res) => {
       });
     }
 
-    const driver = await Driver.findById(driverId).select("name email phone bankDetails");
+    const driver = await Driver.findById(driverId).select("name email phone BankDetails").populate("BankDetails");
     if (!driver) {
       return res.status(404).json({ success: false, message: "Driver not found" });
     }
 
     // Check if bank details exist
-    if (!driver.bankDetails?.account_number || !driver.bankDetails?.ifsc_code) {
+    if (!driver.BankDetails?.account_number || !driver.BankDetails?.ifsc_code) {
       return res.status(400).json({
         success: false,
         message: "Please add bank account first",
@@ -511,12 +535,12 @@ exports.requestWithdrawal = async (req, res) => {
       amount: amount,
       status: "pending",
       paymentMethod: "withdrawal",
-      description: `Withdrawal to bank - ${driver.bankDetails.account_number.slice(-4)}`,
+      description: `Withdrawal to bank - ${driver.BankDetails.account_number.slice(-4)}`,
       withdrawalDetails: {
-        accountNumber: driver.bankDetails.account_number,
-        ifscCode: driver.bankDetails.ifsc_code,
-        accountHolderName: driver.bankDetails.account_holder_name || driver.name,
-        bankName: driver.bankDetails.bank_name,
+        accountNumber: driver.BankDetails.account_number,
+        ifscCode: driver.BankDetails.ifsc_code,
+        accountHolderName: driver.BankDetails.account_holder_name || driver.name,
+        bankName: driver.BankDetails.bank_name,
       },
     });
 
@@ -528,26 +552,28 @@ exports.requestWithdrawal = async (req, res) => {
     wallet.transactions.push(transaction._id);
     await wallet.save();
 
-    // Trigger payout via Razorpay
+    // Trigger payout via Razorpay X
     try {
-      const payout = await razorpay.payouts.create({
-        account_number: process.env.RAZORPAY_X_ACCOUNT_NUMBER, // Your RazorpayX account
+      const payoutUrl = `https://api.razorpay.com/v1/accounts/${process.env.RAZORPAY_X_ACCOUNT_NUMBER}/payouts`;
+      
+      const payoutPayload = {
+        account_number: process.env.RAZORPAY_X_ACCOUNT_NUMBER,
         amount: amount * 100, // in paise
         currency: "INR",
-        mode: "IMPS", // or NEFT, change as needed
+        mode: "IMPS",
         purpose: "payout",
         fund_account: {
           account_type: "bank_account",
           bank_account: {
-            name: driver.bankDetails.account_holder_name || driver.name,
-            account_number: driver.bankDetails.account_number,
-            ifsc: driver.bankDetails.ifsc_code,
+            name: driver.BankDetails.account_holder_name || driver.name,
+            account_number: driver.BankDetails.account_number,
+            ifsc: driver.BankDetails.ifsc_code,
           },
           contact: {
             name: driver.name,
             email: driver.email,
             contact: driver.phone,
-            type: "employee", // or "customer"
+            type: "employee",
             reference_id: driverId.toString(),
           },
         },
@@ -558,7 +584,22 @@ exports.requestWithdrawal = async (req, res) => {
           driverId: driverId.toString(),
           transactionId: transaction._id.toString(),
         },
+      };
+
+      // Create Basic Auth header for Razorpay X
+      const auth = Buffer.from(
+        `${process.env.RAZORPAY_KEY}:${process.env.RAZORPAY_SECRET}`
+      ).toString("base64");
+
+      const axios = require("axios");
+      const response = await axios.post(payoutUrl, payoutPayload, {
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/json",
+        },
       });
+
+      const payout = response.data;
 
       // Update transaction with payout ID
       transaction.razorpayPayoutId = payout.id;
@@ -577,21 +618,24 @@ exports.requestWithdrawal = async (req, res) => {
         },
       });
     } catch (payoutError) {
-      console.error("Payout failed:", payoutError);
+      console.error("Payout failed:", payoutError.response?.data || payoutError.message);
 
       // Revert wallet balance if payout fails
       wallet.balance += amount;
       wallet.totalWithdrawals -= amount;
       await wallet.save();
 
-      transaction.status = "failed";
-      transaction.failureReason = payoutError.error?.description || "Payout failed";
+      transaction.status = "pending";
+      transaction.failureReason = 
+        payoutError.response?.data?.error?.description || 
+        payoutError.message || 
+        "Payout failed";
       await transaction.save();
 
       return res.status(500).json({
         success: false,
         message: "Withdrawal failed. Money refunded to wallet.",
-        error: payoutError.error?.description,
+        error: payoutError.response?.data?.error?.description || payoutError.message,
       });
     }
   } catch (error) {
@@ -603,8 +647,6 @@ exports.requestWithdrawal = async (req, res) => {
     });
   }
 };
-
-
 // routes/webhook/razorpay.js
 exports.payoutWebhook = async (req, res) => {
   try {

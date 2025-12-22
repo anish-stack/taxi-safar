@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   Image,
@@ -18,6 +17,34 @@ import io from "socket.io-client";
 import { Ionicons } from "@expo/vector-icons";
 import useDriverStore from "../../store/driver.store";
 
+// Skeleton Loading Component
+const SkeletonChatItem = () => (
+  <View style={styles.chatBox}>
+    <View style={[styles.avatar, styles.skeletonAvatar]} />
+    <View style={styles.chatInfo}>
+      <View style={styles.chatHeader}>
+        <View style={[styles.skeletonText, { width: 120, height: 16 }]} />
+        <View style={[styles.skeletonText, { width: 80, height: 12 }]} />
+      </View>
+      <View
+        style={[
+          styles.skeletonText,
+          { width: "80%", height: 14, marginBottom: 6 },
+        ]}
+      />
+      <View style={[styles.skeletonText, { width: 60, height: 12 }]} />
+    </View>
+  </View>
+);
+
+const SkeletonLoader = () => (
+  <View style={styles.listContent}>
+    {[1, 2, 3, 4, 5, 6].map((item) => (
+      <SkeletonChatItem key={item} />
+    ))}
+  </View>
+);
+
 const Chat = () => {
   const { token } = loginStore();
   const navigation = useNavigation();
@@ -29,8 +56,9 @@ const Chat = () => {
   const [chats, setChats] = useState([]);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("posted"); // "posted" or "received"
-
+  const [activeTab, setActiveTab] = useState("posted");
+  const [company, setCompany] = useState(null);
+  const [companyDrivers, setCompanyDrivers] = useState({});
   // Initialize Socket.IO for real-time updates
   useEffect(() => {
     if (!token || !driver) return;
@@ -39,18 +67,14 @@ const Chat = () => {
       transports: ["websocket", "polling"],
     });
 
-    // Authenticate driver
     socketRef.current.emit("driver_online", {
       driver_id: driver._id,
     });
 
-    // Listen for new chat requests
-    socketRef.current.on("new_chat_request", (data) => {
-      console.log("New chat request:", data);
+    socketRef.current.on("new_chat_request", () => {
       fetchChats();
     });
 
-    // Listen for new messages to update chat list
     socketRef.current.on("new_message", (data) => {
       updateChatWithNewMessage(data);
     });
@@ -95,12 +119,9 @@ const Chat = () => {
         }
       );
 
-      console.log("Chats fetched:", response.data);
-
       setChats(response.data.chats || []);
       setError("");
     } catch (err) {
-      console.error("Chat Fetch Error:", err);
       setError("Something went wrong fetching chats.");
     } finally {
       setLoading(false);
@@ -114,6 +135,7 @@ const Chat = () => {
   }, []);
 
   useEffect(() => {
+    fetchUnreadMessages();
     fetchChats();
   }, []);
 
@@ -128,62 +150,28 @@ const Chat = () => {
         setUnreadChatCount(count);
       }
     } catch (error) {
-      console.log("error fetching unread messages", error);
+      // Silently fail
     }
   };
 
   // Filter chats based on active tab
   const getFilteredChats = () => {
-    console.log("🔍 Filtering Chats...");
-    console.log("Active Tab:", activeTab);
-    console.log("Driver ID:", driver);
-    console.log("Total Chats:", chats.length);
-
-    if (!driver?._id) {
-      console.log("❌ No driver ID found. Returning empty list.");
-      return [];
-    }
+    if (!driver?._id) return [];
 
     if (activeTab === "posted") {
-      console.log("📤 Showing POSTED chats (init by driver)");
-
-      const postedChats = chats.filter((chat) => {
-        const match =
-          chat.init_driver_id?._id === driver._id ||
-          chat.init_driver_id === driver._id;
-
-        console.log(
-          `Chat ID: ${chat?._id} | init_driver_id: ${
-            chat?.init_driver_id?._id || chat?.init_driver_id
-          } | Match Posted:`,
-          match
+      return chats.filter((chat) => {
+        return (
+          chat.other_driver_id?._id === driver._id ||
+          chat.other_driver_id === driver._id
         );
-
-        return match;
       });
-
-      console.log("📥 Posted Chats Count:", postedChats.length);
-      return postedChats;
     } else {
-      console.log("📥 Showing RECEIVED chats (others initiated)");
-
-      const receivedChats = chats.filter((chat) => {
-        const match =
-          chat.init_driver_id?._id !== driver._id &&
-          chat.init_driver_id !== driver._id;
-
-        console.log(
-          `Chat ID: ${chat?._id} | init_driver_id: ${
-            chat?.init_driver_id?._id || chat?.init_driver_id
-          } | Match Received:`,
-          match
+      return chats.filter((chat) => {
+        return (
+          chat.other_driver_id?._id !== driver._id &&
+          chat.other_driver_id !== driver._id
         );
-
-        return match;
       });
-
-      console.log("📥 Received Chats Count:", receivedChats.length);
-      return receivedChats;
     }
   };
 
@@ -227,32 +215,78 @@ const Chat = () => {
     });
   };
 
-  // Render chat item
+  const fetchedDriverIds = useRef(new Set());
+
+  const fetchCompanyDriver = useCallback(async (companyDriverId) => {
+    if (!companyDriverId || fetchedDriverIds.current.has(companyDriverId))
+      return;
+
+    fetchedDriverIds.current.add(companyDriverId);
+
+    try {
+      const response = await axios.get(
+        `${API_URL_APP}/api/v1/company-details/${companyDriverId}`
+      );
+      setCompanyDrivers((prev) => ({
+        ...prev,
+        [companyDriverId]: response.data.data,
+      }));
+    } catch (error) {
+      setCompanyDrivers((prev) => ({
+        ...prev,
+        [companyDriverId]: null,
+      }));
+      console.log(
+        "❌ Company Driver fetch error:",
+        error?.response?.data || error.message
+      );
+    }
+  }, []);
+
+  // Add this useEffect at component level (not in renderChatItem):
+  useEffect(() => {
+    filteredChats.forEach((chat) => {
+      if (activeTab === "received" && chat.other_driver_id?._id) {
+        fetchCompanyDriver(chat.other_driver_id._id);
+      }
+    });
+  }, [filteredChats, activeTab, fetchCompanyDriver]);
+
+  // Simplify renderChatItem - remove useEffect from here:
+
   const renderChatItem = ({ item }) => {
-    const otherDriver = item.other_driver_id;
+    const otherDriver =
+      activeTab === "received" ? item.other_driver_id : item?.init_driver_id;
     const ridePost = item.ride_post_id;
 
+    const companyData = companyDrivers[item.other_driver_id?._id];
     const driverName =
-      otherDriver?.driver_name || otherDriver?.name || "Unknown Driver";
+      activeTab === "received"
+        ? companyData?.company_name ||
+          otherDriver?.driver_name ||
+          otherDriver?.name
+        : "Unknown Driver";
+    // console.log("companyData",companyData)
     const avatarUri =
-      otherDriver?.profile_image ||
-      otherDriver?.avatar ||
-      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+      activeTab === "received"
+        ? companyData?.logo?.url ||
+          otherDriver?.profile_photo?.url ||
+          otherDriver?.avatar
+        : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-    const bookingId = ridePost?.booking_id || ridePost?._id || "N/A";
+    const bookingId = ridePost?._id
+      ? `CRN-${ridePost._id.slice(-4)}`.toUpperCase()
+      : "";
 
     const formatBookingId = (id) => {
       if (!id || id === "N/A") return "N/A";
-
       const str = String(id);
-
-      if (str.length <= 7) return str; // Not enough length to trim
-
+      if (str.length <= 7) return str;
       return str.slice(0, 3) + "..." + str.slice(-4);
     };
 
-    const shortBookingId = formatBookingId(bookingId);
-    console.log("shortBookingId", shortBookingId);
+    const shortBookingId = bookingId;
+
     return (
       <TouchableOpacity
         style={styles.chatBox}
@@ -285,7 +319,7 @@ const Chat = () => {
     );
   };
 
-  // Loading state
+  // Loading state with skeleton
   if (!token) {
     return (
       <Layout>
@@ -304,10 +338,36 @@ const Chat = () => {
 
   if (loading) {
     return (
-      <Layout>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#FF3B30" />
-          <Text style={styles.loadingText}>Loading your chats...</Text>
+      <Layout showHeader={false}>
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerTop}>
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={24} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Chats</Text>
+              <View style={styles.backButton} />
+            </View>
+
+            <View style={styles.tabContainer}>
+              <View style={[styles.tab, styles.activeTab]}>
+                <Text style={[styles.tabText, styles.activeTabText]}>
+                  Posted
+                </Text>
+              </View>
+              <View style={styles.tab}>
+                <Text style={styles.tabText}>Received</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Skeleton Loading */}
+          <SkeletonLoader />
         </View>
       </Layout>
     );
@@ -315,16 +375,33 @@ const Chat = () => {
 
   if (error) {
     return (
-      <Layout>
-        <View style={styles.centerContainer}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="warning-outline" size={64} color="#FF3B30" />
+      <Layout showHeader={false}>
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerTop}>
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={24} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Chats</Text>
+              <View style={styles.backButton} />
+            </View>
           </View>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchChats}>
-            <Ionicons name="refresh" size={18} color="#fff" />
-            <Text style={styles.retryText}>Try Again</Text>
-          </TouchableOpacity>
+
+          <View style={styles.centerContainer}>
+            <View style={styles.emptyIconContainer}>
+              <Ionicons name="warning-outline" size={64} color="#FF3B30" />
+            </View>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchChats}>
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <Text style={styles.retryText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Layout>
     );
@@ -333,27 +410,18 @@ const Chat = () => {
   return (
     <Layout showHeader={false}>
       <View style={styles.container}>
-        {/* Header with Tabs */}
+        {/* Header with Back Button and Tabs */}
         <View style={styles.header}>
-          <View
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 16,
-              backgroundColor: "#fff",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 22,
-                fontWeight: "700",
-                textAlign: "center",
-                    fontFamily: "SFProDisplay-Bold",
-
-                color: "#000",
-              }}
+          <View style={styles.headerTop}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
             >
-              Chats
-            </Text>
+              <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Chats</Text>
+            <View style={styles.backButton} />
           </View>
 
           <View style={styles.tabContainer}>
@@ -414,7 +482,9 @@ const Chat = () => {
                 colors={["#FFA800"]}
               />
             }
-            renderItem={renderChatItem}
+            renderItem={({ item }) =>
+              renderChatItem({ item, fetchCompanyDriver })
+            }
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
@@ -436,11 +506,30 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E0E0E0",
   },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    fontFamily: "SFProDisplay-Bold",
+    color: "#000",
+  },
   tabContainer: {
     flexDirection: "row",
     backgroundColor: "#F5F5F5",
     borderRadius: 25,
     padding: 4,
+    marginTop: 8,
     marginBottom: 16,
   },
   tab: {
@@ -471,6 +560,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+    paddingBottom: 100,
   },
 
   // Chat Item
@@ -531,6 +621,15 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
+  // Skeleton Loading Styles
+  skeletonAvatar: {
+    backgroundColor: "#E0E0E0",
+  },
+  skeletonText: {
+    backgroundColor: "#E0E0E0",
+    borderRadius: 4,
+  },
+
   // Empty States
   emptyIconContainer: {
     width: 100,
@@ -540,12 +639,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 15,
-    color: "#666",
-    fontWeight: "500",
   },
   errorText: {
     color: "#FF3B30",

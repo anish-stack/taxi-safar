@@ -315,7 +315,7 @@ export default function AddVehicle({ navigation }) {
     const deviceId = await Application.getAndroidId();
 
     try {
-      const res = await axios.post(`${API_URL_APP}/api/v1/send-otp-on-aadhar`, {
+      const res = await axios.post(`${API_URL_APP}/api/v1/send-otp-on-aadhar-for-rc`, {
         aadhaarNumber: ownerAadhaar,
         device_id: deviceId,
       });
@@ -351,7 +351,7 @@ export default function AddVehicle({ navigation }) {
 
     try {
       const res = await axios.post(
-        `${API_URL_APP}/api/v1/verify-otp-on-aadhar`,
+        `${API_URL_APP}/api/v1/verify-otp-on-aadhar-for-rc`,
         {
           request_id: aadhaarRequestId,
           otp: otpValue,

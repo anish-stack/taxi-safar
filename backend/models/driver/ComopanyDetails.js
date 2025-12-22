@@ -13,10 +13,26 @@ const companyDetailsSchema = new mongoose.Schema(
     gst_no: {
       type: String,
     },
-   driverPub: {
+    driverPub: {
       type: String,
       unique: true,
       index: true,
+    },
+    rating: {
+      type: String,
+      default: "4.5",
+    },
+    totalRatings: {
+      type: Number,
+      default: 0,
+    },
+    successfulRides: {
+      type: Number,
+      default: 0,
+    },
+    CancelRides: {
+      type: Number,
+      default: 0,
     },
     address: {
       type: String,
@@ -75,6 +91,5 @@ companyDetailsSchema.pre("save", async function (next) {
   this.driverPub = driverPub;
   next();
 });
-
 
 module.exports = mongoose.model("CompanyDetails", companyDetailsSchema);

@@ -358,22 +358,7 @@ export default function AddBank({ navigation }) {
           />
           {renderError("branchName")}
 
-          {/* UPI ID (Optional) */}
-          <Text style={styles.label}>UPI ID (Optional)</Text>
-          <TextInput
-            placeholder="yourname@bankname"
-            value={upiId}
-            onChangeText={(v) => {
-              setUpiId(v);
-              clearFieldError("upiId");
-            }}
-            style={styles.input}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!loading}
-            placeholderTextColor={Colors.textSecondary}
-          />
-          {renderError("upiId")}
+
 
           {/* Submit Button */}
           <TouchableOpacity

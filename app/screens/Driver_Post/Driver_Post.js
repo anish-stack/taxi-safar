@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -7,6 +13,7 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
+  Keyboard,
   FlatList,
   ActivityIndicator,
   Platform,
@@ -20,7 +27,6 @@ import {
   Clock,
   MapPin,
   Car,
-  DollarSign,
   Send,
   ArrowLeft,
   CircleCheck as CheckCircle2,
@@ -32,8 +38,12 @@ import { API_URL_APP } from "../../constant/api";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import axios from "axios";
 import loginStore from "../../store/auth.store";
-import { useNavigation, useRoute } from "@react-navigation/native";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+import {
+  useNavigation,
+  useFocusEffect,
+  useRoute,
+} from "@react-navigation/native";
+import { formatTime12Hour, formatTimeByDate } from "../../utils/utils";
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
@@ -46,11 +56,11 @@ const DriverPost = () => {
   const [showVehicleModal, setShowVehicleModal] = useState(false);
   const { token } = loginStore();
   const navigation = useNavigation();
-
+  const alertShownRef = useRef(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactType, setContactType] = useState("");
   const [company, setCompany] = useState(null);
-
+  const scrollRef = useRef(null);
   // Date & Time
   const [pickupDate, setPickupDate] = useState(new Date());
   const [pickupTime, setPickupTime] = useState(new Date());
@@ -66,7 +76,7 @@ const DriverPost = () => {
   const [dropSuggestions, setDropSuggestions] = useState([]);
   const [pickupLoading, setPickupLoading] = useState(false);
   const [dropLoading, setDropLoading] = useState(false);
-
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   // Pricing
   const [tripDays, setTripDays] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
@@ -75,14 +85,74 @@ const DriverPost = () => {
   const [extraKm, setExtraKm] = useState("");
   const [extraHour, setExtraHour] = useState("");
 
+  const [distance, setDistance] = useState(0);
+  const [estimatedKmRate, setEstimatedKmRate] = useState(0);
+  const [estimatedDuration, setEstimatedDuration] = useState(null);
+  const [polyLine, setPolyLine] = useState(null);
+
+  const [stops, setStops] = useState([]);
+  const [stopSuggestions, setStopSuggestions] = useState([]);
+  const [stopLoading, setStopLoading] = useState(false);
+  const [currentStopIndex, setCurrentStopIndex] = useState(null);
+  const stopTimers = useRef({});
+
+  const [rateConfig, setRateConfig] = useState(null);
+  const [vehicleRates, setVehicleRates] = useState([]);
+  const [maxStopsAllowed, setMaxStopsAllowed] = useState(3);
+  const [maxCommissionPercentage, setMaxCommissionPercentage] = useState(35);
+  const [isNotesFocused, setIsNotesFocused] = useState(false);
+
+  const pickupInputRef = useRef(null);
+  const dropInputRef = useRef(null);
+  const stopInputRefs = useRef([]);
+  const tripDaysRef = useRef(null);
+  const totalAmountRef = useRef(null);
+  const commissionRef = useRef(null);
+  const extraKmRef = useRef(null);
+  const extraHourRef = useRef(null);
+  const notesRef = useRef(null);
+
+  useEffect(() => {
+    fetchRateConfiguration();
+  }, []);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      setIsKeyboardVisible(true);
+    });
+
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollToInput = (ref) => {
+    setTimeout(() => {
+      ref?.current?.measureLayout(
+        scrollRef.current,
+        (x, y) => {
+          scrollRef.current?.scrollTo({
+            y: y - 200,
+            animated: true,
+          });
+        },
+        () => {}
+      );
+    }, 300);
+  };
   // Preferences
-  const [acceptMode, setAcceptMode] = useState("instant");
+  const [acceptMode, setAcceptMode] = useState("scheduled");
   const [requirements, setRequirements] = useState({
     onlydiesel: false,
     withcarrier: false,
     ac: false,
     musicsystem: false,
-    allinclusive: false,
+    allinclusive: true,
     allexclusive: false,
     foodallowed: false,
   });
@@ -98,48 +168,43 @@ const DriverPost = () => {
   const pickupTimer = useRef(null);
   const dropTimer = useRef(null);
 
-  // Vehicle types
-  const VEHICLE_CATEGORIES = {
-    MINI: {
-      id: 1,
-      key: "mini",
-      label: "Mini",
-      seating: "4+1",
-      example: "WagonR",
-      allowedInAllInclusive: true,
-    },
+  const onStopChange = (text, index) => {
+    const newStops = [...stops];
+    newStops[index] = { ...newStops[index], location: text, coordinates: null };
+    setStops(newStops);
 
-    SEDAN: {
-      id: 2,
-      key: "sedan",
-      label: "Sedan",
-      seating: "4+1",
-      example: "Swift Dzire",
-      allowedInAllInclusive: true,
-    },
+    if (stopTimers.current[index]) clearTimeout(stopTimers.current[index]);
 
-    SUV: {
-      id: 3,
-      key: "suv",
-      label: "SUV",
-      seating: "6+1",
-      example: "Ertiga",
-      allowedInAllInclusive: true,
-    },
-
-    PRIME_SUV: {
-      id: 4,
-      key: "prime_suv",
-      label: "Prime SUV",
-      seating: "6+1",
-      example: "Innova Crysta",
-      allowedInAllInclusive: false, // ❗ not allowed in all-inclusive
-    },
+    stopTimers.current[index] = setTimeout(() => {
+      setCurrentStopIndex(index);
+      fetchPlaceSuggestions(text, setStopSuggestions, setStopLoading);
+    }, 600);
   };
 
-  const vehicles = Object.values(VEHICLE_CATEGORIES)
-    .filter((v) => (requirements.allinclusive ? v.allowedInAllInclusive : true))
-    .sort((a, b) => a.id - b.id);
+  // Add function to add new stop
+  const addStop = () => {
+    if (stops.length >= maxStopsAllowed) {
+      Alert.alert("Limit Reached", `Maximum ${maxStopsAllowed} stops allowed`);
+      return;
+    }
+    setStops([...stops, { location: "", coordinates: null }]);
+  };
+
+  // Add function to remove stop
+  const removeStop = (index) => {
+    const newStops = stops.filter((_, i) => i !== index);
+    setStops(newStops);
+    if (stopTimers.current[index]) {
+      clearTimeout(stopTimers.current[index]);
+      delete stopTimers.current[index];
+    }
+  };
+
+  const vehicles = useMemo(() => {
+    if (vehicleRates.length === 0) return [];
+
+    return vehicleRates.sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [vehicleRates, requirements.allinclusive]);
 
   // Google Places Autocomplete
   const fetchPlaceSuggestions = async (input, setter, loadingSetter) => {
@@ -163,47 +228,169 @@ const DriverPost = () => {
     }
   };
 
+  const fetchRateConfiguration = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL_APP}/api/v1/rate-configuration`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        const config = response.data.data;
+        setRateConfig(config);
+        setMaxStopsAllowed(config.maxStopsAllowed);
+        setMaxCommissionPercentage(config.maxCommissionPercentage);
+
+        // Set vehicle rates
+        const activeVehicles = config.vehicleRates
+          .filter((v) => v.isActive)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+
+        setVehicleRates(activeVehicles);
+      }
+    } catch (error) {
+      console.error("Failed to fetch rate configuration:", error);
+      // Fallback to default values
+      setMaxStopsAllowed(3);
+      setMaxCommissionPercentage(35);
+      setVehicleRates([
+        {
+          vehicleKey: "mini",
+          vehicleName: "Mini",
+          displayName: "Mini",
+          seating: "4+1",
+          example: "WagonR",
+          maxRatePerKm: 22,
+          minRatePerKm: 10,
+          stopChargePerStop: 50,
+          allowedInAllInclusive: true,
+          sortOrder: 1,
+        },
+        {
+          vehicleKey: "sedan",
+          vehicleName: "Sedan",
+          displayName: "Sedan",
+          seating: "4+1",
+          example: "Swift Dzire",
+          maxRatePerKm: 25,
+          minRatePerKm: 12,
+          stopChargePerStop: 75,
+          allowedInAllInclusive: true,
+          sortOrder: 2,
+        },
+        {
+          vehicleKey: "suv",
+          vehicleName: "SUV",
+          displayName: "SUV",
+          seating: "6+1",
+          example: "Ertiga",
+          maxRatePerKm: 30,
+          minRatePerKm: 15,
+          stopChargePerStop: 100,
+          allowedInAllInclusive: true,
+          sortOrder: 3,
+        },
+        {
+          vehicleKey: "prime_suv",
+          vehicleName: "Prime SUV",
+          displayName: "Prime SUV",
+          seating: "6+1",
+          example: "Innova Crysta",
+          maxRatePerKm: 40,
+          minRatePerKm: 20,
+          stopChargePerStop: 150,
+          allowedInAllInclusive: false,
+          sortOrder: 4,
+        },
+      ]);
+    }
+  };
+
+  const validateBookingWithAPI = async () => {
+    try {
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/rate-configuration/validate`,
+        {
+          vehicleKey: vehicle,
+          totalAmount: parseFloat(totalAmount),
+          commissionAmount: parseFloat(commission),
+          distance: distance,
+          stopsCount: stops.filter((s) => s.location && s.coordinates).length,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      return response.data.success;
+    } catch (error) {
+      if (error.response?.data?.errors) {
+        const errorMsg = error.response.data.errors
+          .map((e) => e.message)
+          .join("\n");
+        Alert.alert("Validation Error", errorMsg);
+      }
+      return false;
+    }
+  };
+
   const fetchCompany = async () => {
     try {
       setLoading(true);
+
       const res = await axios.get(`${API_URL_APP}/api/v1/my-company`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const data = res.data?.data;
-      console.log("Company data:", data);
 
       if (data && Object.keys(data).length > 0) {
         setCompany(data);
-        // Proceed with whatever you need when company exists
+        alertShownRef.current = false; // reset
       } else {
-        // No company found → Show simple native alert
-        Alert.alert(
-          "Company Required",
-          "Please add company details first.",
-          [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Add Company",
-              onPress: () => navigation.navigate("company-details"),
-            },
-          ],
-          { cancelable: false }
-        );
+        // 🚫 Prevent multiple alerts
+        if (!alertShownRef.current) {
+          alertShownRef.current = true;
+
+          Alert.alert(
+            "Agent Details Required",
+            "Please add Agent details first.",
+            [
+              {
+                text: "Back",
+                style: "cancel",
+                onPress: () => {
+                  alertShownRef.current = false;
+                  navigation.goBack();
+                },
+              },
+              {
+                text: "Add Agent Details",
+                onPress: () => {
+                  alertShownRef.current = false;
+                  navigation.navigate("company-details");
+                },
+              },
+            ],
+            { cancelable: false }
+          );
+        }
       }
     } catch (err) {
       console.log("Fetch error:", err?.response?.data || err.message);
-      Alert.alert("Error", "Failed to load company details", [{ text: "OK" }]);
+      Alert.alert("Error", "Failed to load company details");
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => {
-    fetchCompany();
-  }, [token]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchCompany();
+    }, [token])
+  );
   const fetchRidePostedById = async () => {
     if (!rideId) return;
     try {
@@ -235,6 +422,7 @@ const DriverPost = () => {
         setPickupCoordinates(ride.pickupLocation || null);
         setDropLocation(ride.dropAddress || "");
         setDropCoordinates(ride.dropLocation || null);
+        setStops(ride.stops);
 
         // Pricing
         setTotalAmount(ride.totalAmount?.toString() || "");
@@ -289,33 +477,34 @@ const DriverPost = () => {
     );
   };
 
-  useEffect(() => {
-    if (requirements.allinclusive) {
-      // "All Inclusive" is selected → force ALL features to true
-      setRequirements((prev) => ({
+  const toggleRequirement = (key) => {
+    setRequirements((prev) => {
+      // If user clicks ALL INCLUSIVE
+      if (key === "allinclusive") {
+        return {
+          ...prev,
+          allinclusive: true,
+          allexclusive: false,
+        };
+      }
+
+      // If user clicks ALL EXCLUSIVE
+      if (key === "allexclusive") {
+        return {
+          ...prev,
+          allexclusive: true,
+          allinclusive: false,
+        };
+      }
+
+      // If user clicks any other option
+      return {
         ...prev,
-        onlydiesel: false,
-        withcarrier: true,
-        ac: true,
-        musicsystem: true,
-        foodallowed: true,
-        allinclusive: true,
-        allexclusive: false, // Cannot have both
-      }));
-    } else if (requirements.allexclusive) {
-      // "All Exclusive" is selected → force ALL features to false (except itself)
-      setRequirements((prev) => ({
-        ...prev,
-        onlydiesel: false,
-        withcarrier: false,
-        ac: false,
-        musicsystem: false,
-        foodallowed: false,
-        allinclusive: false,
-        allexclusive: true,
-      }));
-    }
-  }, [requirements.allinclusive, requirements.allexclusive]);
+        [key]: !prev[key],
+      };
+    });
+  };
+
   // Get place details with coordinates
   const getPlaceDetails = async (placeId, setLocationFn, setCoordinatesFn) => {
     try {
@@ -371,6 +560,65 @@ const DriverPost = () => {
 
   const formatTime = (d) => d.toTimeString().slice(0, 5);
 
+  const validateCommission = (value) => {
+    const commissionAmount = parseFloat(value) || 0;
+    const total = parseFloat(totalAmount) || 0;
+
+    if (total > 0) {
+      const percentage = (commissionAmount / total) * 100;
+
+      if (percentage > maxCommissionPercentage) {
+        const maxCommission = (total * maxCommissionPercentage) / 100;
+        Alert.alert(
+          "Commission Limit Exceeded",
+          `Maximum ${maxCommissionPercentage}% commission allowed. Max amount: ₹${maxCommission.toFixed(
+            0
+          )}`,
+          [{ text: "OK" }]
+        );
+        setCommission(maxCommission.toFixed(0));
+        return;
+      }
+    }
+
+    setCommission(value);
+  };
+
+  const validateTotalAmount = (value) => {
+    setTotalAmount(value);
+
+    if (distance > 0 && vehicle && value) {
+      const amount = parseFloat(value);
+      const ratePerKm = amount / distance;
+      const vehicleRate = vehicleRates.find((v) => v.vehicleKey === vehicle);
+
+      if (vehicleRate && ratePerKm > vehicleRate.maxRatePerKm) {
+        Alert.alert(
+          "Rate Limit Exceeded",
+          `${vehicleRate.displayName} maximum rate is ₹${
+            vehicleRate.maxRatePerKm
+          }/km.\n\nCurrent rate: ₹${ratePerKm.toFixed(
+            2
+          )}/km\nSuggested amount: ₹${(
+            vehicleRate.maxRatePerKm * distance
+          ).toFixed(0)}`,
+          [
+            // {
+            //   text: "Keep Current",
+            //   style: "cancel",
+            // },
+            {
+              text: "Use Suggested",
+              onPress: () =>
+                setTotalAmount(
+                  (vehicleRate.maxRatePerKm * distance).toFixed(0)
+                ),
+            },
+          ]
+        );
+      }
+    }
+  };
   // Validate form
   const validateForm = () => {
     if (!pickupLocation || !pickupCoordinates) {
@@ -471,9 +719,156 @@ const DriverPost = () => {
     setSuccessData(null);
   };
 
+  const calculateRoadDistance = async (coords1, coords2, waypoints = []) => {
+    if (!coords1 || !coords2) return 0;
+
+    try {
+      // Build origin
+      const origin = `${coords1.coordinates[1]},${coords1.coordinates[0]}`;
+
+      // Build destination
+      const destination = `${coords2.coordinates[1]},${coords2.coordinates[0]}`;
+
+      // Build waypoints string if stops exist
+      let waypointsParam = "";
+      if (waypoints.length > 0) {
+        const validWaypoints = waypoints
+          .filter((w) => w.coordinates)
+          .map(
+            (w) =>
+              `${w.coordinates.coordinates[1]},${w.coordinates.coordinates[0]}`
+          )
+          .join("|");
+
+        if (validWaypoints) {
+          waypointsParam = `&waypoints=${validWaypoints}`;
+        }
+      }
+
+      // Call Google Distance Matrix API
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}${waypointsParam}&key=${GOOGLE_API_KEY}&mode=driving&units=metric`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === "OK" && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+
+        // Duration
+        const durationText = route.legs?.[0]?.duration?.text || null;
+
+        // ✅ Extract encoded polyline string
+        const polyline = route.overview_polyline?.points || null;
+
+        // console.log("Polyline string:", polyline);
+
+        setEstimatedDuration(durationText);
+        setPolyLine(polyline);
+
+        // Distance calculation
+        let totalDistance = 0;
+
+        if (route.legs && route.legs.length > 0) {
+          route.legs.forEach((leg) => {
+            totalDistance += leg.distance.value; // meters
+          });
+        }
+
+        const distanceKm = Math.round(totalDistance / 1000);
+        setDistance(distanceKm);
+        // console.log("Distance (km):", distanceKm);
+        // console.log("Duration:", durationText);
+
+        // Sum up all leg distances
+        if (route.legs && route.legs.length > 0) {
+          route.legs.forEach((leg) => {
+            totalDistance += leg.distance.value; // in meters
+          });
+        }
+
+        // Convert meters to kilometers and round
+        return Math.round(totalDistance / 1000);
+      }
+
+      // Fallback to Haversine if API fails
+      return calculateHaversineDistance(coords1, coords2);
+    } catch (error) {
+      console.error("Distance calculation error:", error);
+      // Fallback to Haversine
+      return calculateHaversineDistance(coords1, coords2);
+    }
+  };
+
+  const calculateHaversineDistance = (coords1, coords2) => {
+    if (!coords1 || !coords2) return 0;
+
+    const R = 6371; // Earth's radius in km
+    const lat1 = coords1.coordinates[1] * (Math.PI / 180);
+    const lat2 = coords2.coordinates[1] * (Math.PI / 180);
+    const deltaLat =
+      (coords2.coordinates[1] - coords1.coordinates[1]) * (Math.PI / 180);
+    const deltaLon =
+      (coords2.coordinates[0] - coords1.coordinates[0]) * (Math.PI / 180);
+
+    const a =
+      Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+      Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(deltaLon / 2) *
+        Math.sin(deltaLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    return Math.round(distance);
+  };
+
+  // Update useEffect to calculate distance with stops included
+  useEffect(() => {
+    const fetchDistance = async () => {
+      if (pickupCoordinates && dropCoordinates) {
+        setLoading(true);
+
+        // Get valid stops with coordinates
+        const validStops = stops.filter((s) => s.coordinates);
+
+        // Calculate road distance with stops
+        const dist = await calculateRoadDistance(
+          pickupCoordinates,
+          dropCoordinates,
+          validStops
+        );
+
+        // setDistance(dist);
+
+        // Calculate estimated rate per km if total amount is entered
+        if (totalAmount && dist > 0) {
+          const rate = parseFloat(totalAmount) / dist;
+          setEstimatedKmRate(rate);
+        }
+
+        setLoading(false);
+      } else {
+        setDistance(0);
+        setEstimatedKmRate(0);
+      }
+    };
+
+    fetchDistance();
+  }, [pickupCoordinates, dropCoordinates, stops, totalAmount]);
+
+  const resetPricingAndDistance = () => {
+    setTotalAmount(0);
+    setEstimatedKmRate(0);
+
+    setCommission(0);
+    setDriverEarning(0);
+  };
+
   const postBooking = async () => {
     if (!validateForm()) return;
-
+    const isValid = await validateBookingWithAPI();
+    if (!isValid) return;
     setLoading(true);
     try {
       const requestData = {
@@ -485,10 +880,23 @@ const DriverPost = () => {
         pickupLocation: pickupCoordinates,
         dropAddress: dropLocation,
         dropLocation: dropCoordinates,
+        stops: stops.filter((stop) => stop.location && stop.coordinates), // Only send valid stops
         totalAmount: parseFloat(totalAmount),
         commissionAmount: parseFloat(commission) || 0,
         driverEarning: parseFloat(driverEarning),
         extraKmCharge: parseFloat(extraKm) || 0,
+        ratePerKm:
+          distance > 0 && totalAmount
+            ? parseFloat((parseFloat(totalAmount) / distance).toFixed(2))
+            : 0,
+        totalDistance: distance, // in KM
+        polyLine,
+        estimatedDuration: estimatedDuration, // can be calculated from Google API if needed
+        routeInfo: {
+          hasStops: stops.filter((s) => s.location && s.coordinates).length > 0,
+          stopsCount: stops.filter((s) => s.location && s.coordinates).length,
+          calculatedVia: "google_directions_api",
+        },
         companyDetails: company?._id,
         extraMinCharge: parseFloat(extraHour) || 0,
         acceptBookingType: acceptMode,
@@ -512,6 +920,7 @@ const DriverPost = () => {
         );
       } else {
         // CREATE mode → POST
+
         response = await axios.post(
           `${API_URL_APP}/api/v1/post-ride`,
           requestData,
@@ -519,6 +928,7 @@ const DriverPost = () => {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
+
         resetForm();
       }
 
@@ -529,8 +939,8 @@ const DriverPost = () => {
         Alert.alert("Error", response.data.message || "Failed to submit ride");
       }
     } catch (error) {
-      console.error("Ride submit error:", error);
-      Alert.alert("Error", "Something went wrong while submitting ride");
+      console.error("Ride submit error:", error.response.data);
+      Alert.alert("Error", error.response.data?.message);
     } finally {
       setLoading(false);
     }
@@ -580,12 +990,17 @@ const DriverPost = () => {
     );
   }
 
+  if (!company) {
+    return null;
+  }
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={
+          Platform.OS === "ios" && !isKeyboardVisible ? "padding" : undefined
+        }
         style={styles.keyboardView}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -600,6 +1015,8 @@ const DriverPost = () => {
         </View>
 
         <ScrollView
+          ref={scrollRef}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
@@ -646,7 +1063,7 @@ const DriverPost = () => {
                     vehicle ? styles.selectorText : styles.selectorPlaceholder
                   }
                 >
-                  {vehicle ? vehicle.toUpperCase() : "Select vehicle type"}
+                  {vehicle ? vehicle : "Select vehicle type"}
                 </Text>
               </View>
               <Plus size={20} color="#6B7280" />
@@ -676,7 +1093,7 @@ const DriverPost = () => {
               >
                 <Clock size={18} color="#6B7280" />
                 <Text style={styles.dateTimeText}>
-                  {formatTime(pickupTime)}
+                  {formatTimeByDate(pickupTime)}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -686,12 +1103,16 @@ const DriverPost = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Pickup Location</Text>
             <View style={styles.locationContainer}>
-              <View style={styles.locationInputContainer}>
+              <View ref={pickupInputRef} style={styles.locationInputContainer}>
                 <MapPin size={20} color="#EF4444" />
                 <TextInput
                   style={styles.locationInput}
                   placeholder="Enter pickup location"
                   value={pickupLocation}
+                  multiline
+                  onFocus={() => scrollToInput(pickupInputRef)}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
                   onChangeText={onPickupChange}
                   placeholderTextColor="#9CA3AF"
                 />
@@ -733,15 +1154,147 @@ const DriverPost = () => {
             )}
           </View>
 
+          <View
+            style={[
+              styles.section,
+              {
+                paddingVertical: 5,
+                borderWidth: 1,
+                width: "92%",
+                borderColor: "#E5E7EB",
+              },
+            ]}
+          >
+            <View style={styles.stopHeaderContainer}>
+              <TouchableOpacity
+                style={styles.addStopButton}
+                onPress={addStop}
+                disabled={stops.length >= 3}
+              >
+                <Text
+                  style={[
+                    styles.addStopText,
+                    stops.length >= 3 && styles.addStopTextDisabled,
+                  ]}
+                >
+                  Add Stop
+                </Text>
+                <Plus
+                  size={16}
+                  style={{ marginTop: 6 }}
+                  color={stops.length >= 3 ? "#9CA3AF" : "#000"}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {stops.map((stop, index) => (
+              <View key={index} style={styles.stopContainer}>
+                <View style={styles.stopHeader}>
+                  <Text style={styles.stopNumber}>Stop {index + 1}</Text>
+                  <TouchableOpacity
+                    onPress={() => removeStop(index)}
+                    style={styles.removeStopButton}
+                  >
+                    <Text style={styles.removeStopText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.locationContainer}>
+                  <View
+                    ref={(el) => (stopInputRefs.current[index] = el)}
+                    style={styles.locationInputContainer}
+                  >
+                    <MapPin size={20} color="#F59E0B" />
+                    <TextInput
+                      style={styles.locationInput}
+                      placeholder={`Enter stop ${index + 1} location`}
+                      value={stop.location}
+                      multiline
+                      onFocus={() => {
+                        const ref = { current: stopInputRefs.current[index] };
+                        scrollToInput(ref);
+                      }}
+                      returnKeyType="done"
+                      blurOnSubmit={true}
+                      onChangeText={(text) => onStopChange(text, index)}
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {stop.coordinates && (
+                      <CheckCircle2 size={18} color="#10B981" />
+                    )}
+                  </View>
+                  {stopLoading && currentStopIndex === index && (
+                    <ActivityIndicator
+                      size="small"
+                      color="#F59E0B"
+                      style={styles.loadingIndicator}
+                    />
+                  )}
+                </View>
+
+                {stopSuggestions.length > 0 && currentStopIndex === index && (
+                  <View style={styles.suggestionsContainer}>
+                    {stopSuggestions.slice(0, 4).map((item) => (
+                      <TouchableOpacity
+                        key={item.place_id}
+                        style={styles.suggestionItem}
+                        onPress={async () => {
+                          try {
+                            const res = await fetch(
+                              `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&key=${GOOGLE_API_KEY}&fields=formatted_address,geometry`
+                            );
+                            const data = await res.json();
+                            if (data.result) {
+                              const address = data.result.formatted_address;
+                              const coords = data.result.geometry?.location;
+
+                              const newStops = [...stops];
+                              newStops[index] = {
+                                location: address,
+                                coordinates: coords
+                                  ? {
+                                      type: "Point",
+                                      coordinates: [coords.lng, coords.lat],
+                                    }
+                                  : null,
+                              };
+                              setStops(newStops);
+                              setStopSuggestions([]);
+                              setCurrentStopIndex(null);
+                            }
+                          } catch (err) {
+                            Alert.alert(
+                              "Error",
+                              "Failed to get location details"
+                            );
+                          }
+                        }}
+                      >
+                        <MapPin size={16} color="#6B7280" />
+                        <Text style={styles.suggestionText} numberOfLines={1}>
+                          {item.description}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Drop Location</Text>
+            <Text style={styles.sectionTitle}>Destination</Text>
             <View style={styles.locationContainer}>
-              <View style={styles.locationInputContainer}>
+              <View ref={dropInputRef} style={styles.locationInputContainer}>
                 <MapPin size={20} color="#10B981" />
                 <TextInput
                   style={styles.locationInput}
-                  placeholder="Enter drop location"
+                  placeholder="Enter Destination"
                   value={dropLocation}
+                  multiline
+                  onFocus={() => scrollToInput(dropInputRef)}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
                   onChangeText={onDropChange}
                   placeholderTextColor="#9CA3AF"
                 />
@@ -783,7 +1336,7 @@ const DriverPost = () => {
 
           {/* Round Trip Days */}
           {tripType === "round-trip" && (
-            <View style={styles.section}>
+            <View ref={tripDaysRef} style={styles.section}>
               <Text style={styles.sectionTitle}>Number of Days</Text>
               <TextInput
                 style={styles.input}
@@ -791,6 +1344,9 @@ const DriverPost = () => {
                 keyboardType="numeric"
                 value={tripDays}
                 onChangeText={setTripDays}
+                onFocus={() => scrollToInput(tripDaysRef)}
+                returnKeyType="done"
+                blurOnSubmit={true}
                 placeholderTextColor="#9CA3AF"
               />
             </View>
@@ -798,7 +1354,7 @@ const DriverPost = () => {
 
           {/* Pricing */}
           <View style={styles.rowContainer}>
-            <View style={styles.halfSection}>
+            <View ref={totalAmountRef} style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Total Amount</Text>
               <View style={styles.amountContainer}>
                 <Text style={styles.rupeeSymbol}>₹</Text>
@@ -807,25 +1363,48 @@ const DriverPost = () => {
                   placeholder="0"
                   keyboardType="numeric"
                   value={totalAmount}
-                  onChangeText={setTotalAmount}
+                  onChangeText={validateTotalAmount}
+                  onFocus={() => scrollToInput(totalAmountRef)}
+                  returnKeyType="next"
+                  onSubmitEditing={() => commissionRef.current?.focus()}
+                  blurOnSubmit={false}
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
+              {/* Show rate per km */}
+              {distance > 0 && estimatedKmRate > 0 && (
+                <View style={styles.rateInfoContainer}>
+                  <Text style={styles.rateInfoText}>{distance} km</Text>
+                </View>
+              )}
             </View>
 
-            <View style={styles.halfSection}>
+            <View ref={commissionRef} style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Commission</Text>
               <View style={styles.amountContainer}>
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
                   placeholder="0"
+                  ref={commissionRef}
                   keyboardType="numeric"
+                  returnKeyType="done"
+                  blurOnSubmit={true}
                   value={commission}
-                  onChangeText={setCommission}
+                  onChangeText={validateCommission}
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
+              {/* Show commission percentage */}
+              {commission && totalAmount && parseFloat(totalAmount) > 0 && (
+                <Text style={styles.commissionPercentage}>
+                  {(
+                    (parseFloat(commission) / parseFloat(totalAmount)) *
+                    100
+                  ).toFixed(0)}
+                  % commission
+                </Text>
+              )}
             </View>
           </View>
 
@@ -844,7 +1423,7 @@ const DriverPost = () => {
 
           {/* Extra Charges */}
           <View style={styles.rowContainer}>
-            <View style={styles.halfSection}>
+            <View ref={extraKmRef} style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Extra KM Charge</Text>
               <View style={styles.amountContainer}>
                 <Text style={styles.rupeeSymbol}>₹</Text>
@@ -855,19 +1434,26 @@ const DriverPost = () => {
                   value={extraKm}
                   onChangeText={setExtraKm}
                   placeholderTextColor="#9CA3AF"
+                  onFocus={() => scrollToInput(extraKmRef)}
+                  returnKeyType="next"
+                  onSubmitEditing={() => extraHourRef.current?.focus()}
+                  blurOnSubmit={false}
                 />
               </View>
             </View>
 
-            <View style={styles.halfSection}>
+            <View ref={extraHourRef} style={styles.halfSection}>
               <Text style={styles.sectionTitle}>Extra Hour Charge</Text>
               <View style={styles.amountContainer}>
                 <Text style={styles.rupeeSymbol}>₹</Text>
                 <TextInput
+                  ref={extraHourRef}
                   style={styles.amountInput}
                   placeholder="0"
                   keyboardType="numeric"
                   value={extraHour}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
                   onChangeText={setExtraHour}
                   placeholderTextColor="#9CA3AF"
                 />
@@ -880,8 +1466,8 @@ const DriverPost = () => {
             <Text style={styles.sectionTitle}>Accept Booking By</Text>
             <View style={styles.segmentContainer}>
               {[
-                { label: "Auto", value: "instant" },
-                { label: "Manual", value: "scheduled" },
+                { label: "Manual Assign", value: "scheduled" },
+                { label: "Auto Assign", value: "instant" },
               ].map((mode) => (
                 <TouchableOpacity
                   key={mode.value}
@@ -907,30 +1493,22 @@ const DriverPost = () => {
           {/* Requirements */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Extra Requirements</Text>
+
             <View style={styles.chipContainer}>
               {[
+                { label: "All Inclusive", key: "allinclusive" },
+                { label: "All Exclusive", key: "allexclusive" },
                 { label: "Only Diesel", key: "onlydiesel" },
+
                 { label: "With Carrier", key: "withcarrier" },
                 { label: "Air Conditioning", key: "ac" },
                 { label: "Music System", key: "musicsystem" },
-                { label: "All Inclusive", key: "allinclusive" },
-                { label: "All Exclusive", key: "allexclusive" },
                 { label: "Food Allowed", key: "foodallowed" },
               ].map(({ label, key }) => (
                 <TouchableOpacity
                   key={key}
                   style={[styles.chip, requirements[key] && styles.chipActive]}
-                  onPress={() => {
-                    const newVal = !requirements[key];
-                    setRequirements((prev) => ({ ...prev, [key]: newVal }));
-                    if (
-                      key === "allinclusive" &&
-                      !newVal &&
-                      allInclusiveVehicles.includes(vehicle)
-                    ) {
-                      setVehicle("");
-                    }
-                  }}
+                  onPress={() => toggleRequirement(key)}
                 >
                   <Text
                     style={[
@@ -946,13 +1524,27 @@ const DriverPost = () => {
           </View>
 
           {/* Notes */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Additional Notes</Text>
+          <View
+            ref={notesRef}
+            style={[
+              styles.section,
+              { paddingBottom: isNotesFocused ? 200 : 0 },
+            ]}
+          >
+            <Text style={styles.sectionTitle}>
+              Additional Notes ({notes.length}/300)
+            </Text>{" "}
             <TextInput
               style={styles.notesInput}
               placeholder="Any special instructions..."
               multiline
-              numberOfLines={4}
+              ref={notesRef}
+              numberOfLines={8}
+              maxLength={300}
+              onFocus={() => setIsNotesFocused(true)}
+              onBlur={() => setIsNotesFocused(false)}
+              returnKeyType="default"
+              blurOnSubmit={false} // ← important for line break
               textAlignVertical="top"
               value={notes}
               onChangeText={setNotes}
@@ -962,22 +1554,25 @@ const DriverPost = () => {
         </ScrollView>
 
         {/* Post Button */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.postButton, loading && styles.postButtonDisabled]}
-            onPress={handlePostRide}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Text style={styles.postButtonText}>Post Ride</Text>
-                <Send size={20} color="#FFFFFF" />
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+        {!isKeyboardVisible && (
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.postButton, loading && styles.postButtonDisabled]}
+              onPress={handlePostRide}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.postButtonText}>Post Ride</Text>
+                  <Send size={20} color="#FFFFFF" />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {showDatePicker && (
           <DateTimePicker
             value={pickupDate}
@@ -993,7 +1588,7 @@ const DriverPost = () => {
           <DateTimePicker
             value={pickupTime}
             mode="time"
-            is24Hour
+            display="default"
             onChange={(e, t) => {
               setShowTimePicker(false);
               if (!t) return;
@@ -1011,7 +1606,7 @@ const DriverPost = () => {
                   return;
                 }
               }
-
+              console.log(t);
               setPickupTime(t);
             }}
           />
@@ -1029,27 +1624,22 @@ const DriverPost = () => {
               </View>
               <FlatList
                 data={vehicles}
-                keyExtractor={(item) => item.key}
+                keyExtractor={(item) => item.vehicleKey}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.modalItem}
                     onPress={() => {
-                      console.log("item.key", item.key);
-                      setVehicle(item.key); // ✅ store key for API
+                      setVehicle(item.vehicleKey);
+                      resetPricingAndDistance();
                       setShowVehicleModal(false);
                     }}
                   >
                     <View>
                       <Text style={styles.modalItemText}>
-                        {item.id}. {item.label} {item.seating}
-                      </Text>
-
-                      <Text style={styles.modalSubText}>
-                        {item.label} • {item.example}
+                        {item.displayName} {item.seating} - {item.example}
                       </Text>
                     </View>
-
-                    {vehicle === item.key && (
+                    {vehicle === item.vehicleKey && (
                       <CheckCircle2 size={20} color="#000" />
                     )}
                   </TouchableOpacity>
@@ -1239,6 +1829,7 @@ const styles = StyleSheet.create({
 
   // Scroll Content
   scrollContent: {
+    flexGrow: 1,
     paddingBottom: 120,
   },
 
@@ -1246,6 +1837,7 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: "#FFFFFF",
     marginHorizontal: 16,
+
     marginTop: 12,
     borderRadius: 12,
     padding: 16,
@@ -1315,6 +1907,7 @@ const styles = StyleSheet.create({
   selectorText: {
     fontSize: 14,
     color: "#1F2937",
+    textTransform: "capitalize",
     fontWeight: "500",
   },
   selectorPlaceholder: {
@@ -1355,7 +1948,7 @@ const styles = StyleSheet.create({
   },
   locationInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 12,
     color: "#1F2937",
   },
   loadingIndicator: {
@@ -1404,13 +1997,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F9FAFB",
     borderRadius: 8,
-    padding: 12,
+    padding: 3,
     gap: 8,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
   rupeeSymbol: {
     fontSize: 16,
+    marginLeft: "22%",
+    alignItems: "center",
+    textAlign: "center",
+    justifyContent: "center",
     fontWeight: "600",
     color: "#1F2937",
   },
@@ -1516,6 +2113,8 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     backgroundColor: "#FFFFFF",
+    paddingBottom: 80,
+
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     maxHeight: "100%",
@@ -1610,6 +2209,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     borderRadius: 20,
     padding: 24,
+    paddingBottom: 80,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
@@ -1699,6 +2299,109 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "600",
+  },
+  commissionPercentage: {
+    fontSize: 12,
+    textAlign: "center",
+    color: "#6B7280",
+    marginTop: 4,
+  },
+
+  rateInfoContainer: {
+    marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  rateInfoText: {
+    fontSize: 12,
+    textAlign: "center",
+
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+
+  rateLimitText: {
+    fontSize: 11,
+    color: "#10B981",
+    fontWeight: "600",
+  },
+
+  rateLimitExceeded: {
+    color: "#EF4444",
+  },
+
+  // Add Stops Styles
+  stopHeaderContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  addStopButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "90%",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    // backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+  },
+
+  addStopText: {
+    fontSize: 13,
+    marginTop: 6,
+    fontWeight: "600",
+    color: "#000",
+  },
+
+  addStopTextDisabled: {
+    color: "#9CA3AF",
+  },
+
+  stopSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 12,
+  },
+
+  stopContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+
+  stopHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  stopNumber: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+  },
+
+  removeStopButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  modalRateText: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  removeStopText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EF4444",
   },
 });
 

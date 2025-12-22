@@ -1,11 +1,12 @@
 // components/common/Layout.js
-import React,{useContext} from "react";
+import React, { useContext } from "react";
 import {
   View,
   ScrollView,
   StyleSheet,
   Platform,
   StatusBar,
+  RefreshControl,
 } from "react-native";
 import {
   SafeAreaView,
@@ -26,24 +27,37 @@ const Layout = ({
   stopFloatingWidget,
   startFloatingWidget,
   startPoolingService,
-  contentContainerStyle = {}, // ← यहाँ कोई default flexGrow नहीं डालेंगे
+  contentContainerStyle = {},
   backgroundColor = "#ffffff",
   state,
+  refreshing = false,
+  onRefresh,
 }) => {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useContext(BottomTabBarHeightContext) || 0;
+  
   const defaultContentStyle = {
     flexGrow: 1,
-    paddingBottom: tabBarHeight + insets.bottom + 20, // real dynamic height
+    paddingBottom: tabBarHeight + insets.bottom + 20,
   };
 
   const finalContentStyle = [
     defaultContentStyle,
-    contentContainerStyle, // ← user का style last में आएगा → override करेगा
+    contentContainerStyle,
   ];
 
+  // Clone children and pass refresh prop to all
+  const childrenWithRefreshProp = React.Children.map(children, (child) => {
+    if (React.isValidElement(child)) {
+      return React.cloneElement(child, { isRefresh: refreshing });
+    }
+    return child;
+  });
+
   const content = (
-    <View style={[styles.content, { backgroundColor }]}>{children}</View>
+    <View style={[styles.content, { backgroundColor }]}>
+      {childrenWithRefreshProp}
+    </View>
   );
 
   return (
@@ -69,10 +83,20 @@ const Layout = ({
       {scrollable ? (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={finalContentStyle} // ← यहाँ सही style
+          contentContainerStyle={finalContentStyle}
           showsVerticalScrollIndicator={false}
           bounces={true}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={["#DC2626"]}
+                tintColor="#DC2626"
+              />
+            ) : null
+          }
         >
           {content}
         </ScrollView>
@@ -93,11 +117,9 @@ const Layout = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-
   },
   scrollView: {
     backgroundColor: "#FFFBF1",
-
     flex: 1,
   },
   staticContent: {

@@ -16,7 +16,7 @@ import { API_URL_APP } from "../../constant/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-export default function Categories({ isRefresh }) {
+export default function Categories({ refreshing,isRefresh }) {
   const navigation = useNavigation();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,11 +28,8 @@ export default function Categories({ isRefresh }) {
   const horizontalPadding = 12;
   const totalPadding = horizontalPadding * 2;
   const availableWidth = SCREEN_WIDTH - totalPadding;
-  
-  // We want to show MAX_VISIBLE (4) cards + View More if needed
-  // Add small gap between cards (approx 8-10 to match your design)
   const gap = 10;
-  const totalGaps = (MAX_VISIBLE) * gap; // gaps between 5 items (4 + view more)
+  const totalGaps = (MAX_VISIBLE) * gap; 
   
   const cardWidth = (availableWidth - totalGaps) / (MAX_VISIBLE + 1); // +1 for potential View More
 
@@ -62,7 +59,7 @@ export default function Categories({ isRefresh }) {
 
   useEffect(() => {
     fetchCategories();
-  }, [isRefresh]);
+  }, [isRefresh,refreshing]);
 
   const handlePress = (item) => {
     if (item._id === "view_more") {

@@ -29,9 +29,19 @@ import { CommonActions, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { UniversalAlert } from "../../common/UniversalAlert";
 import useSettings from "../../../hooks/Settings";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 
 const AADHAAR_DATA_KEY = "aadhaar_verified_data";
-const AADHAAR_EXPIRY_HOURS = 10;
+const REGISTRATION_STATE_KEY = "registration_progress_state";
+
+// DL Verification Status
+const DL_STATUS = {
+  NOT_VERIFIED: "NOT_VERIFIED",
+  VERIFIED: "VERIFIED",
+  PENDING_VERIFICATION: "PENDING_VERIFICATION",
+  FAILED: "FAILED",
+};
 
 export default function RegisterScreen({ navigation }) {
   const route = useRoute();
@@ -45,6 +55,7 @@ export default function RegisterScreen({ navigation }) {
     primaryButton: "OK",
     onPrimaryPress: () => setAlertVisible(false),
   });
+
   const showAlert = (type, title, message, onClose = null) => {
     setAlertConfig({
       type,
@@ -56,6 +67,7 @@ export default function RegisterScreen({ navigation }) {
     setAlertVisible(true);
   };
 
+  // Mobile Verification States
   const [mobileVerified, setMobileVerified] = useState(false);
   const [showMobileOtpModal, setShowMobileOtpModal] = useState(false);
   const [mobileOtp, setMobileOtp] = useState("");
@@ -67,18 +79,18 @@ export default function RegisterScreen({ navigation }) {
     .fill()
     .map(() => useRef(null));
 
-  // === STATES ===
-  const [currentStep, setCurrentStep] = useState(1);
+  // Registration States
+  const [currentStep, setCurrentStep] = useState(0); // 0=mobile, 1=aadhaar, 2=docs, 3=dl
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
   const [dob, setDob] = useState(null);
   const [email, setEmail] = useState("");
   const [gender, setGender] = useState("");
-  const [address, setAddress] = useState({});
+  const [address, setAddress] = useState("");
   const [profileImage, setProfileImage] = useState(null);
   const [referralId, setReferralId] = useState("");
-
+  const [aadharData, setAadharData] = useState(null);
   // Aadhaar Verification
   const [isAadhaarVerified, setIsAadhaarVerified] = useState(false);
   const [aadhaarRequestId, setAadhaarRequestId] = useState(null);
@@ -95,8 +107,15 @@ export default function RegisterScreen({ navigation }) {
   const [licenseFrontDoc, setLicenseFrontDoc] = useState(null);
   const [licenseBackDoc, setLicenseBackDoc] = useState(null);
   const [licenseNumber, setLicenseNumber] = useState("");
-  const [isDLVerified, setIsDLVerified] = useState(false);
+  const [dobLicence, setDobLicence] = useState(null);
+
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const [dlVerificationStatus, setDlVerificationStatus] = useState(
+    DL_STATUS.NOT_VERIFIED
+  );
   const [dlData, setDlData] = useState(null);
+  const [showDLInfoModal, setShowDLInfoModal] = useState(false);
 
   // UI & Camera
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -110,22 +129,108 @@ export default function RegisterScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef(null);
 
-  const isByPass =
-    data?.data?.ByPassApi === true || data?.ByPassApi === true ? true : false;
+  const isByPass = data?.data?.ByPassApi === true || data?.ByPassApi === true;
 
+  // ✅ SAVE REGISTRATION STATE TO STORAGE
+  const saveRegistrationState = async () => {
+    try {
+      const state = {
+        currentStep,
+        mobileVerified,
+        isAadhaarVerified,
+        mobile,
+        aadhaarNumber,
+        name,
+        dob: dob?.toISOString(),
+        email,
+        gender,
+        address,
+        profileImage,
+        licenseNumber,
+        dlVerificationStatus,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem(REGISTRATION_STATE_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.error("Failed to save registration state:", error);
+    }
+  };
+
+  // ✅ LOAD REGISTRATION STATE FROM STORAGE
+  const loadRegistrationState = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(REGISTRATION_STATE_KEY);
+      if (saved) {
+        const state = JSON.parse(saved);
+        // Only restore if less than 24 hours old
+        if (Date.now() - state.timestamp < 24 * 60 * 60 * 1000) {
+          setCurrentStep(state.currentStep || 0);
+          setMobileVerified(state.mobileVerified || false);
+          setIsAadhaarVerified(state.isAadhaarVerified || false);
+          setMobile(state.mobile || "");
+          setAadhaarNumber(state.aadhaarNumber || "");
+          setName(state.name || "");
+          setDob(state.dob ? new Date(state.dob) : null);
+          setEmail(state.email || "");
+          setGender(state.gender || "");
+          setAddress(state.address || "");
+          setProfileImage(state.profileImage || null);
+          setLicenseNumber(state.licenseNumber || "");
+          setDlVerificationStatus(
+            state.dlVerificationStatus || DL_STATUS.NOT_VERIFIED
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load registration state:", error);
+    }
+  };
+
+  // ✅ CLEAR REGISTRATION STATE
+  const clearRegistrationState = async (screen) => {
+    try {
+      await AsyncStorage.removeItem(REGISTRATION_STATE_KEY);
+      navigation.replace(screen);
+    } catch (error) {
+      console.error("Failed to clear registration state:", error);
+    }
+  };
+
+  // ✅ AUTO-SAVE STATE ON CHANGES
   useEffect(() => {
-    const step = route?.params?.step; // safely get step from route.params
+    if (mobileVerified || isAadhaarVerified) {
+      saveRegistrationState();
+    }
+  }, [
+    currentStep,
+    mobileVerified,
+    isAadhaarVerified,
+    mobile,
+    aadhaarNumber,
+    name,
+    dob,
+    email,
+    gender,
+    address,
+    licenseNumber,
+    dlVerificationStatus,
+  ]);
+
+  // ✅ LOAD STATE ON MOUNT
+  useEffect(() => {
+    loadRegistrationState();
     fetchSettings();
+
+    const step = route?.params?.step;
     if (step === "step-1") {
       setIsAadhaarVerified(true);
-      setCurrentStep(step);
+      setCurrentStep(2);
     } else if (step) {
-      setCurrentStep(step);
-      setIsAadhaarVerified(false);
+      setCurrentStep(parseInt(step) || 0);
     }
-  }, [route?.params]);
+  }, []);
 
-  // === TIMER ===
+  // Timer for Aadhaar OTP
   useEffect(() => {
     let interval;
     if (showOtpModal && timer > 0) {
@@ -134,30 +239,25 @@ export default function RegisterScreen({ navigation }) {
     return () => clearInterval(interval);
   }, [showOtpModal, timer]);
 
-  // === ERROR HELPERS ===
-  const setFieldError = (field, message) =>
-    setErrors((prev) => ({ ...prev, [field]: message }));
-  const clearFieldError = (field) =>
-    setErrors((prev) => {
-      const newErrors = { ...prev };
-      delete newErrors[field];
-      return newErrors;
-    });
-  const renderError = (field) =>
-    errors[field] ? (
-      <Text style={styles.fieldError}>{errors[field]}</Text>
-    ) : null;
+  // Timer for Mobile OTP
+  useEffect(() => {
+    let interval;
+    if (showMobileOtpModal && mobileTimer > 0) {
+      interval = setInterval(() => setMobileTimer((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showMobileOtpModal, mobileTimer]);
 
+  const formatDate = (date) => {
+    return date.toISOString().split("T")[0]; // YYYY-MM-DD
+  };
   // === REDIRECT HANDLER ===
   const handleRedirect = (redirect, message, driver) => {
     let routeName = "";
     let params = {};
+
     switch (redirect) {
       case "step-1":
-        routeName = "Signup";
-        params = { step: 1, driver };
-
-        // Pre-fill fields
         setName(driver.full_name || "");
         setDob(driver.dob ? new Date(driver.dob) : null);
         setGender(driver.gender || "");
@@ -171,19 +271,16 @@ export default function RegisterScreen({ navigation }) {
               driver.address.state,
               driver.address.country,
             ]
-              .filter(Boolean) // removes empty or undefined values
+              .filter(Boolean)
               .join(", ")
           : "";
-
         setAddress(addr);
-
         if (driver.profile_image) {
           setProfileImage(`data:image/jpeg;base64,${driver.profile_image}`);
         }
         setIsAadhaarVerified(true);
         setMobileVerified(true);
-        setShowMobileOtpModal(false);
-
+        setCurrentStep(2);
         return;
 
       case "step-2":
@@ -210,31 +307,129 @@ export default function RegisterScreen({ navigation }) {
         return;
     }
 
-    // ✅ Redirect for all steps except step-1
     navigation.replace(routeName, params);
   };
 
-  // === AADHAAR OTP GENERATE ===
+  // === SEND MOBILE OTP ===
+  const handleSendMobileOtp = async () => {
+    if (!/^\d{10}$/.test(mobile)) {
+      return showAlert(
+        "error",
+        "Invalid Mobile",
+        "Enter valid 10-digit number"
+      );
+    }
+
+    const deviceId = await Application.getAndroidId();
+    setIsSendingMobileOtp(true);
+
+    try {
+      const res = await axios.post(`${API_URL_APP}/api/v1/send-mobile-otp`, {
+        number: mobile.trim(),
+        device_id: deviceId,
+      });
+
+      if (res.data.success) {
+        if (res.data.alreadyVerified || res.data.redirect === "home") {
+          showAlert(
+            "success",
+            "Welcome Back!",
+            "Number already registered. Please Login",
+            () => {
+              navigation.replace("AuthLogin", { driver: res.data.driver });
+            }
+          );
+          return;
+        }
+
+        if (res.data.redirect) {
+          showAlert("info", "Action Required", res.data.message, () => {
+            handleRedirect(
+              res.data.redirect,
+              res.data.message,
+              res.data.driver
+            );
+          });
+          return;
+        }
+
+        if (res.data.message?.includes("OTP")) {
+          setShowMobileOtpModal(true);
+          setMobileTimer(30);
+          setMobileOtp("");
+        }
+      }
+    } catch (error) {
+      const errData = error.response?.data || {};
+      if (errData.redirect) {
+        showAlert(
+          "info",
+          "Continue Registration",
+          errData.message || "Please complete your profile",
+          () => {
+            handleRedirect(errData.redirect, errData.message, errData.driver);
+          }
+        );
+      } else {
+        showAlert(
+          "error",
+          "Error",
+          errData.message || "Network error. Try again."
+        );
+      }
+    } finally {
+      setIsSendingMobileOtp(false);
+    }
+  };
+
+  // === VERIFY MOBILE OTP ===
+  const handleVerifyMobileOtp = async () => {
+    if (mobileOtp.length !== 6) {
+      return showAlert("error", "Invalid", "Enter 6-digit OTP");
+    }
+
+    setIsVerifyingMobileOtp(true);
+    try {
+      const res = await axios.post(`${API_URL_APP}/api/v1/verify-mobile-otp`, {
+        mobileNumber: mobile.trim(),
+        otp: mobileOtp,
+      });
+
+      if (res.data.success) {
+        setMobileVerified(true);
+        setShowMobileOtpModal(false);
+        setCurrentStep(1);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showAlert(
+          "success",
+          "Verified!",
+          "Mobile number verified successfully"
+        );
+      } else {
+        showAlert("error", "Invalid OTP", res.data.message || "Try again");
+      }
+    } catch (error) {
+      const errData = error.response?.data || {};
+      if (errData.redirect) {
+        handleRedirect(errData.redirect, errData.message, errData.driver);
+        return;
+      }
+      showAlert("error", "Error", errData.message || "Failed");
+    } finally {
+      setIsVerifyingMobileOtp(false);
+    }
+  };
+
+  // === GENERATE AADHAAR OTP ===
   const handleGenerateAadhaarOTP = async () => {
     if (isVerifying) return;
     setErrors({});
-
-    console.log("👉 handleGenerateAadhaarOTP() called");
-    console.log("🔢 Aadhaar:", aadhaarNumber);
-    console.log("📱 Mobile:", mobile);
 
     if (!/^\d{12}$/.test(aadhaarNumber)) {
       return showAlert(
         "error",
         "Invalid Aadhaar",
         "Enter a valid 12-digit Aadhaar number"
-      );
-    }
-    if (!/^\d{10}$/.test(mobile)) {
-      return showAlert(
-        "error",
-        "Invalid Mobile",
-        "Enter a valid 10-digit mobile number"
       );
     }
 
@@ -249,84 +444,56 @@ export default function RegisterScreen({ navigation }) {
         isByPass: data?.ByPassApi || false,
       };
 
-      console.log("📤 Sending OTP Request Payload:", payload);
-
       const response = await axios.post(
         `${API_URL_APP}/api/v1/send-otp-on-aadhar`,
         payload,
-        { headers: { "Content-Type": "application/json" }, timeout: 20000 }
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 20000,
+        }
       );
 
-      console.log("📥 Full API Response:", response);
       const resData = response.data;
 
-      console.log("📥 Response Data:", resData);
-
       if (resData.success && resData.request_id) {
-        console.log(
-          "✅ OTP sent successfully. Request ID:",
-          resData.request_id
-        );
-
         setAadhaarRequestId(resData.request_id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setShowOtpModal(true);
         setTimer(30);
-        setOtp(["", "", "", "", "", ""]);
-
+        setOtp("");
         showAlert(
           "success",
           "OTP Sent",
           resData.message || "OTP sent successfully!"
         );
       } else {
-        console.log("❌ OTP send failed. Server response:", resData);
-
         showAlert(
           resData.success ? "success" : "error",
           "OTP Failed",
-          resData.message || "Failed to send OTP. Please try again."
+          resData.message || "Failed to send OTP"
         );
-
         const redirect = resData?.aadhaarData?.redirect || resData.redirect;
         const message = resData?.aadhaarData?.message || resData.message;
         const driver = resData?.aadhaarData || resData.driver;
-
-        console.log("🔁 Redirecting:", { redirect, message, driver });
-
         handleRedirect(redirect, message, driver);
       }
     } catch (error) {
-      console.log("🔥 ERROR in Aadhaar OTP API:", error);
-      console.log("🔥 Error Response:", error.response?.data);
-
-      const msg =
-        error.response?.data?.message ||
-        "Failed to send OTP. Please try again.";
-
       const errData = error.response?.data || {};
-
-      // Extract redirect info if error contains redirect & driver
       const redirect =
         errData.redirect || errData?.aadhaarData?.redirect || null;
-
       const message =
         errData.message ||
         errData?.aadhaarData?.message ||
         "Failed to send OTP.";
-
       const driver = errData.driver || errData?.aadhaarData || null;
 
-      console.log("⚠️ Extracted From Error:", { redirect, message, driver });
       if (redirect) {
-        console.log("🔁 Redirecting from catch block");
         handleRedirect(redirect, message, driver);
-        return; // stop further alerts
+        return;
       }
-      showAlert("warning", "Error", msg);
+      showAlert("warning", "Error", message);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
-      console.log("🔚 Verification process ended");
       setIsVerifying(false);
     }
   };
@@ -334,19 +501,19 @@ export default function RegisterScreen({ navigation }) {
   // === VERIFY AADHAAR OTP ===
   const handleVerifyAadhaarOtp = async () => {
     if (isVerifying) return;
-    const otpValue = otp;
-    if (otpValue.length !== 6)
+    if (otp.length !== 6) {
       return showAlert("error", "Invalid OTP", "Enter 6-digit OTP");
+    }
 
     setIsVerifying(true);
-    const deviceId = await Application.getAndroidId();
+    const deviceId = Application.getAndroidId();
 
     try {
       const response = await axios.post(
         `${API_URL_APP}/api/v1/verify-otp-on-aadhar`,
         {
           request_id: aadhaarRequestId,
-          otp: otpValue,
+          otp,
           deviceId,
           aadhaarNumber,
           mobile,
@@ -357,10 +524,11 @@ export default function RegisterScreen({ navigation }) {
 
       if (response.data.success) {
         const { aadhaarData, isNewDriver, message, driver } = response.data;
-        console.log(aadhaarData);
+        setAadharData(aadhaarData);
         setName(aadhaarData.full_name || "");
         setDob(aadhaarData.dob ? new Date(aadhaarData.dob) : null);
         setGender(aadhaarData.gender || "");
+
         const addr = aadhaarData.address
           ? [
               aadhaarData.address.house,
@@ -371,10 +539,12 @@ export default function RegisterScreen({ navigation }) {
               aadhaarData.address.state,
               aadhaarData.address.country,
             ]
-              .filter(Boolean) // removes empty or undefined values
+              .filter(Boolean)
               .join(", ")
           : "";
-        setAddress(addr || {});
+
+        setAddress(addr);
+
         if (aadhaarData.profile_image) {
           setProfileImage(
             `data:image/jpeg;base64,${aadhaarData.profile_image}`
@@ -393,12 +563,12 @@ export default function RegisterScreen({ navigation }) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setShowOtpModal(false);
         setIsAadhaarVerified(true);
+        setCurrentStep(2);
 
         if (!isNewDriver) {
           navigation.navigate("DriverHome", { driver });
-        } else {
-          setCurrentStep(1);
         }
+
         showAlert(
           "success",
           "Verified",
@@ -422,30 +592,33 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  // === RESEND OTP ===
+  // === RESEND AADHAAR OTP ===
   const handleResendOtp = async () => {
     if (timer > 0 || isResending) return;
     setIsResending(true);
-    setOtp(["", "", "", "", "", ""]);
+    setOtp("");
     await handleGenerateAadhaarOTP();
     setIsResending(false);
   };
 
-  // === VERIFY DRIVING LICENSE ===
+  // === VERIFY DRIVING LICENSE (UPDATED) ===
   const handleVerifyDL = async () => {
-    if (!licenseNumber.trim())
+    if (!licenseNumber.trim()) {
       return showAlert("error", "Required", "Enter DL number");
-    if (!dob) return showAlert("error", "Required", "DOB is required");
+    }
+    if (!dob) {
+      return showAlert("error", "Required", "DOB is required");
+    }
 
     setIsVerifying(true);
-    const deviceId = await Application.getAndroidId();
+    const deviceId = Application.getAndroidId();
 
     try {
       const response = await axios.post(
         `${API_URL_APP}/api/v1/verify-dl`,
         {
           licenseNumber: licenseNumber.trim(),
-          dob,
+          dob: dobLicence,
           aadhaarName: name.trim(),
           deviceId,
           aadhaarNumber,
@@ -455,23 +628,36 @@ export default function RegisterScreen({ navigation }) {
       );
 
       if (response.data.success) {
-        const { dlData, address } = response.data;
+        const { dlData, manualVerification } = response.data;
+
         setDlData(dlData);
-        setIsDLVerified(true);
-        if (dlData.permanent_address) {
-          setAddress((prev) => ({
-            ...prev,
-            dl_address: dlData.permanent_address,
-            dl_zip: dlData.permanent_zip,
-          }));
+
+        // 🔹 CASE 1: Instant Verification Success
+        if (!manualVerification) {
+          setDlVerificationStatus(DL_STATUS.VERIFIED);
+          if (dlData.permanent_address) {
+            setAddress((prev) => ({
+              ...prev,
+              dl_address: dlData.permanent_address,
+              dl_zip: dlData.permanent_zip,
+            }));
+          }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showAlert(
+            "success",
+            "DL Verified",
+            "Driving license verified successfully"
+          );
         }
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showAlert(
-          "success",
-          "DL Verified",
-          "Driving license verified successfully"
-        );
+        // 🔹 CASE 2: Manual Verification (Fallback)
+        else {
+          setDlVerificationStatus(DL_STATUS.PENDING_VERIFICATION);
+          setShowDLInfoModal(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }
       } else {
+        // 🔹 CASE 3: Hard Failure
+        setDlVerificationStatus(DL_STATUS.FAILED);
         showAlert(
           "error",
           "Failed",
@@ -479,6 +665,7 @@ export default function RegisterScreen({ navigation }) {
         );
       }
     } catch (error) {
+      setDlVerificationStatus(DL_STATUS.FAILED);
       showAlert(
         "error",
         "Error",
@@ -493,144 +680,12 @@ export default function RegisterScreen({ navigation }) {
   const openDocCamera = async (mode) => {
     if (!permission?.granted) {
       const { granted } = await requestPermission();
-      if (!granted)
+      if (!granted) {
         return Alert.alert("Permission Needed", "Camera access required");
+      }
     }
     setCameraMode(mode);
     setCameraOpen(true);
-  };
-
-  // Send Mobile OTP
-  const handleSendMobileOtp = async () => {
-    if (!/^\d{10}$/.test(mobile)) {
-      return showAlert(
-        "error",
-        "Invalid Mobile",
-        "Enter valid 10-digit number"
-      );
-    }
-
-    const deviceId = await Application.getAndroidId();
-
-    setIsSendingMobileOtp(true);
-    try {
-      const res = await axios.post(`${API_URL_APP}/api/v1/send-mobile-otp`, {
-        number: mobile.trim(),
-        device_id: deviceId,
-      });
-
-      // अब success: true हो सकता है redirect के साथ भी!
-      if (res.data.success) {
-        // 1. Direct home login
-        if (res.data.alreadyVerified || res.data.redirect === "home") {
-          showAlert(
-            "success",
-            "Welcome Back! Number already registered",
-            "Please Login ",
-            () => {
-              navigation.replace("AuthLogin", { driver: res.data.driver });
-            }
-          );
-          return;
-        }
-
-        // 2. Redirect to any step
-        if (res.data.redirect) {
-          const redirect = res.data.redirect;
-          const driver = res.data.driver;
-          const message = res.data.message;
-
-          showAlert("info", "Action Required", message, () => {
-            handleRedirect(redirect, message, driver);
-          });
-          return;
-        }
-
-        // 3. OTP sent (first time)
-        if (res.data.message?.includes("OTP")) {
-          setShowMobileOtpModal(true);
-          setMobileTimer(30);
-          setMobileOtp(["", "", "", "", "", ""]);
-          // showAlert("success", "OTP Sent", "Check your SMS");
-        }
-      }
-    } catch (error) {
-      // console.log("API Error:", error.response?.data);
-
-      const errData = error.response?.data || {};
-
-      // अब catch में सिर्फ real error आएगा
-      if (errData.redirect) {
-        showAlert(
-          "info",
-          "Continue Registration",
-          errData.message || "Please complete your profile",
-          () => {
-            setAlertVisible(false);
-          }
-        );
-        handleRedirect(errData.redirect, errData.message, errData.driver);
-      } else {
-        showAlert(
-          "error",
-          "Error",
-          errData.message || "Network error. Try again."
-        );
-      }
-    } finally {
-      setIsSendingMobileOtp(false);
-    }
-  };
-
-  useEffect(() => {
-    let interval;
-    if (showMobileOtpModal && mobileTimer > 0) {
-      interval = setInterval(() => setMobileTimer((prev) => prev - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [showMobileOtpModal, mobileTimer]);
-  // Verify Mobile OTP
-  const handleVerifyMobileOtp = async () => {
-    const otp = mobileOtp;
-    console.log(otp);
-    if (otp.length !== 6)
-      return showAlert("error", "Invalid", "Enter 6-digit OTP");
-
-    setIsVerifyingMobileOtp(true);
-    try {
-      const res = await axios.post(`${API_URL_APP}/api/v1/verify-mobile-otp`, {
-        mobileNumber: mobile.trim(),
-        otp,
-      });
-
-      if (res.data.success) {
-        setMobileVerified(true);
-        setShowMobileOtpModal(false);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showAlert(
-          "success",
-          "Verified!",
-          "Mobile number verified successfully"
-        );
-      } else {
-        showAlert("error", "Invalid OTP", res.data.message || "Try again");
-      }
-    } catch (error) {
-      console.log("error.response?.data", error.response?.data);
-      const errData = error.response?.data || {};
-
-      // Extract redirect info if error contains redirect & driver
-      const redirect =
-        errData.redirect || errData?.aadhaarData?.redirect || null;
-      if (redirect) {
-        console.log("🔁 Redirecting from catch block");
-        handleRedirect(redirect, message, driver);
-        return; // stop further alerts
-      }
-      showAlert("error", "Error", error.response?.data?.message || "Failed");
-    } finally {
-      setIsVerifyingMobileOtp(false);
-    }
   };
 
   const pickDocFromGallery = async (type) => {
@@ -707,22 +762,65 @@ export default function RegisterScreen({ navigation }) {
 
   // === SUBMIT STEPS ===
   const handleStep1Submit = () => {
-    if (!isAadhaarVerified)
+    if (!isAadhaarVerified) {
       return showAlert("error", "Required", "Verify Aadhaar first");
-    if (!aadhaarFrontDoc || !aadhaarBackDoc)
+    }
+    if (!aadhaarFrontDoc || !aadhaarBackDoc) {
       return showAlert("error", "Required", "Upload both sides of Aadhaar");
-    setCurrentStep(2);
+    }
+    handlesendTempData();
+    setCurrentStep(3);
   };
 
+  const handlesendTempData = async () => {
+    try {
+      const fcmToken = (await getFCMToken()) || "";
+      const deviceId = Application.getAndroidId();
+      const payload = {
+        name,
+        dob: dob?.toISOString()?.split("T")[0],
+        mobile,
+        email,
+        aadharData,
+        gender,
+        aadhaarNumber,
+        address,
+
+        fcmToken,
+        deviceId,
+        referralId,
+        // 👇 helpful metadata
+        source: "mobile_app",
+        createdAt: new Date(),
+      };
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/temp-data`,
+        payload
+      );
+      console.log("Temp data saved:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error(
+        "Send temp data error:",
+        error?.response?.data || error.message
+      );
+      throw error;
+    }
+  };
   const handleStep2Submit = async () => {
-    if (!isDLVerified)
+    if (
+      dlVerificationStatus === DL_STATUS.NOT_VERIFIED ||
+      dlVerificationStatus === DL_STATUS.FAILED
+    ) {
       return showAlert("error", "Required", "Verify Driving License");
-    if (!panDoc || !licenseFrontDoc || !licenseBackDoc)
+    }
+    if (!panDoc || !licenseFrontDoc || !licenseBackDoc) {
       return showAlert("error", "Required", "Upload all documents");
+    }
 
     setIsSubmitting(true);
     const fcmToken = (await getFCMToken()) || "";
-    const deviceId = await Application.getAndroidId();
+    const deviceId = Application.getAndroidId();
 
     const formData = new FormData();
     formData.append("name", name);
@@ -733,9 +831,11 @@ export default function RegisterScreen({ navigation }) {
     formData.append("aadhaarNumber", aadhaarNumber);
     formData.append("dlNumber", licenseNumber);
     formData.append("address", JSON.stringify(address));
+    formData.append("dlVerificationStatus", dlVerificationStatus);
     if (fcmToken) formData.append("fcmToken", fcmToken);
     if (deviceId) formData.append("deviceId", deviceId);
     if (referralId) formData.append("referralId", referralId);
+
     if (
       profileImage?.startsWith("data:") ||
       profileImage?.includes("file://")
@@ -781,12 +881,16 @@ export default function RegisterScreen({ navigation }) {
       );
 
       const driverId = response.data?.data?.driver_id;
+
       showAlert(
         "success",
         "Success",
         response.data.message || "Registration successful!",
-        () => navigation.navigate("addVehcile", { driverId })
+        () => {
+          navigation.navigate("addVehcile", { driverId });
+        }
       );
+      await clearRegistrationState("addVehcile");
     } catch (error) {
       const apiMessage =
         error?.response?.data?.message ||
@@ -803,9 +907,53 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  // === RENDER PROGRESS ===
+  // === RENDER DL STATUS BADGE ===
+  const renderDLStatusBadge = () => {
+    const statusConfig = {
+      [DL_STATUS.VERIFIED]: {
+        color: "#4CAF50",
+        icon: "checkmark-circle",
+        text: "Verified",
+      },
+      [DL_STATUS.PENDING_VERIFICATION]: {
+        color: "#FF9800",
+        icon: "time",
+        text: "Pending Verification",
+      },
+      [DL_STATUS.FAILED]: {
+        color: "#F44336",
+        icon: "close-circle",
+        text: "Failed",
+      },
+    };
+
+    const config = statusConfig[dlVerificationStatus];
+    if (!config) return null;
+
+    return (
+      <View
+        style={[
+          styles.dlStatusBadge,
+          { backgroundColor: config.color + "20", borderColor: config.color },
+        ]}
+      >
+        <Ionicons name={config.icon} size={18} color={config.color} />
+        <Text style={[styles.dlStatusText, { color: config.color }]}>
+          {config.text}
+        </Text>
+      </View>
+    );
+  };
+
+  // === RENDER PROGRESS BAR ===
   const renderProgressBar = () => (
     <View style={styles.progressContainer}>
+      <View
+        style={[
+          styles.progressStep,
+          currentStep >= 0 && styles.progressStepActive,
+        ]}
+      />
       <View
         style={[
           styles.progressStep,
@@ -818,12 +966,16 @@ export default function RegisterScreen({ navigation }) {
           currentStep >= 2 && styles.progressStepActive,
         ]}
       />
-      <View style={styles.progressStep} />
-      <View style={styles.progressStep} />
+      <View
+        style={[
+          styles.progressStep,
+          currentStep >= 3 && styles.progressStepActive,
+        ]}
+      />
     </View>
   );
 
-  // === OTP MODAL ===
+  // === RENDER AADHAAR OTP MODAL ===
   const renderOtpModal = () => (
     <Modal
       visible={showOtpModal}
@@ -838,28 +990,22 @@ export default function RegisterScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.modalContent}>
-            {/* Close Button */}
             <TouchableOpacity
               style={styles.modalCloseButton}
               onPress={() => setShowOtpModal(false)}
             >
               <Text style={styles.modalCloseText}>✕</Text>
             </TouchableOpacity>
-
-            {/* Modal Handle */}
             <View style={styles.modalHandle} />
-            {timer > 0 ? (
+            {timer > 0 && (
               <View style={styles.successBox}>
                 <Text style={styles.successMessage}>OTP sent successfully</Text>
               </View>
-            ) : null}
-
+            )}
             <Text style={styles.modalTitle}>Enter OTP</Text>
             <Text style={styles.modalSubtitle}>
               6-digit OTP sent to your mobile
             </Text>
-
-            {/* OTP Inputs */}
             <View style={styles.otpContainer}>
               <TextInput
                 style={styles.otpInput}
@@ -867,10 +1013,15 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={setOtp}
                 keyboardType="number-pad"
                 maxLength={6}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={() => {
+                  if (otp.length === 6 && !isVerifying) {
+                    handleVerifyAadhaarOtp();
+                  }
+                }}
               />
             </View>
-
-            {/* Verify OTP Button */}
             <TouchableOpacity
               style={[styles.verifyButton, isVerifying && { opacity: 0.7 }]}
               onPress={handleVerifyAadhaarOtp}
@@ -882,8 +1033,6 @@ export default function RegisterScreen({ navigation }) {
                 <Text style={styles.verifyButtonText}>Verify OTP</Text>
               )}
             </TouchableOpacity>
-
-            {/* Resend OTP */}
             <TouchableOpacity
               style={styles.resendContainer}
               onPress={handleResendOtp}
@@ -904,6 +1053,118 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </ScrollView>
+      </View>
+    </Modal>
+  );
+
+  // === RENDER MOBILE OTP MODAL ===
+  const renderMobileOtpModal = () => (
+    <Modal visible={showMobileOtpModal} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { width: "90%" }]}>
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => setShowMobileOtpModal(false)}
+          >
+            <Text style={styles.modalCloseText}>✕</Text>
+          </TouchableOpacity>
+          <View style={styles.modalHandle} />
+          {mobileTimer > 0 && (
+            <View style={styles.successBox}>
+              <Text style={styles.successMessage}>
+                OTP sent successfully on {mobile}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.modalTitle}>Verify Mobile Number</Text>
+          <Text style={styles.modalSubtitle}>Enter 6-digit OTP</Text>
+          <View style={styles.otpContainer}>
+            <TextInput
+              style={styles.otpInput}
+              value={mobileOtp}
+              onChangeText={setMobileOtp}
+              keyboardType="number-pad"
+              maxLength={6}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={() => {
+                if (mobileOtp.length === 6 && !isVerifyingMobileOtp) {
+                  handleVerifyMobileOtp();
+                }
+              }}
+            />
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.verifyButton,
+              isVerifyingMobileOtp && { opacity: 0.7 },
+            ]}
+            onPress={handleVerifyMobileOtp}
+            disabled={isVerifyingMobileOtp}
+          >
+            {isVerifyingMobileOtp ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.verifyButtonText}>Verify & Continue</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.resendContainer}
+            onPress={handleSendMobileOtp}
+            disabled={mobileTimer > 0}
+          >
+            <Text
+              style={[
+                styles.resendText,
+                mobileTimer > 0 && styles.resendTextDisabled,
+              ]}
+            >
+              {mobileTimer > 0
+                ? `Resend in 00:${mobileTimer.toString().padStart(2, "0")}`
+                : "Resend OTP"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // === RENDER DL INFO MODAL (Manual Verification) ===
+  const renderDLInfoModal = () => (
+    <Modal visible={showDLInfoModal} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { width: "90%" }]}>
+          <Ionicons
+            name="information-circle"
+            size={60}
+            color="#FF9800"
+            style={{ alignSelf: "center", marginBottom: 16 }}
+          />
+          <Text style={styles.modalTitle}>Manual Verification Required</Text>
+          <Text style={styles.dlInfoText}>
+            We couldn't verify your Driving License automatically at this
+            moment. Don't worry - you can continue with registration.
+          </Text>
+          <Text
+            style={[styles.dlInfoText, { fontWeight: "600", marginTop: 12 }]}
+          >
+            Our team will verify your DL within 24 hours.
+          </Text>
+          <Text style={[styles.dlInfoText, { marginTop: 12, fontSize: 14 }]}>
+            Please proceed to upload your Driving License documents.
+          </Text>
+          <TouchableOpacity
+            style={[styles.verifyButton, { marginTop: 20 }]}
+            onPress={() => {
+              setShowDLInfoModal(false);
+              Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success
+              );
+            }}
+          >
+            <Text style={styles.verifyButtonText}>Continue</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -953,14 +1214,13 @@ export default function RegisterScreen({ navigation }) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* ==================== STEP 1: MOBILE VERIFICATION ==================== */}
-          {!mobileVerified ? (
+          {/* STEP 0: MOBILE VERIFICATION */}
+          {currentStep === 0 && (
             <>
               <Text style={styles.title}>Welcome! Let's get started</Text>
               <Text style={styles.subtitle}>
                 Enter your mobile number to continue
               </Text>
-
               <View style={styles.form}>
                 <Text style={styles.label}>Mobile Number</Text>
                 <TextInput
@@ -969,9 +1229,15 @@ export default function RegisterScreen({ navigation }) {
                   onChangeText={setMobile}
                   keyboardType="phone-pad"
                   maxLength={10}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => {
+                    if (mobile && mobile.length === 10 && !isSendingMobileOtp) {
+                      handleSendMobileOtp();
+                    }
+                  }}
                   style={styles.input}
                 />
-
                 <TouchableOpacity
                   style={[
                     styles.nextButton,
@@ -992,14 +1258,15 @@ export default function RegisterScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             </>
-          ) : !isAadhaarVerified ? (
-            /* ==================== STEP 2: AADHAAR VERIFICATION ==================== */
+          )}
+
+          {/* STEP 1: AADHAAR VERIFICATION */}
+          {currentStep === 1 && (
             <>
               <Text style={styles.title}>Verify Aadhaar</Text>
               <Text style={styles.subtitle}>
                 Your mobile is verified. Now enter Aadhaar details
               </Text>
-
               <View style={styles.form}>
                 <Text style={styles.label}>Aadhaar Number</Text>
                 <TextInput
@@ -1009,16 +1276,24 @@ export default function RegisterScreen({ navigation }) {
                   keyboardType="number-pad"
                   maxLength={12}
                   style={styles.input}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => {
+                    if (
+                      aadhaarNumber &&
+                      aadhaarNumber.length === 12 &&
+                      !isVerifying
+                    ) {
+                      handleGenerateAadhaarOTP();
+                    }
+                  }}
                 />
-
                 <TouchableOpacity
                   style={[
                     styles.nextButton,
                     (!aadhaarNumber ||
                       aadhaarNumber.length !== 12 ||
-                      isVerifying) && {
-                      backgroundColor: "#ccc",
-                    },
+                      isVerifying) && { backgroundColor: "#ccc" },
                   ]}
                   onPress={handleGenerateAadhaarOTP}
                   disabled={
@@ -1033,10 +1308,11 @@ export default function RegisterScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             </>
-          ) : currentStep === 1 ? (
-            /* ==================== STEP 3: AADHAAR VERIFIED + DOCUMENTS ==================== */
+          )}
+
+          {/* STEP 2: AADHAAR VERIFIED + BASIC INFO */}
+          {currentStep === 2 && (
             <>
-              {/* Profile Picture */}
               {profileImage && (
                 <TouchableOpacity
                   style={styles.avatarContainer}
@@ -1051,21 +1327,18 @@ export default function RegisterScreen({ navigation }) {
                   </View>
                 </TouchableOpacity>
               )}
-
               <Text style={styles.label}>Name</Text>
               <TextInput
                 value={name}
                 editable={false}
                 style={[styles.input, { backgroundColor: "#f0f0f0" }]}
               />
-
               <Text style={styles.label}>Date of Birth</Text>
               <TextInput
                 value={dob?.toLocaleDateString("en-GB") || ""}
                 editable={false}
                 style={[styles.input, { backgroundColor: "#f0f0f0" }]}
               />
-
               <Text style={styles.label}>Address</Text>
               <TextInput
                 placeholder="Enter Your Address"
@@ -1074,7 +1347,6 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={setAddress}
                 style={styles.input}
               />
-
               <Text style={styles.label}>Email (Optional)</Text>
               <TextInput
                 placeholder="email@domain.com"
@@ -1083,16 +1355,6 @@ export default function RegisterScreen({ navigation }) {
                 keyboardType="email-address"
                 style={styles.input}
               />
-
-              {/* <Text style={styles.label}>Referral ID (Optional)</Text>
-              <TextInput
-                placeholder="Enter referral code"
-                value={referralId}
-                onChangeText={setReferralId}
-                style={styles.input}
-              /> */}
-
-              {/* Aadhaar Upload */}
               <Text style={styles.label}>Upload Aadhaar</Text>
               <View style={styles.documentRow}>
                 <TouchableOpacity
@@ -1115,7 +1377,6 @@ export default function RegisterScreen({ navigation }) {
                     </>
                   )}
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
                   onPress={() => pickDocument("aadhaar_back")}
@@ -1137,89 +1398,144 @@ export default function RegisterScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
               </View>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <TouchableOpacity
+                  onPress={() => clearRegistrationState("Signup")}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#000",
+                    paddingVertical: 14,
+                    borderRadius: 8,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}
+                  >
+                    Back
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.nextButton}
-                onPress={handleStep1Submit}
-              >
-                <Text style={styles.nextText}>Next</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleStep1Submit}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#E53935",
+                    paddingVertical: 14,
+                    borderRadius: 8,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}
+                  >
+                    Next
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </>
-          ) : (
-            /* ==================== STEP 4: FINAL DOCUMENTS & DL ==================== */
+          )}
+
+          {/* STEP 3: DL VERIFICATION & FINAL DOCS */}
+          {currentStep === 3 && (
             <>
               <Text style={styles.title}>Upload Documents</Text>
               <Text style={styles.subtitle}>Complete your registration</Text>
-
-              {/* ================= DL VERIFICATION ================= */}
               <Text style={styles.label}>Driving License Number</Text>
               <View style={styles.inputWithButton}>
                 <TextInput
                   placeholder="Enter DL Number"
                   value={licenseNumber}
-                  onChangeText={(v) => setLicenseNumber(v.toUpperCase())}
+                  onChangeText={(v) => {
+                    setLicenseNumber(v.toUpperCase());
+
+                    // 🔁 RESET verification state when input changes
+                    if (dlVerificationStatus !== DL_STATUS.NOT_VERIFIED) {
+                      setDlVerificationStatus(DL_STATUS.NOT_VERIFIED);
+                    }
+                  }}
                   autoCapitalize="characters"
-                  editable={!isDLVerified}
                   style={[
                     styles.input,
                     styles.inputFlex,
-                    isDLVerified && { backgroundColor: "#f0f0f0" },
+                    dlVerificationStatus !== DL_STATUS.NOT_VERIFIED && {
+                      backgroundColor: "#f0f0f0",
+                    },
                   ]}
                 />
 
-                <TouchableOpacity
+                
+              </View>
+
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text
+                  style={!dobLicence ? styles.placeholderText : styles.dateText}
+                >
+                  {dobLicence
+                    ? formatDate(new Date(dobLicence)) // YYYY-MM-DD
+                    : "Select Dob On  Licence"}
+                </Text>
+
+                <Ionicons
+                  name="calendar-outline"
+                  size={moderateScale(22)}
+                  color={Colors.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
                   style={[
                     styles.verifyBtn,
-                    isDLVerified
-                      ? styles.verifyBtnSuccess
-                      : styles.verifyBtnNormal,
-                    isVerifying && { opacity: 0.7 },
+                    dlVerificationStatus === DL_STATUS.VERIFIED &&
+                      styles.verifyBtnSuccess,
+                    dlVerificationStatus === DL_STATUS.PENDING_VERIFICATION &&
+                      styles.verifyBtnPending,
+                    (dlVerificationStatus !== DL_STATUS.NOT_VERIFIED ||
+                      isVerifying) && {
+                      opacity: 0.7,
+                    },
                   ]}
                   onPress={handleVerifyDL}
-                  disabled={isDLVerified || isVerifying}
+                  disabled={isVerifying}
                 >
                   {isVerifying ? (
                     <ActivityIndicator
                       size="small"
-                      color={isDLVerified ? "#fff" : Colors.primary}
+                      color={
+                        dlVerificationStatus === DL_STATUS.VERIFIED
+                          ? "#fff"
+                          : Colors.primary
+                      }
                     />
                   ) : (
                     <Text
                       style={[
                         styles.verifyBtnText,
-                        isDLVerified && { color: "#fff" },
+                        dlVerificationStatus === DL_STATUS.VERIFIED && {
+                          color: "#fff",
+                        },
                       ]}
                     >
-                      {isDLVerified ? "Verified" : "Verify"}
+                      {dlVerificationStatus === DL_STATUS.VERIFIED
+                        ? "Verified"
+                        : dlVerificationStatus ===
+                          DL_STATUS.PENDING_VERIFICATION
+                        ? "Pending"
+                        : "Verify"}
                     </Text>
                   )}
                 </TouchableOpacity>
-              </View>
 
-              {/* ================= DL DETAILS ================= */}
-              {isDLVerified && dlData && (
-                <>
-                  <View style={styles.infoBox}>
-                    <Text style={styles.infoLabel}>Name:</Text>
-                    <Text style={styles.infoValue}>{dlData.name}</Text>
-                  </View>
+              {renderDLStatusBadge()}
 
-                  {dlData.permanent_address && (
-                    <View style={styles.infoBox}>
-                      <Text style={styles.infoLabel}>Address:</Text>
-                      <Text style={styles.infoValue}>
-                        {dlData.permanent_address}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-
-              {/* ================= DL UPLOAD ================= */}
-              {isDLVerified && (
+              {(dlVerificationStatus === DL_STATUS.VERIFIED ||
+                dlVerificationStatus === DL_STATUS.PENDING_VERIFICATION) && (
                 <>
                   <Text style={styles.label}>Upload Driving License</Text>
-
                   <View style={styles.documentRow}>
                     <TouchableOpacity
                       style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
@@ -1241,7 +1557,6 @@ export default function RegisterScreen({ navigation }) {
                         </>
                       )}
                     </TouchableOpacity>
-
                     <TouchableOpacity
                       style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
                       onPress={() => pickDocument("license_back")}
@@ -1263,14 +1578,7 @@ export default function RegisterScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
                   </View>
-                </>
-              )}
-
-              {/* ================= PAN UPLOAD (AFTER DL VERIFIED) ================= */}
-              {isDLVerified && (
-                <>
-                  <Text style={styles.label}>PAN Card *</Text>
-
+                  <Text style={styles.label}>PAN Card</Text>
                   <TouchableOpacity
                     style={styles.uploadBox}
                     onPress={() => pickDocument("pan")}
@@ -1294,16 +1602,19 @@ export default function RegisterScreen({ navigation }) {
                 </>
               )}
 
-              {/* ================= SUBMIT ================= */}
               <TouchableOpacity
                 style={[
                   styles.nextButton,
-                  (!isDLVerified || isSubmitting) && {
-                    backgroundColor: "#ccc",
-                  },
+                  (dlVerificationStatus === DL_STATUS.NOT_VERIFIED ||
+                    dlVerificationStatus === DL_STATUS.FAILED ||
+                    isSubmitting) && { backgroundColor: "#ccc" },
                 ]}
                 onPress={handleStep2Submit}
-                disabled={!isDLVerified || isSubmitting}
+                disabled={
+                  dlVerificationStatus === DL_STATUS.NOT_VERIFIED ||
+                  dlVerificationStatus === DL_STATUS.FAILED ||
+                  isSubmitting
+                }
               >
                 {isSubmitting ? (
                   <ActivityIndicator color="#fff" />
@@ -1315,115 +1626,25 @@ export default function RegisterScreen({ navigation }) {
           )}
         </ScrollView>
 
-        {/* Mobile OTP Modal */}
-        <Modal visible={showMobileOtpModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { width: "90%" }]}>
-              {/* Close Button */}
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setShowMobileOtpModal(false)}
-              >
-                <Text style={styles.modalCloseText}>✕</Text>
-              </TouchableOpacity>
-
-              {/* Modal Handle */}
-              <View style={styles.modalHandle} />
-              {mobileTimer > 0 ? (
-                <View style={styles.successBox}>
-                  <Text style={styles.successMessage}>
-                    OTP sent successfully on {mobile}
-                  </Text>
-                </View>
-              ) : null}
-
-              <Text style={styles.modalTitle}>Verify Mobile Number</Text>
-              <Text style={styles.modalSubtitle}>Enter 6-digit OTP</Text>
-
-              {/* OTP Inputs */}
-              <View style={styles.otpContainer}>
-                <TextInput
-                  style={styles.otpInput}
-                  value={mobileOtp}
-                  onChangeText={setMobileOtp}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-              </View>
-
-              {/* Verify Button */}
-              <TouchableOpacity
-                style={[
-                  styles.verifyButton,
-                  isVerifyingMobileOtp && { opacity: 0.7 },
-                ]}
-                onPress={handleVerifyMobileOtp}
-                disabled={isVerifyingMobileOtp}
-              >
-                {isVerifyingMobileOtp ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.verifyButtonText}>Verify & Continue</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Resend OTP */}
-              <TouchableOpacity
-                style={styles.resendContainer}
-                onPress={handleSendMobileOtp}
-                disabled={mobileTimer > 0}
-              >
-                <Text
-                  style={[
-                    styles.resendText,
-                    mobileTimer > 0 && styles.resendTextDisabled,
-                  ]}
-                >
-                  {mobileTimer > 0
-                    ? `Resend in 00:${mobileTimer.toString().padStart(2, "0")}`
-                    : "Resend OTP"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
+        {renderMobileOtpModal()}
         {renderOtpModal()}
+        {renderDLInfoModal()}
 
-        {/* Camera View */}
-        {cameraOpen && (
-          <View style={styles.fullScreen}>
-            <CameraView
-              ref={cameraRef}
-              style={styles.fullScreen}
-              facing={cameraMode === "selfie" ? "front" : "back"}
-            >
-              <View style={styles.cameraOverlay}>
-                <TouchableOpacity
-                  style={styles.closeCamera}
-                  onPress={() => {
-                    setCameraOpen(false);
-                    setCameraMode(null);
-                  }}
-                >
-                  <Ionicons name="close" size={32} color={Colors.white} />
-                </TouchableOpacity>
-                <Text style={styles.cameraInstruction}>
-                  {cameraMode === "selfie"
-                    ? "Take Selfie"
-                    : `Capture ${cameraMode.replace(/_/g, " ")}`}
-                </Text>
-                <TouchableOpacity
-                  style={styles.captureBtn}
-                  onPress={takePicture}
-                >
-                  <View style={styles.captureInner} />
-                </TouchableOpacity>
-              </View>
-            </CameraView>
-          </View>
+        {showDatePicker && (
+          <DateTimePicker
+            value={dob || new Date(1990, 0, 1)}
+            mode="date"
+            display="spinner"
+            maximumDate={new Date()}
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+
+              if (event.type === "set" && selectedDate) {
+                setDobLicence(formatDate(selectedDate));
+              }
+            }}
+          />
         )}
-
         <UniversalAlert
           visible={alertVisible}
           type={alertConfig.type}
@@ -1437,7 +1658,6 @@ export default function RegisterScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
 // === STYLES ===
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -1513,6 +1733,7 @@ const styles = StyleSheet.create({
   inputFlex: { flex: 1, marginBottom: 0 },
   verifyBtn: {
     borderRadius: 12,
+    backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 12,
     justifyContent: "center",
@@ -1520,6 +1741,7 @@ const styles = StyleSheet.create({
   },
   verifyBtnNormal: {
     borderWidth: 1,
+    color: Colors.white,
     borderColor: Colors.primary,
   },
   verifyBtnSuccess: {
@@ -1530,7 +1752,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
-    color: Colors.primary,
+    color: "#fff",
   },
   infoBox: {
     backgroundColor: "#f0f9ff",
@@ -1772,5 +1994,268 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
+  },
+
+  // DL Status Badge
+  dlStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  dlStatusText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // DL Info Modal Content
+  dlInfoText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+
+  // Verify Button Pending State
+  verifyBtnPending: {
+    backgroundColor: "#FF9800",
+    borderColor: "#FF9800",
+  },
+
+  // Success Message Box
+  successBox: {
+    backgroundColor: "#28a745",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  successMessage: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  // Modal Close Button
+  modalCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    zIndex: 10,
+    padding: 8,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    borderRadius: 20,
+  },
+  modalCloseText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
+
+  // Modal Handle (drag indicator)
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+
+  // Modal Title & Subtitle
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: Colors.textPrimary,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+
+  // OTP Input Container
+  otpContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  otpInput: {
+    width: "100%",
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    fontSize: 20,
+    textAlign: "center",
+    backgroundColor: Colors.white,
+    fontWeight: "600",
+    letterSpacing: 8,
+  },
+
+  // Verify Button
+  verifyButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  verifyButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  // Resend Container
+  resendContainer: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  resendText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  resendTextDisabled: {
+    color: Colors.textSecondary,
+  },
+
+  // Progress Bar
+  progressContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    gap: 8,
+    marginBottom: 24,
+    marginTop: 8,
+  },
+  progressStep: {
+    flex: 1,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+  },
+  progressStepActive: {
+    backgroundColor: Colors.primary,
+  },
+
+  // Input with Button
+  inputWithButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  inputFlex: {
+    flex: 1,
+    marginBottom: 0,
+  },
+
+  verifyBtnPending: {
+    backgroundColor: "#FF9800",
+    borderColor: "#FF9800",
+  },
+
+  // Document Row
+  documentRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  uploadBoxHalf: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    borderStyle: "dashed",
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.white,
+    height: 120,
+  },
+  uploadBoxLeft: {
+    marginRight: 5,
+  },
+  uploadBoxRight: {
+    marginLeft: 5,
+  },
+  uploadBox: {
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    borderStyle: "dashed",
+    padding: 20,
+    alignItems: "center",
+    backgroundColor: Colors.white,
+    marginBottom: 12,
+    height: 100,
+    justifyContent: "center",
+  },
+
+  // Upload Text
+  uploadText: {
+    marginTop: 8,
+    color: Colors.textSecondary,
+    fontSize: 14,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  uploadTextSmall: {
+    marginTop: 6,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  backButton: {
+    backgroundColor: "#000",
+  },
+
+  backText: {
+    color: "#fff",
+  },
+
+  // Document Preview
+  docPreview: {
+    width: "100%",
+    height: 100,
+    borderRadius: 8,
+    resizeMode: "cover",
+  },
+  docPreviewFull: {
+    width: "100%",
+    height: 80,
+    borderRadius: 8,
+    resizeMode: "contain",
+  },
+  datePickerButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+    borderRadius: moderateScale(14),
+    padding: scale(16),
+    backgroundColor: "#f9fafb",
+    marginBottom: verticalScale(8),
+  },
+  placeholderText: {
+    color: "#9ca3af",
+    fontSize: moderateScale(16),
+  },
+  dateText: {
+    color: "#111827",
+    fontSize: moderateScale(16),
+    fontWeight: "500",
   },
 });

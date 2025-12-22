@@ -10,7 +10,7 @@ const setupBullBoard = require("./bullboard");
 const { initializeFirebase } = require("./utils/sendNotification");
 const admin = require("./routes/admin.routes");
 const wallet = require("./routes/wallet.routes");
-
+const rateConfigRoutes = require('./routes/rateConfiguration.routes');
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -21,11 +21,21 @@ subscribeToLocations();
 setupBullBoard(app);
 
 
+app.get('/', (req, res) => {
+  console.log("I am Hits");
+  res.status(200).send("API is running 🚀");
+});
+
+app.get("/driver-earnings", (req, res) => {
+  res.json({ ok: true });
+});
 // Routes
 app.use("/api/v1", router);
 app.use("/api/v1/vehicles", CarRouter);
 app.use('/api/v1/admin',admin)
 app.use('/api/v1/wallet',wallet)
+app.use('/api/v1/rate-configuration', rateConfigRoutes);
+
 
 // Start Server
 const PORT = process.env.PORT || 7485;

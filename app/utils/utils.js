@@ -33,6 +33,26 @@ export const formatDate = (dateString) => {
     year: "numeric",
   });
 };
+export const formatDateTime = (dateString) => {
+  if (!dateString) return "";
+
+  const date = new Date(dateString);
+
+  const formattedDate = date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const formattedTime = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  return `${formattedDate} • ${formattedTime}`;
+};
+
 export const formatTime12Hour = (time) => {
   if (!time) return "07:00 PM";
 

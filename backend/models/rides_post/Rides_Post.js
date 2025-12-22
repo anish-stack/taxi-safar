@@ -1,5 +1,33 @@
 const mongoose = require("mongoose");
 
+const StopSchema = new mongoose.Schema(
+  {
+    location: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    geoLocation: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+        required: true,
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        required: true,
+        validate: {
+          validator: (v) => Array.isArray(v) && v.length === 2,
+          message: "Stop coordinates must be [lng, lat]",
+        },
+      },
+    },
+  },
+  { _id: false }
+);
+
 const ridesPostSchema = new mongoose.Schema(
   {
     driverPostId: {
@@ -15,7 +43,9 @@ const ridesPostSchema = new mongoose.Schema(
     contactType: {
       type: String,
     },
-
+    distanceKm: {
+      type: String,
+    },
     tripType: {
       type: String,
       required: true,
@@ -26,7 +56,6 @@ const ridesPostSchema = new mongoose.Schema(
       type: String,
       required: true,
       index: true,
-      enum: ["sedan", "suv", "mini", "hatchback", "luxury", "van"],
     },
 
     // Pickup Information
@@ -166,6 +195,18 @@ const ridesPostSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    issueSolved: {
+      type: Boolean,
+      default: false,
+    },
+    issue: {
+      type: String,
+      default: null,
+    },
+    issueCreatedAt: {
+      type: Date,
+      default: null,
+    },
     payment_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
@@ -192,6 +233,7 @@ const ridesPostSchema = new mongoose.Schema(
       required: true,
       enum: [
         "pending", // Ride created, waiting for driver assignment
+        "started",
         "driver-assigned", // Driver has been assigned
         "driver-accepted", // Driver accepted the ride
         "driver-rejected", // Driver rejected the ride
@@ -212,12 +254,24 @@ const ridesPostSchema = new mongoose.Schema(
       type: String,
     },
 
+    rideStartAt: {
+      type: Date,
+      default: null,
+    },
+    rideEndAt: {
+      type: Date,
+      default: null,
+    },
     // Rating
     customerRating: {
       type: Number,
       default: 0,
       min: 0,
       max: 5,
+    },
+    feedback: {
+      type: String,
+      default: null,
     },
     distance: {
       type: Number,
@@ -261,6 +315,12 @@ const ridesPostSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+
+    stops: {
+      type: [StopSchema],
+      default: [],
+    },
+
     isDeleted: {
       type: Boolean,
       default: false,
@@ -275,6 +335,7 @@ const ridesPostSchema = new mongoose.Schema(
 // Indexes
 ridesPostSchema.index({ pickupLocation: "2dsphere" });
 ridesPostSchema.index({ dropLocation: "2dsphere" });
+ridesPostSchema.index({ "stops.geoLocation": "2dsphere" });
 ridesPostSchema.index({ pickupDate: 1, pickupTime: 1 });
 ridesPostSchema.index({ driverPostId: 1, paymentStatus: 1 });
 

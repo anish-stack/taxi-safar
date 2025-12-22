@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useContext } from "react";
+"use client";
+
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,14 +8,14 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
+   KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
   Linking,
-  Platform,
   Modal,
   TextInput,
-  Dimensions,
   RefreshControl,
+  Platform,
 } from "react-native";
 import {
   SafeAreaView,
@@ -22,44 +24,85 @@ import {
 import {
   ArrowLeft,
   MapPin,
-  Clock,
-  Car,
-  MessageCircle,
-  MoveVertical as MoreVertical,
+  MoreVertical,
   Navigation,
   Star,
   Phone,
-  CircleCheck as CheckCircle,
-  CircleAlert as AlertCircle,
+  MessageCircle,
   Shield,
   Headphones,
   X,
-  RefreshCw,
-  DollarSign,
+  Loader,
 } from "lucide-react-native";
+import Icon from "react-native-vector-icons/Ionicons";
+
+import mini from "../../assets/mini.png";
+import sedan from "../../assets/sedan.png";
+import suv from "../../assets/suv.png";
+import inova from "../../assets/inova.png";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { API_URL_APP, API_URL_APP_CHAT } from "../../constant/api";
 import {
   formatDate,
-  formatTime,
   calculateDistance,
   decodePolyline,
+  formatTime12Hour,
 } from "../../utils/utils";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
-import { LinearGradient } from "expo-linear-gradient";
 import useDriverStore from "../../store/driver.store";
 import * as Location from "expo-location";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+import loginStore from "../../store/auth.store";
+import { Colors } from "../../constant/ui";
 
-const { width } = Dimensions.get("window");
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
+
+const estimateDurationMinutes = (distanceKm) => {
+  const hours = distanceKm / 50;
+  return Math.round(hours * 60);
+};
+
+const getArrivalDateTime = (pickupDate, pickupTime, distanceKm) => {
+  if (!pickupDate || !pickupTime || !distanceKm) return null;
+
+  const date =
+    pickupDate instanceof Date ? new Date(pickupDate) : new Date(pickupDate);
+  const [hours, minutes] = pickupTime.split(":").map(Number);
+  date.setHours(hours, minutes, 0, 0);
+
+  const durationMinutes = estimateDurationMinutes(distanceKm);
+  date.setMinutes(date.getMinutes() + durationMinutes);
+
+  return date;
+};
+
+const formatTime12HourFromDate = (date) => {
+  if (!date) return "TBD";
+  return date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
+const formatDateFromDate = (date) => {
+  if (!date) return "TBD";
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
 
 const ReserveRideDetailsAssigned = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { rideId } = route.params;
   const { driver, fetchDriverDetails } = useDriverStore();
+  const { token } = loginStore();
   const insets = useSafeAreaInsets();
+
   // State Management
   const [routeCoords, setRouteCoords] = useState([]);
   const [rideData, setRideData] = useState(null);
@@ -72,22 +115,18 @@ const ReserveRideDetailsAssigned = () => {
 
   // Modal States
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [showCollectionModal, setShowCollectionModal] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Form States
-  const [otp, setOtp] = useState("");
-  const [collectedAmount, setCollectedAmount] = useState("");
-  const [otpType, setOtpType] = useState(""); // 'pickup' or 'drop'
-
-  // Check if this is my ride
-  const isMyRide = rideData?.assignedDriverId?._id === driver?._id;
+  const [customerRating, setCustomerRating] = useState(0);
+  const [feedback, setFeedback] = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   const estimateDuration = (distanceKm) =>
-    parseFloat((distanceKm / 50).toFixed(2));
+    Number.parseFloat((distanceKm / 50).toFixed(2));
 
-  // Get current location
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -104,21 +143,6 @@ const ReserveRideDetailsAssigned = () => {
     } catch (error) {
       console.error("Error getting location:", error);
     }
-  };
-
-  // Check if driver is near location
-  const isNearLocation = (targetLocation, threshold = 0.5) => {
-    if (!currentLocation || !targetLocation?.coordinates) return false;
-
-    const [lng, lat] = targetLocation.coordinates;
-    const distance = calculateDistance(
-      currentLocation.latitude,
-      currentLocation.longitude,
-      lat,
-      lng
-    );
-
-    return distance <= threshold; // Within 500 meters
   };
 
   const calculateMapRegionAndRoute = async (data) => {
@@ -154,8 +178,6 @@ const ReserveRideDetailsAssigned = () => {
 
       if (data.success) {
         const ride = data.data;
-        console.log("contactType", ride?.contactType);
-
         setRideData(ride);
 
         const [pickupLng, pickupLat] = ride.pickupLocation.coordinates;
@@ -175,6 +197,26 @@ const ReserveRideDetailsAssigned = () => {
       setRefreshing(false);
     }
   };
+
+  const vehicleImage =
+    driver?.current_vehicle_id?.vehicle_type === "mini"
+      ? mini
+      : driver?.current_vehicle_id?.vehicle_type === "sedan"
+      ? sedan
+      : driver?.current_vehicle_id?.vehicle_type === "suv"
+      ? suv
+      : inova;
+
+  const VehicleName =
+    driver?.current_vehicle_id?.vehicle_type === "mini"
+      ? "Maruti WagonR"
+      : driver?.current_vehicle_id?.vehicle_type === "sedan"
+      ? "Maruti Swift Dzire"
+      : driver?.current_vehicle_id?.vehicle_type === "suv"
+      ? "Maruti Ertiga SUV"
+      : "Innova Crysta";
+
+  const VehcileNumber = driver?.current_vehicle_id?.vehicle_number;
 
   useEffect(() => {
     fetchRideDetails();
@@ -207,90 +249,192 @@ const ReserveRideDetailsAssigned = () => {
     }
   };
 
-  // Driver Actions
-  const handleReachedPickup = () => {
-    if (isNearLocation(rideData.pickupLocation)) {
-      updateRideStatus("reached-pickup");
-    } else {
-      setOtpType("pickup");
-      setShowOtpModal(true);
-    }
-  };
-
-  const handleReachedDrop = () => {
-    if (isNearLocation(rideData.dropLocation)) {
-      setShowCollectionModal(true);
-    } else {
-      setOtpType("drop");
-      setShowOtpModal(true);
-    }
-  };
-
-  const updateRideStatus = async (status) => {
+  // ============ START RIDE ENDPOINT ============
+  const handleStartRide = async () => {
     try {
-      const { data } = await axios.patch(
-        `${API_URL_APP}/api/v1/rides/${rideId}/status`,
-        { status }
+      if (!rideId) {
+        Alert.alert("Error", "Ride ID missing");
+        return;
+      }
+
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/start-trip-post/${rideId}`,
+        {
+          init_driver_id: driver?._id,
+          ride_post_id: rideId,
+          other_driver_id: rideData?.driverPostId?._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      if (data.success) {
-        setRideData((prev) => ({ ...prev, rideStatus: status }));
-        if (status === "completed") {
-          setShowSuccessModal(true);
-        }
+      console.log("🚀 Start ride response:", response.data);
+
+      if (response.data?.success) {
+        Alert.alert("Success", "Ride started successfully");
+        fetchRideDetails(false);
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to update ride status");
-    }
-  };
+      console.log("❌ Start ride error:", error?.response?.data || error);
 
-  const verifyOtp = async () => {
-    if (otp.length !== 4) {
-      Alert.alert("Error", "Please enter a valid 4-digit OTP");
-      return;
-    }
+      const errorMsg = error?.response?.data?.message;
 
-    try {
-      const { data } = await axios.post(
-        `${API_URL_APP}/api/v1/rides/${rideId}/verify-otp`,
-        { otp, type: otpType }
-      );
-
-      if (data.success) {
-        setShowOtpModal(false);
-        setOtp("");
-
-        if (otpType === "pickup") {
-          updateRideStatus("reached-pickup");
-        } else {
-          setShowCollectionModal(true);
-        }
+      if (errorMsg?.includes("too far")) {
+        Alert.alert(
+          "Reach Pickup Location",
+          "You are currently far from the pickup point. Please reach within 500 meters of the pickup location to start the ride."
+        );
       } else {
-        Alert.alert("Error", "Invalid OTP");
+        Alert.alert(
+          "Unable to Start Ride",
+          errorMsg || "Something went wrong. Please try again."
+        );
       }
-    } catch (error) {
-      Alert.alert("Error", "Failed to verify OTP");
     }
   };
 
-  const completeRide = async () => {
-    if (!collectedAmount || parseFloat(collectedAmount) <= 0) {
-      Alert.alert("Error", "Please enter a valid collection amount");
+
+
+    const successfulRides = rideData?.companyId?.successfulRides || 0;
+  const cancelledRides = rideData?.companyId?.CancelRides || 0;
+
+  const totalRides = successfulRides + cancelledRides;
+  const cancelPercentage =
+    totalRides > 0 ? ((cancelledRides / totalRides) * 100).toFixed(1) : 0;
+
+  const succesPercentage =
+    totalRides > 0 ? ((successfulRides / totalRides) * 100).toFixed(0) : 0;
+
+  // ============ PAYMENT CONFIRMATION MODAL ============
+  const handleCompleteRideConfirm = () => {
+    setShowPaymentConfirm(true);
+  };
+
+  // ============ COMPLETE RIDE ENDPOINT ============
+  const handleCompleteRide = async () => {
+    try {
+      setShowPaymentConfirm(false);
+
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/complete-ride-post/${rideId}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      console.log("✅ Complete ride response:", response.data);
+
+      if (response.data?.success) {
+        Alert.alert("Success", "Ride completed successfully");
+        // Open Rating Modal after successful completion
+        setShowRatingModal(true);
+        fetchRideDetails(false);
+      }
+    } catch (error) {
+      console.log("❌ Complete ride error:", error?.response?.data || error);
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Failed to complete ride"
+      );
+    }
+  };
+
+  // ============ SUBMIT RATING ENDPOINT ============
+  const handleSubmitRating = async () => {
+    if (customerRating === 0) {
+      Alert.alert(
+        "Rating Required",
+        "Please provide a rating before submitting"
+      );
       return;
     }
 
     try {
-      const { data } = await axios.patch(
-        `${API_URL_APP}/api/v1/rides/${rideId}/complete`,
-        { collectedAmount: parseFloat(collectedAmount) }
+      setSubmittingRating(true);
+
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/add-rating-for-company/${rideId}`,
+        {
+          customerRating,
+          feedback,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      if (data.success) {
-        setShowCollectionModal(false);
-        updateRideStatus("completed");
+      console.log("⭐ Rating response:", response.data);
+
+      if (response.data?.success) {
+        setShowRatingModal(false);
+        setCustomerRating(0);
+        setFeedback("");
+
+        Alert.alert(
+          "Thank You!",
+          "Your rating has been submitted successfully",
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to complete ride");
+      console.log("❌ Rating error:", error?.response?.data || error);
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Failed to submit rating"
+      );
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
+  // ============ CANCEL RIDE ENDPOINT ============
+  const handleCancelRide = async () => {
+    try {
+      setShowCancelConfirm(false);
+
+      const response = await axios.post(
+        `${API_URL_APP}/api/v1/cancel-ride-post/${rideId}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      console.log("❌ Cancel ride response:", response.data);
+
+      if (response.data?.success) {
+        Alert.alert(
+          "Ride Cancelled",
+          "The ride has been cancelled successfully",
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.log("❌ Cancel ride error:", error?.response?.data || error);
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Failed to cancel ride"
+      );
     }
   };
 
@@ -318,17 +462,10 @@ const ReserveRideDetailsAssigned = () => {
         Linking.openURL("tel:100");
         break;
       case "support":
-        Linking.openURL("tel:+911234567890"); // Replace with actual support number
+        Linking.openURL("tel:+911234567890");
         break;
       case "cancel":
-        Alert.alert(
-          "Cancel Ride",
-          "Are you sure you want to cancel this ride?",
-          [
-            { text: "No", style: "cancel" },
-            { text: "Yes", onPress: () => updateRideStatus("cancelled") },
-          ]
-        );
+        setShowCancelConfirm(true);
         break;
       case "refresh":
         fetchRideDetails(false);
@@ -347,27 +484,10 @@ const ReserveRideDetailsAssigned = () => {
     return items.length ? items.join(", ") : "None";
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      "driver-assigned": "#000",
-      "reached-pickup": "#D97706",
-      "in-progress": "#059669",
-      completed: "#10B981",
-      cancelled: "#6B7280",
-    };
-    return colors[status] || "#6B7280";
-  };
-
-  const getStatusText = (status) => {
-    const texts = {
-      "driver-assigned": "Driver Assigned",
-      "reached-pickup": "Reached Pickup",
-      "in-progress": "In Progress",
-      completed: "Completed",
-      cancelled: "Cancelled",
-    };
-    return texts[status] || status;
-  };
+  const isRoundTrip = rideData?.tripType === "round-trip";
+  const arrivalDateTime = !isRoundTrip
+    ? getArrivalDateTime(rideData?.pickupDate, rideData?.pickupTime, distance)
+    : null;
 
   if (loading) {
     return (
@@ -391,29 +511,32 @@ const ReserveRideDetailsAssigned = () => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <ArrowLeft size={24} color="#1F2937" />
+          <ArrowLeft size={moderateScale(24)} color="#1F2937" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Trip Details</Text>
-          
+          <Text style={styles.headerSubtitle}>
+            {formatDate(rideData.pickupDate)} •{" "}
+            {formatTime12Hour(rideData.pickupTime)}
+          </Text>
         </View>
         <TouchableOpacity
           style={styles.moreButton}
           onPress={() => setShowMoreOptions(true)}
         >
-          <MoreVertical size={24} color="#1F2937" />
+          <MoreVertical size={moderateScale(24)} color="#1F2937" />
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        style={{ paddingBottom: insets.bottom +20 }}
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -424,26 +547,6 @@ const ReserveRideDetailsAssigned = () => {
           />
         }
       >
-        {/* Status Card */}
-        <View style={styles.statusCard}>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(rideData.rideStatus) },
-            ]}
-          >
-            <Text style={styles.statusText}>
-              {getStatusText(rideData.rideStatus)}
-            </Text>
-          </View>
-          {rideData.paymentStatus === "completed" && (
-            <View style={styles.paidBadge}>
-              <CheckCircle size={16} color="#10B981" />
-              <Text style={styles.paidText}>Payment Completed</Text>
-            </View>
-          )}
-        </View>
-
         {/* Map */}
         <View style={styles.mapContainer}>
           {mapRegion ? (
@@ -459,7 +562,7 @@ const ReserveRideDetailsAssigned = () => {
                 }}
               >
                 <View style={styles.pickupMarker}>
-                  <Navigation size={18} color="#fff" />
+                  <Navigation size={moderateScale(16)} color="#fff" />
                 </View>
               </Marker>
               <Marker
@@ -469,14 +572,14 @@ const ReserveRideDetailsAssigned = () => {
                 }}
               >
                 <View style={styles.dropMarker}>
-                  <MapPin size={18} color="#000" fill="#000" />
+                  <MapPin size={moderateScale(16)} color="#000" fill="#000" />
                 </View>
               </Marker>
               {routeCoords.length > 0 && (
                 <Polyline
                   coordinates={routeCoords}
                   strokeColor="#000"
-                  strokeWidth={5}
+                  strokeWidth={4}
                   lineCap="round"
                 />
               )}
@@ -484,191 +587,270 @@ const ReserveRideDetailsAssigned = () => {
           ) : (
             <View style={styles.mapPlaceholder}>
               <ActivityIndicator size="large" color="#000" />
-              <Text style={styles.mapText}>Loading Map...</Text>
             </View>
           )}
         </View>
 
-        {/* Driver Info Card */}
-        <View style={styles.card}>
-          <View style={styles.driverHeader}>
-            <View style={styles.driverInfo}>
-              <View style={styles.avatarContainer}>
-                {rideData?.assignedDriverId?.profile_image ? (
+        {/* Trip Posted By */}
+        <View style={styles.section}>
+     
+          <View style={styles.card}>
+                <View
+                     style={{
+                       flexDirection: "row",
+                       alignItems: "center",
+                       justifyContent: "space-between",
+                       width: "100%",
+                     }}
+                   >
+                     <Text style={styles.sectionTitle}>Trip Posted By</Text>
+                     <Text style={styles.sectionTitle}>
+                       {rideData?._id
+                         ? `CRN-${rideData._id.slice(-4)}`.toUpperCase()
+                         : ""}
+                     </Text>
+                     </View>
+            <View style={styles.userRow}>
+              <View style={styles.userInfo}>
+                {rideData?.companyId?.logo ? (
                   <Image
-                    source={{ uri: rideData.assignedDriverId.profile_image }}
-                    style={styles.avatarImage}
+                    source={{ uri: rideData?.companyId?.logo?.url }}
+                    style={styles.avatar}
                   />
                 ) : (
-                  <LinearGradient
-                    colors={["#000", "#B91C1C"]}
-                    style={styles.avatar}
-                  >
+                  <View style={styles.avatarPlaceholder}>
                     <Text style={styles.avatarText}>
-                      {(rideData?.assignedDriverId?.driver_name || "D").charAt(
-                        0
-                      )}
-                    </Text>
-                  </LinearGradient>
-                )}
-              </View>
-              <View style={styles.driverDetails}>
-                <Text style={styles.driverName}>
-                  {rideData?.assignedDriverId?.driver_name || "Driver"}
-                </Text>
-                <Text style={styles.driverPhone}>
-                  {rideData?.assignedDriverId?.driver_contact_number}
-                </Text>
-                {rideData?.assignedDriverId?.average_rating > 0 && (
-                  <View style={styles.ratingContainer}>
-                    <Star size={14} color="#000" fill="#000" />
-                    <Text style={styles.ratingText}>
-                      {rideData.assignedDriverId.average_rating}
+                      {(rideData?.companyId?.company_name || "D").charAt(0)}
                     </Text>
                   </View>
                 )}
+
+                <View style={styles.userDetails}>
+                  <Text style={styles.userName}>
+                    {rideData?.companyId?.company_name || "Driver"}
+                  </Text>
+               <View style={cardDriverStyles.ratingRow}>
+                                  <Star size={14} color="#FFA500" fill="#FFA500" />
+                                  <Text style={cardDriverStyles.ratingText}>
+                                    {rideData?.companyId?.rating} /
+                                  </Text>
+                                  <Text
+                                    style={[
+                                      cardDriverStyles.ratingText,
+                                      { color: Colors.success, marginLeft: 4 },
+                                    ]}
+                                  >
+                                    {succesPercentage}% -
+                                  </Text>
+              
+                                  <Text
+                                    style={[
+                                      cardDriverStyles.ratingText,
+                                      { color: Colors.error },
+                                    ]}
+                                  >
+                                    {cancelPercentage}%
+                                  </Text>
+                                </View>
+                </View>
+              </View>
+
+              <View style={styles.contactButtons}>
+                {rideData?.contactType === "call" ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.phoneButton}
+                      onPress={() => {
+                        const phone =
+                          rideData?.driverPostId?.driver_contact_number;
+                        if (phone) Linking.openURL(`tel:${phone}`);
+                      }}
+                    >
+                      <Phone size={moderateScale(18)} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.chatButton}
+                      onPress={initChat}
+                    >
+                      <MessageCircle size={moderateScale(18)} color="#fff" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.chatButton}
+                    onPress={initChat}
+                  >
+                    <MessageCircle size={moderateScale(18)} color="#fff" />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
-            <View style={styles.contactButtons}>
-              <TouchableOpacity
-                style={styles.phoneButton}
-                onPress={() => {
-                  const phone =
-                    rideData?.assignedDriverId?.driver_contact_number;
-                  if (phone) Linking.openURL(`tel:${phone}`);
-                }}
-              >
-                <Phone size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
 
-        {/* Earnings Card - Only show if has commission */}
-        {rideData.commissionAmount > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Earnings Breakdown</Text>
-            <View style={styles.earningsSection}>
-              <View style={styles.earningItem}>
-                <Text style={styles.earningAmount}>
+            {/* Pricing */}
+            <View style={styles.pricingRow}>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceAmount}>
                   ₹{Number(rideData.totalAmount || 0).toLocaleString()}
                 </Text>
-                <Text style={styles.earningLabel}>Total Amount</Text>
+                <Text style={styles.priceLabel}>Total Amount</Text>
               </View>
-              <View style={styles.earningDivider} />
-              <View style={styles.earningItem}>
-                <Text style={styles.earningAmount}>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceAmountRed}>
                   ₹{Number(rideData.commissionAmount || 0).toLocaleString()}
                 </Text>
-                <Text style={styles.earningLabel}>Commission</Text>
+                <Text style={styles.priceLabel}>Commission</Text>
               </View>
-              <View style={styles.earningDivider} />
-              <View style={styles.earningItem}>
-                <Text style={styles.earningAmountGreen}>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceAmountGreen}>
                   ₹{Number(rideData.driverEarning || 0).toLocaleString()}
                 </Text>
-                <Text style={styles.earningLabel}>Your Earning</Text>
+                <Text style={styles.priceLabel}>Driver Earning</Text>
               </View>
             </View>
-          </View>
-        )}
 
-        {/* Trip Info Card */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Trip Information</Text>
-          <View style={styles.tripInfoGrid}>
-            <View style={styles.tripInfoItem}>
-              <Car size={20} color="#6B7280" />
-              <Text style={styles.tripInfoLabel}>Vehicle</Text>
-              <Text style={styles.tripInfoValue}>
-                {rideData.vehicleType?.charAt(0).toUpperCase() +
-                  rideData.vehicleType?.slice(1)}
+            {/* Dates with Timeline */}
+            <View style={styles.dateRow}>
+              <View style={styles.dateItem}>
+                <Text style={styles.dateLabel}>
+                  {isRoundTrip ? "Pickup" : formatDate(rideData.pickupDate)}
+                </Text>
+                <Text style={styles.timeValue}>
+                  {formatTime12Hour(rideData.pickupTime)}
+                </Text>
+              </View>
+
+              <View style={styles.dateDivider}>
+                <View style={styles.dividerDot} />
+                <View style={styles.dividerLine} />
+                <View style={styles.dividerDot} />
+              </View>
+
+              {isRoundTrip ? (
+                <View style={styles.dateItem}>
+                  <Text style={styles.dateLabel}>Return</Text>
+                  <Text style={styles.dateValue}>
+                    {rideData.returnDate
+                      ? formatDate(rideData.returnDate)
+                      : "TBD"}
+                  </Text>
+                  <Text style={styles.timeValue}>
+                    {rideData.returnTime
+                      ? formatTime12Hour(rideData.returnTime)
+                      : "TBD"}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.dateItem}>
+                  <Text style={styles.dateLabel}>
+                    {arrivalDateTime
+                      ? formatDateFromDate(arrivalDateTime)
+                      : "Arrival"}
+                  </Text>
+                  <Text style={styles.timeValue}>
+                    {arrivalDateTime
+                      ? formatTime12HourFromDate(arrivalDateTime)
+                      : "TBD"}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Vehicle Info */}
+            <View style={styles.vehicleSection}>
+              <View style={styles.vehicleInfo}>
+                <Text style={styles.vehicleName}>{VehicleName}</Text>
+                <Text style={styles.vehiclePlate}>
+                  {VehcileNumber || "DL 1A B2345"}
+                </Text>
+              </View>
+              <Image
+                source={vehicleImage}
+                style={styles.vehicleImage}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* Trip Type Badge */}
+            {/* <View style={styles.tripBadge}>
+              <Text style={styles.tripBadgeText}>
+                {isRoundTrip ? "Round Trip" : "One way Trip"} -{" "}
+                {distance.toFixed(0)} km
               </Text>
-            </View>
-            <View style={styles.tripInfoItem}>
-              <Clock size={20} color="#6B7280" />
-              <Text style={styles.tripInfoLabel}>Duration</Text>
-              <Text style={styles.tripInfoValue}>{duration}h</Text>
-            </View>
-            <View style={styles.tripInfoItem}>
-              <Navigation size={20} color="#6B7280" />
-              <Text style={styles.tripInfoLabel}>Distance</Text>
-              <Text style={styles.tripInfoValue}>{distance} km</Text>
-            </View>
-            <View style={styles.tripInfoItem}>
-              <DollarSign size={20} color="#6B7280" />
-              <Text style={styles.tripInfoLabel}>Amount</Text>
-              <Text style={styles.tripInfoValue}>₹{rideData.totalAmount}</Text>
-            </View>
-          </View>
-        </View>
+            </View> */}
 
-        {/* Locations Card */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Route Details</Text>
-          <View style={styles.locationItem}>
-            <View style={styles.locationDotGreen} />
-            <View style={styles.locationTextContainer}>
-              <Text style={styles.locationLabel}>Pickup Location</Text>
-              <Text style={styles.locationText}>{rideData.pickupAddress}</Text>
-            </View>
-          </View>
-          <View style={styles.locationDivider} />
-          <View style={styles.locationItem}>
-            <MapPin size={16} color="#000" />
-            <View style={styles.locationTextContainer}>
-              <Text style={styles.locationLabel}>Drop Location</Text>
-              <Text style={styles.locationText}>{rideData.dropAddress}</Text>
-            </View>
+            {/* Locations */}
+             <View style={styles.addressBox}>
+                   <View style={styles.addressRow}>
+                     <Icon name="navigate-outline" size={15} color="#666" />
+                     <Text style={styles.address} numberOfLines={1}>
+                   {rideData?.
+pickupAddress
+} 
+                     </Text>
+                   </View>
+           
+                   <View style={styles.tripTagContainer}>
+                     <Text style={styles.tripTag}>
+                      {  rideData?.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+      } - {rideData?.distance || "60"}Km
+                     </Text>
+                   </View>
+           
+                   <View style={styles.addressRow}>
+                     <Icon name="location-outline" size={15} color="#666" />
+                     <Text style={styles.address} numberOfLines={1}>
+                        {rideData?.
+dropAddress
+} 
+                     </Text>
+                   </View>
+                 </View>
           </View>
         </View>
 
         {/* Extra Requirements */}
-        {rideData.extraRequirements && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Extra Requirements</Text>
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Extra Requirements</Text>
             <Text style={styles.requirementsText}>
               {getExtraRequirements(rideData.extraRequirements)}
             </Text>
           </View>
-        )}
+        </View>
 
         {/* Notes */}
         {rideData.notes && (
-          <View style={styles.card}>
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes</Text>
-            <Text style={styles.notesText}>{rideData.notes}</Text>
+            <View style={styles.card}>
+              <Text style={styles.notesText}>{rideData.notes}</Text>
+            </View>
           </View>
         )}
 
-        <View style={styles.bottomSpacing} />
+        <View style={{ height: verticalScale(100) }} />
       </ScrollView>
 
-      {/* Action Buttons - Only show for my rides */}
-      {isMyRide && (
-        <View style={styles.actionContainer}>
-          {rideData.rideStatus === "driver-assigned" && (
+      {/* Action Buttons Based on Ride Status */}
+      {rideData?.assignedDriverId?._id === driver?._id && (
+        <View style={[styles.bottomButton, { paddingBottom: insets.bottom }]}>
+          {rideData?.rideStatus === "driver-assigned" && (
             <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleReachedPickup}
+              style={styles.pickupButton}
+              onPress={handleStartRide}
             >
-              <Text style={styles.actionButtonText}>I Reached at Pickup</Text>
+              <Text style={styles.pickupButtonText}>Start The Ride</Text>
             </TouchableOpacity>
           )}
 
-          {rideData.rideStatus === "reached-pickup" && (
+          {rideData?.rideStatus === "started" && (
             <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleReachedDrop}
+              style={styles.pickupButton}
+              onPress={handleCompleteRideConfirm}
             >
-              <Text style={styles.actionButtonText}>I Reached at Drop</Text>
-            </TouchableOpacity>
-          )}
-
-          {!isMyRide && (
-            <TouchableOpacity style={styles.chatButton} onPress={initChat}>
-              <MessageCircle size={20} color="#fff" />
-              <Text style={styles.chatButtonText}>Chat with Driver</Text>
+              <Text style={styles.pickupButtonText}>
+                Mark Complete This Ride
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -677,45 +859,46 @@ const ReserveRideDetailsAssigned = () => {
       {/* More Options Modal */}
       <Modal
         visible={showMoreOptions}
-        transparent={true}
+        transparent
         animationType="fade"
         onRequestClose={() => setShowMoreOptions(false)}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setShowMoreOptions(false)}
         >
-          <View style={styles.moreOptionsModal}>
+          <View style={styles.moreOptionsMenu}>
             <TouchableOpacity
-              style={styles.moreOption}
+              style={styles.menuItem}
               onPress={() => handleMoreOptions("refresh")}
             >
-              <RefreshCw size={20} color="#6B7280" />
-              <Text style={styles.moreOptionText}>Refresh Ride</Text>
-            </TouchableOpacity>
+              <Loader size={moderateScale(18)} color="#1F2937" />
 
-            <TouchableOpacity
-              style={styles.moreOption}
-              onPress={() => handleMoreOptions("police")}
-            >
-              <Shield size={20} color="#000" />
-              <Text style={styles.moreOptionText}>Call Police</Text>
+              <Text style={styles.menuText}>Refresh</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={styles.moreOption}
+              style={styles.menuItem}
               onPress={() => handleMoreOptions("support")}
             >
-              <Headphones size={20} color="#059669" />
-              <Text style={styles.moreOptionText}>TaxiSafar Support</Text>
+              <Headphones size={moderateScale(18)} color="#1F2937" />
+              <Text style={styles.menuText}>Contact Support</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={[styles.moreOption, styles.cancelOption]}
+              style={styles.menuItem}
+              onPress={() => handleMoreOptions("police")}
+            >
+              <Shield size={moderateScale(18)} color="#000" />
+              <Text style={[styles.menuText, { color: "#000" }]}>
+                Emergency (100)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => handleMoreOptions("cancel")}
             >
-              <X size={20} color="#000" />
-              <Text style={[styles.moreOptionText, styles.cancelText]}>
+              <X />
+              <Text style={[styles.menuText, { color: "#DC2626" }]}>
                 Cancel Ride
               </Text>
             </TouchableOpacity>
@@ -723,113 +906,148 @@ const ReserveRideDetailsAssigned = () => {
         </TouchableOpacity>
       </Modal>
 
-      {/* OTP Modal */}
+      {/* ============ PAYMENT CONFIRMATION MODAL ============ */}
       <Modal
-        visible={showOtpModal}
-        transparent={true}
+        visible={showPaymentConfirm}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowOtpModal(false)}
+        onRequestClose={() => setShowPaymentConfirm(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.otpModal}>
-            <Text style={styles.otpTitle}>Enter OTP</Text>
-            <Text style={styles.otpSubtitle}>
-              Please enter the OTP provided by the customer
-            </Text>
-
-            <TextInput
-              style={styles.otpInput}
-              value={otp}
-              onChangeText={setOtp}
-              placeholder="Enter 4-digit OTP"
-              keyboardType="numeric"
-              maxLength={4}
-            />
-
-            <View style={styles.otpButtons}>
-              <TouchableOpacity
-                style={styles.otpCancelButton}
-                onPress={() => setShowOtpModal(false)}
-              >
-                <Text style={styles.otpCancelText}>Cancel</Text>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Payment Confirmation</Text>
+              <TouchableOpacity onPress={() => setShowPaymentConfirm(false)}>
+                <X size={moderateScale(24)} color="#1F2937" />
               </TouchableOpacity>
-
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Have you collected the payment from the customer?
+            </Text>
+            <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.otpVerifyButton}
-                onPress={verifyOtp}
+                style={[styles.confirmButton, styles.noButton]}
+                onPress={() => setShowPaymentConfirm(false)}
               >
-                <Text style={styles.otpVerifyText}>Verify</Text>
+                <Text style={styles.noButtonText}>No, Not Yet</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.yesButton]}
+                onPress={handleCompleteRide}
+              >
+                <Text style={styles.yesButtonText}>Yes, Collected</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Collection Modal */}
-      <Modal
-        visible={showCollectionModal}
-        transparent={true}
+ <Modal
+        visible={showRatingModal}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowCollectionModal(false)}
+        onRequestClose={() => setShowRatingModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.collectionModal}>
-            <Text style={styles.collectionTitle}>Collect Payment</Text>
-            <Text style={styles.collectionSubtitle}>
-              Enter the amount collected from customer
-            </Text>
-
-            <TextInput
-              style={styles.collectionInput}
-              value={collectedAmount}
-              onChangeText={setCollectedAmount}
-              placeholder={`₹${rideData.totalAmount}`}
-              keyboardType="numeric"
-            />
-
-            <View style={styles.collectionButtons}>
-              <TouchableOpacity
-                style={styles.collectionCancelButton}
-                onPress={() => setShowCollectionModal(false)}
-              >
-                <Text style={styles.collectionCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.collectionConfirmButton}
-                onPress={completeRide}
-              >
-                <Text style={styles.collectionConfirmText}>Complete Ride</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal
-        visible={showSuccessModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowSuccessModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.successModal}>
-            <CheckCircle size={60} color="#10B981" />
-            <Text style={styles.successTitle}>Ride Completed!</Text>
-            <Text style={styles.successSubtitle}>
-              You have successfully completed this ride
-            </Text>
-
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowRatingModal(false)}
+          >
             <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => {
-                setShowSuccessModal(false);
-                navigation.goBack();
-              }}
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={styles.ratingModalContainer}
             >
-              <Text style={styles.successButtonText}>Done</Text>
+              <View style={styles.ratingModal}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Rating For a Booking Agent</Text>
+                  <TouchableOpacity onPress={() => setShowRatingModal(false)}>
+                    <X size={moderateScale(24)} color="#1F2937" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Star Rating */}
+                <View style={styles.starsContainer}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity
+                      key={star}
+                      style={styles.starButton}
+                      onPress={() => setCustomerRating(star)}
+                    >
+                      <Star
+                        size={moderateScale(32)}
+                        color={star <= customerRating ? "#FFA500" : "#D1D5DB"}
+                        fill={star <= customerRating ? "#FFA500" : "none"}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Feedback Text Input */}
+                <TextInput
+                  style={styles.feedbackInput}
+                  placeholder="Share your feedback (optional)"
+                  placeholderTextColor="#9CA3AF"
+                  value={feedback}
+                  onChangeText={setFeedback}
+                  multiline
+                  numberOfLines={4}
+                />
+
+                {/* Submit Button */}
+                <TouchableOpacity
+                  style={styles.submitRatingButton}
+                  onPress={handleSubmitRating}
+                  disabled={submittingRating}
+                >
+                  {submittingRating ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.submitRatingButtonText}>Submit Rating</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+      {/* ============ CANCEL CONFIRMATION MODAL ============ */}
+      <Modal
+        visible={showCancelConfirm}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCancelConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Cancel Ride</Text>
+              <TouchableOpacity onPress={() => setShowCancelConfirm(false)}>
+                <X size={moderateScale(24)} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Are you sure you want to cancel this ride? This action cannot be
+              undone.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.noButton]}
+                onPress={() => setShowCancelConfirm(false)}
+              >
+                <Text style={styles.noButtonText}>Keep The Ride</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.cancelButton]}
+                onPress={handleCancelRide}
+              >
+                <Text style={styles.yesButtonText}>Yes, Cancel Ride</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -837,10 +1055,12 @@ const ReserveRideDetailsAssigned = () => {
   );
 };
 
+export default ReserveRideDetailsAssigned;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F9FAFB",
   },
   center: {
     flex: 1,
@@ -848,606 +1068,646 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
+    marginTop: verticalScale(12),
+    fontSize: moderateScale(16),
     color: "#6B7280",
-    fontWeight: "500",
   },
   errorText: {
-    fontSize: 16,
+    fontSize: moderateScale(16),
     color: "#000",
-    fontWeight: "500",
   },
-
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "#FFFFFF",
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(12),
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    borderBottomColor: "#E5E7EB",
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-    justifyContent: "center",
+    padding: scale(8),
   },
   headerCenter: {
     flex: 1,
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: moderateScale(18),
     fontWeight: "700",
-    color: "#1F2937",
+    color: "#111827",
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: moderateScale(13),
     color: "#6B7280",
-    marginTop: 2,
-    fontWeight: "500",
+    marginTop: verticalScale(2),
   },
   moreButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-    justifyContent: "center",
+    padding: scale(8),
   },
-
-  // Status Card
-  statusCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginHorizontal: 20,
-    marginTop: 16,
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
+  scrollView: {
+    flex: 1,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  paidBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 4,
-  },
-  paidText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#059669",
-  },
-
-  // Map
   mapContainer: {
-    margin: 20,
-    height: 200,
-    borderRadius: 12,
+    height: verticalScale(200),
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: scale(6),
+    borderRadius: moderateScale(2),
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
   },
   mapPlaceholder: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
   },
-  mapText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#6B7280",
-  },
-
   pickupMarker: {
+    width: moderateScale(32),
+    height: moderateScale(32),
+    borderRadius: moderateScale(16),
     backgroundColor: "#10B981",
-    padding: 8,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    justifyContent: "center",
+    alignItems: "center",
   },
   dropMarker: {
-    backgroundColor: "#FFFFFF",
-    padding: 8,
-    borderRadius: 50,
-    borderWidth: 3,
+    width: moderateScale(32),
+    height: moderateScale(32),
+    borderRadius: moderateScale(16),
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
     borderColor: "#000",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
   },
-
-  // Cards
+  section: {
+    // marginTop: verticalScale(20),
+    paddingHorizontal: scale(16),
+  },
+  sectionTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: verticalScale(12),
+  },
   card: {
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
+    backgroundColor: "#fff",
+    borderRadius: moderateScale(12),
+    padding: scale(16),
   },
-
-  // Driver Info
-  driverHeader: {
+  userRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  driverInfo: {
+  userInfo: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
-  avatarContainer: {
-    marginRight: 16,
+
+  // Address
+  addressBox: {
+    backgroundColor: "#F2F5F6",
+    padding: 10,
+    borderRadius: 12,
+  },
+
+  addressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 3,
+  },
+
+  address: {
+    flex: 1,
+    textAlign: "auto",
+    marginLeft: 6,
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 16,
+  },
+
+  tripTagContainer: {
+    alignItems: "center",
+    marginVertical: 6,
+  },
+
+  tripTag: {
+    backgroundColor: "#000",
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: moderateScale(48),
+    height: moderateScale(48),
+    borderRadius: moderateScale(24),
+  },
+  avatarPlaceholder: {
+    width: moderateScale(48),
+    height: moderateScale(48),
+    borderRadius: moderateScale(24),
+    backgroundColor: "#E5E7EB",
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    resizeMode: "cover",
-  },
   avatarText: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#FFFFFF",
+    fontSize: moderateScale(20),
+    fontWeight: "600",
+    color: "#6B7280",
   },
-  driverDetails: {
+  userDetails: {
+    marginLeft: scale(12),
     flex: 1,
   },
-  driverName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginBottom: 4,
+  userName: {
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+    color: "#111827",
   },
-  driverPhone: {
-    fontSize: 14,
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(4),
+  },
+  ratingText: {
+    fontSize: moderateScale(14),
     color: "#6B7280",
-    fontWeight: "500",
+    marginLeft: scale(4),
+  },
+  contactButtons: {
+    flexDirection: "row",
+    gap: scale(8),
+  },
+  phoneButton: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: "#10B981",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  chatButton: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pricingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: verticalScale(20),
+    paddingTop: verticalScale(16),
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  priceItem: {
+    alignItems: "center",
+  },
+  priceAmount: {
+    fontSize: 16,
+    fontFamily: "SFProDisplay-Bold",
+    fontWeight: "700",
+    color: "#111827",
+  },
+  priceAmountRed: {
+    fontWeight: "700",
+    fontSize: 16,
+    fontFamily: "SFProDisplay-Bold",
+    color: "#DC2626",
+  },
+  priceAmountGreen: {
+    fontSize: 16,
+    fontFamily: "SFProDisplay-Bold",
+    fontWeight: "700",
+    color: "#10B981",
+  },
+  priceLabel: {
+    fontSize: moderateScale(12),
+    color: "#000",
+        fontWeight: "700",
+    fontFamily: "SFProDisplay-Bold",
+
+    marginTop: verticalScale(4),
+  },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(20),
+    paddingTop: verticalScale(16),
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  dateItem: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: moderateScale(12),
+    color: "#000",
+        fontWeight: "900",
+
+  },
+  dateValue: {
+    fontSize: moderateScale(14),
+    fontWeight: "600",
+    color: "#111827",
+  },
+  timeValue: {
+    fontSize: moderateScale(14),
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: verticalScale(2),
+  },
+  dateDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(16),
+  },
+  dividerDot: {
+    width: moderateScale(8),
+    height: moderateScale(8),
+    borderRadius: moderateScale(4),
+    backgroundColor: "#D1D5DB",
+  },
+  dividerLine: {
+    width: 90,
+    height: verticalScale(1),
+    backgroundColor: "#D1D5DB",
+    marginVertical: verticalScale(4),
+  },
+  vehicleSection: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: verticalScale(20),
+    paddingTop: verticalScale(16),
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  vehicleInfo: {
+    flex: 1,
+  },
+  vehicleName: {
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+    color: "#111827",
+  },
+  vehiclePlate: {
+    fontSize: moderateScale(20),
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: verticalScale(4),
+  },
+  vehicleImage: {
+    width: scale(120),
+    height: verticalScale(60),
+  },
+  tripBadge: {
+    alignSelf: "center",
+    backgroundColor: "#000",
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(5),
+    borderRadius: moderateScale(20),
+    marginTop: verticalScale(16),
+  },
+  tripBadgeText: {
+    fontSize: moderateScale(10),
+    fontWeight: "600",
+    color: "#fff",
+  },
+  locationsList: {
+    marginTop: verticalScale(16),
+  },
+  locationItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: verticalScale(12),
+  },
+  locationIcon: {
+    width: moderateScale(28),
+    height: moderateScale(28),
+    borderRadius: moderateScale(14),
+    backgroundColor: "#10B981",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: scale(12),
+  },
+  locationText: {
+    flex: 1,
+    fontSize: moderateScale(14),
+    color: "#374151",
+    lineHeight: moderateScale(20),
+  },
+  requirementsText: {
+    fontSize: moderateScale(14),
+    color: "#374151",
+  },
+  notesText: {
+    fontSize: moderateScale(14),
+    color: "#6B7280",
+    lineHeight: moderateScale(20),
+  },
+  bottomButton: {
+    paddingHorizontal: scale(16),
+    paddingTop: verticalScale(12),
+    paddingBottom: verticalScale(12),
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  pickupButton: {
+    backgroundColor: "#000",
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+  },
+  pickupButtonText: {
+    fontSize: moderateScale(16),
+    fontWeight: "700",
+    color: "#fff",
+  },
+  modalOverlay: {
+    flex: 1,
+
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  moreOptionsMenu: {
+    backgroundColor: "#fff",
+    paddingBottom: verticalScale(70),
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    paddingVertical: verticalScale(20),
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(16),
+    gap: scale(12),
+  },
+  menuText: {
+    fontSize: moderateScale(16),
+    color: "#1F2937",
+  },
+  confirmModal: {
+    paddingBottom: verticalScale(70),
+
+    backgroundColor: "#fff",
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    padding: scale(24),
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: verticalScale(12),
+  },
+  modalTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: "700",
+    color: "#111827",
+  },
+  modalSubtitle: {
+    fontSize: moderateScale(14),
+    color: "#6B7280",
+    marginBottom: verticalScale(24),
+    lineHeight: moderateScale(20),
+  },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: scale(12),
+  },
+  confirmButton: {
+    flex: 1,
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(14),
+    alignItems: "center",
+  },
+  noButton: {
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+  },
+  noButtonText: {
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+    color: "#374151",
+  },
+  yesButton: {
+    backgroundColor: "#000",
+  },
+  cancelButton: {
+    backgroundColor: "#DC2626",
+  },
+  yesButtonText: {
+    fontSize: moderateScale(16),
+    fontWeight: "600",
+    color: "#fff",
+  },
+  ratingModal: {
+    backgroundColor: "#fff",
+    paddingBottom: verticalScale(70),
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    padding: scale(24),
+  },
+  starsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: scale(8),
+    marginVertical: verticalScale(24),
+  },
+  starButton: {
+    padding: scale(4),
+  },
+  feedbackInput: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(12),
+    fontSize: moderateScale(14),
+    marginBottom: verticalScale(20),
+    minHeight: verticalScale(100),
+    textAlignVertical: "top",
+  },
+  submitRatingButton: {
+    backgroundColor: "#000",
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+  },
+  submitRatingButtonText: {
+    fontSize: moderateScale(16),
+    fontWeight: "700",
+    color: "#fff",
+  },
+});
+
+
+
+const cardDriverStyles = StyleSheet.create({
+  container: {
+    borderRadius: 16,
+    padding: 8,
+    marginVertical: 4,
+  },
+
+  // Header Section
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+
+  avatarSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 28,
+    backgroundColor: "#f0f0f0",
+  },
+
+  avatarPlaceholder: {
+    width: 40,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#4A90E2",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  avatarText: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#fff",
+  },
+
+  nameRatingContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+
+  companyName: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1a1a1a",
     marginBottom: 4,
   },
-  ratingContainer: {
+
+  ratingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
+
   ratingText: {
     fontSize: 14,
-    color: "#6B7280",
-    fontWeight: "600",
+    fontWeight: "900",
+    color: "#666",
+    // marginLeft: 4,
   },
 
+  // Contact Buttons
   contactButtons: {
     flexDirection: "row",
     gap: 8,
   },
+
   phoneButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
-    backgroundColor: "#000",
+    borderRadius: 22,
+    backgroundColor: "#34C759",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#34C759",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
-  // Earnings
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginBottom: 16,
-  },
-  earningsSection: {
-    flexDirection: "row",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 16,
-  },
-  earningItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  earningAmount: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#000",
-    marginBottom: 4,
-  },
-  earningAmountGreen: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#059669",
-    marginBottom: 4,
-  },
-  earningLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  earningDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: "#E5E7EB",
-    marginHorizontal: 16,
-  },
-
-  // Trip Info Grid
-  tripInfoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 16,
-  },
-  tripInfoItem: {
-    flex: 1,
-    minWidth: "45%",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  tripInfoLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  tripInfoValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-
-  // Locations
-  locationItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginVertical: 8,
-  },
-  locationDotGreen: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#10B981",
-    marginTop: 4,
-    marginRight: 12,
-  },
-  locationTextContainer: {
-    flex: 1,
-  },
-  locationLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  locationText: {
-    fontSize: 14,
-    color: "#1F2937",
-    lineHeight: 20,
-    fontWeight: "500",
-  },
-  locationDivider: {
-    height: 20,
-    width: 2,
-    backgroundColor: "#E5E7EB",
-    marginLeft: 6,
-    marginVertical: 8,
-  },
-
-  requirementsText: {
-    fontSize: 14,
-    color: "#6B7280",
-    lineHeight: 20,
-    fontWeight: "500",
-  },
-  notesText: {
-    fontSize: 14,
-    color: "#6B7280",
-    lineHeight: 20,
-    fontStyle: "italic",
-  },
-
-  // Action Container
-  actionContainer: {
-    padding: 20,
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-  },
-  actionButton: {
-    backgroundColor: "#000",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  actionButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
   chatButton: {
-    backgroundColor: "#1F2937",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-  },
-  chatButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-
-  // Modals
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // More Options Modal
-  moreOptionsModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 8,
-    minWidth: 200,
-    marginHorizontal: 20,
-  },
-  moreOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  moreOptionText: {
-    fontSize: 16,
-    color: "#1F2937",
-    fontWeight: "500",
-  },
-  cancelOption: {
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-  },
-  cancelText: {
-    color: "#000",
-  },
-
-  // OTP Modal
-  otpModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 24,
-    marginHorizontal: 20,
-    minWidth: width * 0.8,
-  },
-  otpTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1F2937",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  otpSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  otpInput: {
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 24,
-    fontWeight: "600",
-  },
-  otpButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  otpCancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  otpCancelText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  otpVerifyButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#000",
+    justifyContent: "center",
     alignItems: "center",
-  },
-  otpVerifyText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
-  // Collection Modal
-  collectionModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 24,
-    marginHorizontal: 20,
-    minWidth: width * 0.8,
+  chatButtonFull: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  collectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1F2937",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  collectionSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  collectionInput: {
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 24,
-    fontWeight: "600",
-  },
-  collectionButtons: {
+
+  // Stats Section
+  statsContainer: {
     flexDirection: "row",
-    gap: 12,
-  },
-  collectionCancelButton: {
-    flex: 1,
-    paddingVertical: 12,
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
-    backgroundColor: "#F9FAFB",
+    padding: 16,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  collectionCancelText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  collectionConfirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: "#059669",
-    alignItems: "center",
-  },
-  collectionConfirmText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
   },
 
-  // Success Modal
-  successModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 32,
-    marginHorizontal: 20,
+  statCard: {
+    flex: 1,
     alignItems: "center",
-    minWidth: width * 0.8,
   },
-  successTitle: {
+
+  statValue: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#1F2937",
-    textAlign: "center",
-    marginTop: 16,
-    marginBottom: 8,
+    color: "#1a1a1a",
+    marginBottom: 4,
   },
-  successSubtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 32,
-    lineHeight: 24,
+
+  cancelValue: {
+    color: "#FF3B30",
   },
-  successButton: {
-    backgroundColor: "#059669",
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 12,
-    minWidth: 120,
-  },
-  successButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
+
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#666",
     textAlign: "center",
   },
 
-  bottomSpacing: {
-    height: 20,
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: "#ddd",
+    marginHorizontal: 16,
   },
 });
-
-export default ReserveRideDetailsAssigned;

@@ -20,6 +20,9 @@ export default function DriverPost({
   _id,
   vehicleName = "Maruti WagonR",
   item = {},
+  locationPickup = {},
+  locationDrop = {},
+  status = "pending",
   vehicleType = "mini",
   totalAmount = "₹8,000",
   requirement = {},
@@ -27,23 +30,41 @@ export default function DriverPost({
   driverEarning = "₹6,000",
   pickup = "220 Yonge St, Toronto, ON M5B 2H1, Delhi",
   drop = "17600 Yonge St, Newmarket, ON L3Y 4Z1, Delhi",
-  tripType = "One way Trip - 60 km",
+  tripType = "One way Trip",
   date = "08 Mar, 2025",
   time = "07:00 PM",
-  onPress,
 }) {
   const navigation = useNavigation();
   const [distance, setDistance] = useState(0);
 
+  const getLatLng = (loc) => {
+    if (!loc?.coordinates) return null;
 
+    // Array format: [lng, lat]
+    if (Array.isArray(loc.coordinates)) {
+      return {
+        lng: loc.coordinates[0],
+        lat: loc.coordinates[1],
+      };
+    }
 
-    // useEffect(() => {
-    //   const [pickupLng, pickupLat] = trip.pickupLocation.coordinates;
-    //   const [dropLng, dropLat] = trip.dropLocation.coordinates;
-  
-    //   const dist = calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
-    //   setDistance(dist);
-    // }, [trip]);
+    // Object format
+    return {
+      lat: loc.coordinates.latitude,
+      lng: loc.coordinates.longitude,
+    };
+  };
+
+  useEffect(() => {
+    const pickup = getLatLng(locationPickup);
+    const drop = getLatLng(locationDrop);
+
+    if (!pickup || !drop) return;
+
+    const dist = calculateDistance(pickup.lat, pickup.lng, drop.lat, drop.lng);
+
+    setDistance(dist);
+  }, [locationPickup, locationDrop]);
 
   const shortenAddress = (address) => {
     if (!address) return "";
@@ -71,44 +92,29 @@ export default function DriverPost({
       : "Innova Crysta";
   const capacity = capacityMap[vehicleType] || 6;
 
-  // Badges Logic
-  const badgeLabels = {
-    ac: "AC",
-    allExclusive: "All Exclusive",
-    allInclusive: "All Inclusive",
-    carrier: "Carrier",
-    foodAllowed: "Food Allowed",
-    musicSystem: "Music System",
-    onlyDiesel: "Diesel Only",
-  };
-
   const req = requirement || {};
   let badgesToShow = [];
 
-  if (req.allInclusive) {
+  if (req.allInclusive === true) {
     badgesToShow = ["All Inclusive"];
   } else {
-    badgesToShow = Object.keys(req)
-      .filter((key) => req[key] && key !== "allInclusive")
-      .map((key) => badgeLabels[key]);
-    if (badgesToShow.length === 0) badgesToShow = ["All Inclusive"];
+    // allExclusive true OR any other case
+    badgesToShow = ["All Exclusive"];
   }
 
-  const displayBadges =
-    badgesToShow.length > 3
-      ? [...badgesToShow.slice(0, 2), `+${badgesToShow.length - 2}`]
-      : badgesToShow;
+  // (Optional safety)
+  const displayBadges = badgesToShow;
 
   return (
     <TouchableOpacity
       activeOpacity={0.9}
       onPress={() => {
+        
         const screenName =
-          item?.rideStatus === "driver-assigned"
+          status === "driver-assigned" || status === "started"
             ? "ReserveRideDetailsAssigned"
             : "DriverPostDetails";
-
-        console.log("Redirecting to:", screenName);
+        console.log("Navigating to:", status);
 
         navigation.navigate(screenName, {
           rideId: _id,
@@ -168,7 +174,7 @@ export default function DriverPost({
 
         <View style={styles.dateTime}>
           <Text style={styles.date}>{date}</Text>
-          <Text style={styles.time}>{time} AM</Text>
+          <Text style={styles.time}>{time}</Text>
         </View>
       </View>
 
@@ -179,13 +185,24 @@ export default function DriverPost({
         style={styles.badgeScroll}
         contentContainerStyle={styles.badgeContainer}
       >
-        {displayBadges.map((badge, i) => (
-          <View key={i} style={styles.ribbonWrapper}>
-            <View style={styles.ribbonBadge}>
-              <Text style={styles.ribbonText}>{badge}</Text>
+        {displayBadges.map((badge, i) => {
+          const isAllInclusive = badge === "All Inclusive";
+
+          return (
+            <View key={i} style={styles.ribbonWrapper}>
+              <View
+                style={[
+                  styles.ribbonBadge,
+                  {
+                    backgroundColor: isAllInclusive ? "#3ABA56" : "#E5260F",
+                  },
+                ]}
+              >
+                <Text style={styles.ribbonText}>{badge}</Text>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </ScrollView>
 
       {/* Amounts */}
@@ -214,7 +231,9 @@ export default function DriverPost({
         </View>
 
         <View style={styles.tripTagContainer}>
-          <Text style={styles.tripTag}>{tripType}</Text>
+          <Text style={styles.tripTag}>
+            {tripType} 
+          </Text>
         </View>
 
         <View style={styles.addressRow}>

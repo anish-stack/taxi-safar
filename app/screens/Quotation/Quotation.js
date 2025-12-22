@@ -783,7 +783,7 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 30,
+    bottom: 90,
     backgroundColor: "#000",
     width: 40,
     height: 40,
@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 30,
+    paddingBottom: 80,
   },
   modalHeader: {
     flexDirection: "row",

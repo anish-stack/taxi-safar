@@ -18,8 +18,11 @@ const OPTIONS = ["All Rides", "B2B Bookings", "B2C Bookings"];
 
 export default function RideFilterDropdown({
   selectedOption = "All Rides",
+ refreshing,
   onSelect,
 }) {
+
+  // console.log( refreshing,"<<-----------------");
   const navigation = useNavigation();
 
   const { driver, fetchDriverDetails } = useDriverStore();
@@ -57,7 +60,7 @@ export default function RideFilterDropdown({
 
   useEffect(() => {
     if (driver?._id) fetchUnreadMessages();
-  }, []);
+  }, [refreshing, driver?._id]);
 
   return (
     <View style={styles.container}>

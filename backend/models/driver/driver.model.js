@@ -104,11 +104,8 @@ const driverSchema = new mongoose.Schema(
 
     // Quick stats (denormalized for performance)
     average_rating: {
-      type: Number,
-      default: 1.0,
-      min: 0,
-      max: 5,
-      index: true,
+      type: String,
+      default: "4.5",
     },
     total_rides: {
       type: Number,
@@ -195,6 +192,10 @@ const driverSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      char_dham:{
+        type: Boolean,
+        default: false,
+      }
     },
 
     steps_complete: {
@@ -216,7 +217,7 @@ driverSchema.index({
   is_on_ride: 1,
 });
 driverSchema.index({ createdAt: -1 });
-driverSchema.index({ average_rating: -1, total_rides: -1 });
+driverSchema.index({ total_rides: -1 });
 
 // Methods
 driverSchema.methods.generateAuthToken = function () {
@@ -229,7 +230,7 @@ driverSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
     { _id: this._id, type: "refresh" },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "30d" }
+    { expiresIn: "60d" }
   );
 };
 

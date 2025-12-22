@@ -25,6 +25,7 @@ import BackWithLogo from "../common/back_with_logo";
 import { useNavigation } from "@react-navigation/native";
 import { API_URL_APP } from "../../constant/api";
 import { FloatingWidgetService } from "../../services/NativeModules";
+import useEarnings from "../../hooks/useEaraning";
 export default function Profile() {
   const { logout, token } = loginStore();
   const { driver, fetchDriverDetails } = useDriverStore();
@@ -34,28 +35,29 @@ export default function Profile() {
   const [deleteReason, setDeleteReason] = useState("");
   const [uploading, setUploading] = useState(false);
   const [alertVisible, setAlertVisible] = useState(false);
+  const { earnings, loading, refetch } = useEarnings();
   const [alertConfig, setAlertConfig] = useState({ type: "", message: "" });
   const navigation = useNavigation();
 
   useEffect(() => {
     fetchDriverDetails();
+    refetch();
   }, [token]);
 
-   const stopFloatingWidget = async () => {
-      if (Platform.OS !== "android") return false;
-  
-      try {
-        console.log("🛑 Stopping floating widget...");
-        await FloatingWidgetService.hideFloatingIcon();
-       
-        console.log("✅ Floating widget stopped");
-        return true;
-      } catch (error) {
-        console.error("❌ Stop floating widget failed:", error);
-        return false;
-      }
-    };
-  
+  const stopFloatingWidget = async () => {
+    if (Platform.OS !== "android") return false;
+
+    try {
+      console.log("🛑 Stopping floating widget...");
+      await FloatingWidgetService.hideFloatingIcon();
+
+      console.log("✅ Floating widget stopped");
+      return true;
+    } catch (error) {
+      console.error("❌ Stop floating widget failed:", error);
+      return false;
+    }
+  };
 
   const openModal = (type) => {
     setModalContent(type);
@@ -173,7 +175,7 @@ export default function Profile() {
                 "Account Deleted",
                 "Your account has been deleted successfully."
               );
-              stopFloatingWidget()
+              stopFloatingWidget();
               logout(navigation);
               await FloatingWidgetService.hideFloatingIcon();
             } catch (error) {
@@ -202,19 +204,24 @@ export default function Profile() {
               value={new Date(driver.driver_dob).toLocaleDateString()}
             />
             <DetailRow label="Phone" value={driver.driver_contact_number} />
-            <DetailRow label="Email" value={driver.driver_email} />
-            <DetailRow
-              label="Total Rides"
-              value={driver.total_rides?.toString()}
-            />
-            <DetailRow
-              label="Completed Rides"
-              value={driver.completed_rides?.toString()}
-            />
-            <DetailRow
-              label="Average Rating"
-              value={driver.average_rating?.toFixed(1)}
-            />
+            {driver.driver_email && (
+              <DetailRow label="Email" value={driver.driver_email} />
+            )}
+            {driver.total_rides > 0 && (
+              <DetailRow
+                label="Total Rides"
+                value={driver.total_rides?.toString()}
+              />
+            )}
+
+            {driver.completed_rides > 0 && (
+              <DetailRow
+                label="Completed Rides"
+                value={driver.completed_rides?.toString()}
+              />
+            )}
+
+            <DetailRow label="Average Rating" value={driver.average_rating} />
           </View>
         );
 
@@ -392,7 +399,7 @@ export default function Profile() {
 
         {/* Wallet Card */}
         <TouchableOpacity
-          onPress={() => openModal("wallet")}
+          onPress={() => navigation.navigate("earnings")}
           style={{
             marginTop: 20,
             marginHorizontal: 20,
@@ -407,11 +414,11 @@ export default function Profile() {
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <MaterialCommunityIcons name="wallet" size={24} color="white" />
             <View style={{ marginLeft: 10 }}>
-              <Text style={{ color: "white", fontSize: 13 }}>
-                My Wallet Balance
-              </Text>
+              <Text style={{ color: "white", fontSize: 13 }}>My Earnings</Text>
               <Text style={{ color: "white", fontSize: 18, fontWeight: "700" }}>
-                ₹{driver?.wallet?.balance || "0"}
+                {loading
+                  ? "Loading..."
+                  : `₹${earnings?.summary?.totalEarnings || "0"}`}
               </Text>
             </View>
           </View>
@@ -509,7 +516,7 @@ export default function Profile() {
             label="Logout"
             color="#dc2626"
             onPress={async () => {
-              stopFloatingWidget()
+              stopFloatingWidget();
               await FloatingWidgetService.hideFloatingIcon();
               logout(navigation);
             }}
@@ -699,6 +706,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: "80%",
     paddingTop: 20,
+    paddingBottom: 50,
   },
   modalScroll: {
     paddingHorizontal: 20,

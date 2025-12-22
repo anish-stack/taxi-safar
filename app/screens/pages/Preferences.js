@@ -19,6 +19,7 @@ const vehicleTypes = [
   { key: "accept_mini_rides", label: "Mini", icon: "car-hatchback" },
   { key: "accept_sedan_rides", label: "Sedan", icon: "car-side" },
   { key: "accept_suv_rides", label: "SUV", icon: "car-estate" },
+  { key: "char_dham", label: "Char Dham", icon: "map-marker-path" },
 ];
 
 const Preferences = () => {
@@ -109,15 +110,27 @@ const Preferences = () => {
   };
 
   const allowedToggles = () => {
+    const base = ["char_dham"]; // 👈 always allowed
+
     switch (vehicleCategory.toUpperCase()) {
       case "MINI":
-        return ["accept_mini_rides"];
+        return [...base, "accept_mini_rides"];
       case "SEDAN":
-        return ["accept_mini_rides", "accept_sedan_rides"];
+        return [...base, "accept_mini_rides", "accept_sedan_rides"];
       case "SUV":
-        return ["accept_mini_rides", "accept_sedan_rides", "accept_suv_rides"];
+        return [
+          ...base,
+          "accept_mini_rides",
+          "accept_sedan_rides",
+          "accept_suv_rides",
+        ];
       default:
-        return ["accept_mini_rides", "accept_sedan_rides", "accept_suv_rides"];
+        return [
+          ...base,
+          "accept_mini_rides",
+          "accept_sedan_rides",
+          "accept_suv_rides",
+        ];
     }
   };
 
@@ -145,8 +158,13 @@ const Preferences = () => {
           <View style={styles.toggleInfo}>
             <Text style={styles.toggleLabel}>{vehicle.label}</Text>
             <Text style={styles.toggleDescription}>
-              {value ? "Currently accepting" : "Not accepting"} {vehicle.label}{" "}
-              rides
+              {vehicle.key === "char_dham"
+                ? value
+                  ? "Eligible for Char Dham Yatra bookings"
+                  : "Not accepting Char Dham Yatra rides"
+                : `${value ? "Currently accepting" : "Not accepting"} ${
+                    vehicle.label
+                  } rides`}
             </Text>
           </View>
 
@@ -189,7 +207,6 @@ const Preferences = () => {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
       >
-    
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <MaterialCommunityIcons
@@ -207,18 +224,11 @@ const Preferences = () => {
 
         {/* Vehicle Toggles */}
         <View style={styles.vehicleList}>{vehicleTypes.map(renderToggle)}</View>
-
-
       </ScrollView>
 
       {/* Toast Message */}
       {message && (
-        <Animated.View
-          style={[
-            styles.toastContainer,
-            { opacity: fadeAnim },
-          ]}
-        >
+        <Animated.View style={[styles.toastContainer, { opacity: fadeAnim }]}>
           <View
             style={[
               styles.toast,
@@ -229,9 +239,7 @@ const Preferences = () => {
           >
             <MaterialCommunityIcons
               name={
-                message.type === "success"
-                  ? "check-circle"
-                  : "alert-circle"
+                message.type === "success" ? "check-circle" : "alert-circle"
               }
               size={22}
               color="#FFFFFF"
@@ -249,7 +257,7 @@ export default Preferences;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-        paddingBottom: 40,
+    paddingBottom: 40,
 
     backgroundColor: "#F9FAFB",
   },
