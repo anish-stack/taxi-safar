@@ -1101,6 +1101,7 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
+    console.log("rcOwnerName",rcOwnerName)
     /* ----------------------------
        4️⃣ BODY VALIDATION
     -----------------------------*/
