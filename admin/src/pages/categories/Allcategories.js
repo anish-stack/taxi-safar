@@ -22,7 +22,7 @@ const Allcategories = () => {
     image: null,
   });
 
-  const API_BASE = "https://test.taxi.olyox.in/api/v1";
+  const API_BASE = "http://localhost:3100/api/v1";
 
   useEffect(() => {
     fetchCategories();

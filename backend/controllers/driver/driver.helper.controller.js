@@ -263,53 +263,158 @@ exports.updateFcmToken = async (req, res) => {
 
 exports.get_all_Drivers = async (req, res) => {
   try {
-    // Pagination inputs
+    // Pagination
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
-    // Search input
+    // Filters
     const search = (req.query.search || "").trim();
+    const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+    const completion = req.query.completion || "all"; // all, aadhar, vehicle, bank, full
+    const vehicleType = req.query.vehicleType || "all"; // all, mini, sedan, suv, none
 
-    // Build search query
-    let searchQuery = {};
+    // Base query
+    let query = {};
 
+    // 1. Text Search
     if (search) {
       const searchRegex = { $regex: search, $options: "i" };
 
-      searchQuery = {
-        $or: [
-          { driver_name: searchRegex },
-          { driver_contact_number: searchRegex },
-          { driver_email: searchRegex },
-          { "BankDetails.account_number": searchRegex },
-
-          // Safe & Correct Partial ObjectId Search
-          {
-            $expr: {
-              $regexMatch: {
-                input: { $toString: "$_id" },
-                regex: search,
-                options: "i",
-              },
+      query.$or = [
+        { driver_name: searchRegex },
+        { driver_contact_number: searchRegex },
+        { driver_email: searchRegex },
+        { "BankDetails.account_number": searchRegex },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$_id" },
+              regex: search,
+              options: "i",
             },
           },
-        ],
-      };
+        },
+      ];
+    }
+
+    // 2. Date Range Filter (joined date)
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        startDate.setHours(0, 0, 0, 0);
+        query.createdAt.$gte = startDate;
+      }
+      if (endDate) {
+        endDate.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = endDate;
+      }
+    }
+
+    // 3. Completion Status Filter
+    if (completion !== "all") {
+      switch (completion) {
+        case "aadhar":
+          query.aadhar_verified = true;
+          break;
+        case "vehicle":
+          query.current_vehicle_id = { $exists: true, $ne: null };
+          break;
+        case "bank":
+          query.BankDetails = { $exists: true, $ne: null };
+          break;
+        case "full":
+          query.aadhar_verified = true;
+          query.current_vehicle_id = { $exists: true, $ne: null };
+          query.BankDetails = { $exists: true, $ne: null };
+          break;
+      }
+    }
+
+    // 4. Vehicle Preference Filter
+    if (vehicleType !== "all") {
+      switch (vehicleType) {
+        case "mini":
+          query["preferences.accept_mini_rides"] = true;
+          break;
+        case "sedan":
+          query["preferences.accept_sedan_rides"] = true;
+          break;
+        case "suv":
+          query["preferences.accept_suv_rides"] = true;
+          break;
+        case "none":
+          query.$and = [
+            { "preferences.accept_mini_rides": { $ne: true } },
+            { "preferences.accept_sedan_rides": { $ne: true } },
+            { "preferences.accept_suv_rides": { $ne: true } },
+          ];
+          break;
+      }
     }
 
     // Run queries in parallel
     const [drivers, totalDrivers] = await Promise.all([
-      Driver.find(searchQuery)
+      Driver.find(query)
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
         .lean(),
 
-      Driver.countDocuments(searchQuery),
+      Driver.countDocuments(query),
     ]);
 
     const totalPages = Math.ceil(totalDrivers / limit);
+
+    // Optional: Send aggregated stats (useful for frontend display)
+    const stats = await Driver.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          aadharDone: {
+            $sum: { $cond: [{ $eq: ["$aadhar_verified", true] }, 1, 0] },
+          },
+          vehicleDone: {
+            $sum: {
+              $cond: [
+                { $and: [{ $ne: ["$current_vehicle_id", null] }, { $ne: ["$current_vehicle_id", ""] }] },
+                1,
+                0,
+              ],
+            },
+          },
+          bankDone: {
+            $sum: { $cond: [{ $ne: ["$BankDetails", null] }, 1, 0] },
+          },
+          allDone: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$aadhar_verified", true] },
+                    { $ne: ["$current_vehicle_id", null] },
+                    { $ne: ["$BankDetails", null] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const aggregatedStats = stats[0] || {
+      total: totalDrivers,
+      aadharDone: 0,
+      vehicleDone: 0,
+      bankDone: 0,
+      allDone: 0,
+    };
 
     return res.status(200).json({
       success: true,
@@ -317,6 +422,7 @@ exports.get_all_Drivers = async (req, res) => {
         ? "Drivers fetched successfully"
         : "No drivers found",
       data: drivers,
+      stats: aggregatedStats, // New: accurate global stats
       pagination: {
         total: totalDrivers,
         page,
@@ -335,7 +441,6 @@ exports.get_all_Drivers = async (req, res) => {
     });
   }
 };
-
 exports.addCompanyDetails = async (req, res) => {
   try {
     const driverId = req.user.id;

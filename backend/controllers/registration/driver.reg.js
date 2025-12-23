@@ -390,19 +390,23 @@ exports.registerDriver = async (req, res) => {
     }
 
     // Update document fields
-    documents.aadhar_card = {
-      document_number: aadhaarNumber,
-      front: {
-        url: uploadedImages.aadhaarFront.image,
-        public_id: uploadedImages.aadhaarFront.public_id,
-      },
-      back: {
-        url: uploadedImages.aadhaarBack.image,
-        public_id: uploadedImages.aadhaarBack.public_id,
-      },
-      verified: false,
-      uploaded_at: new Date(),
-    };
+   documents.aadhar_card = {
+  document_number: aadhaarNumber || null,
+
+  front: {
+    url: uploadedImages?.aadhaarFront?.image || "",
+    public_id: uploadedImages?.aadhaarFront?.public_id || "",
+  },
+
+  back: {
+    url: uploadedImages?.aadhaarBack?.image || "",
+    public_id: uploadedImages?.aadhaarBack?.public_id || "",
+  },
+
+  verified: false,
+  uploaded_at: new Date(),
+};
+
 
     documents.pan_card = {
       document: {

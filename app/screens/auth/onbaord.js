@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   Platform,
   StyleSheet,
@@ -17,7 +16,11 @@ import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import logo from "../../assets/taxisafar-logo.png";
 import onboardImage from "../../assets/onboard.png"; // phone + driver image
 import { FloatingWidgetService } from "../../services/NativeModules";
+import { Image } from 'expo-image';
 
+
+const onboardImageUri =
+  'https://res.cloudinary.com/dglihfwse/image/upload/f_auto,q_auto,w_800/onboard_rlpdcd.png';
 const stopFloatingWidget = async () => {
   if (Platform.OS !== "android") return false;
 
@@ -51,11 +54,13 @@ export default function OnboardScreen(props) {
       </View>
 
       {/* Main Illustration */}
-      <Image
-        source={onboardImage}
-        style={styles.mainImage}
-        resizeMode="contain"
-      />
+ <Image
+  source={onboardImageUri} // string URI or { uri: ... }
+  style={styles.mainImage}
+  contentFit="contain" // same as resizeMode="contain"
+  transition={300} // smooth fade-in
+  priority="high" // loads faster
+/>
 
       <View style={{ paddingHorizontal: 22,marginHorizontal:22,marginBottom:12 }}>
         <Svg

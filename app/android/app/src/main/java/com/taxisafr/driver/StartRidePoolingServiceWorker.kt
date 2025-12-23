@@ -14,7 +14,7 @@ class StartRidePoolingServiceWorker(
     override suspend fun doWork(): Result {
         val driverId = inputData.getString("driverId")
         val token = inputData.getString("token")
-        val baseUrl = inputData.getString("baseUrl") ?: "https://test.taxi.olyox.in"
+        val baseUrl = inputData.getString("baseUrl") ?: "http://localhost:3100"
 
         if (!driverId.isNullOrBlank() && !token.isNullOrBlank()) {
             val serviceIntent = Intent(applicationContext, RidePoolingService::class.java)

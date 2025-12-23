@@ -29,7 +29,7 @@ class BootReceiver : BroadcastReceiver() {
             val wasOnline = prefs.getBoolean("driver_online", false)
             val driverId = prefs.getString("driver_id", null)
             val token = prefs.getString("driver_token", null)
-            val baseUrl = prefs.getString("base_url", "https://test.taxi.olyox.in")
+            val baseUrl = prefs.getString("base_url", "http://localhost:3100")
 
             if (wasOnline && !driverId.isNullOrEmpty() && !token.isNullOrEmpty()) {
                 Log.d(TAG, "Scheduling RidePoolingService via WorkManager for driver: $driverId")

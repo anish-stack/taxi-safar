@@ -26,7 +26,7 @@ const DriverView = () => {
             setLoading(true);
             setError(null);
             try {
-                const res = await fetch(`https://test.taxi.olyox.in/api/v1/driver-details/${id}`);
+                const res = await fetch(`http://localhost:3100/api/v1/driver-details/${id}`);
                 const data = await res.json();
 
                 if (data.success) {

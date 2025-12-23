@@ -26,7 +26,7 @@ const PostRidesView = () => {
       try {
         setLoading(true);
         const response = await axios.get(
-          `https://test.taxi.olyox.in/api/v1/post-rides/${id}`
+          `http://localhost:3100/api/v1/post-rides/${id}`
         );
         if (response.data.success) {
           const [lon1, lat1] = response.data.data.pickupLocation?.coordinates;

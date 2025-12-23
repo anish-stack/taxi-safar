@@ -69,7 +69,7 @@ const useDriverStore = create((set, get) => ({
       if (error.response?.status === 401) {
         console.log('⚠️ Token expired — logging out...');
         const { logout } = loginStore.getState();
-        logout();
+        logout(navigation);
         
         if (navigation) {
           navigation.navigate('splash');

@@ -13,7 +13,7 @@ const Settings = () => {
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState("")
 
-  const BASE_URL = "https://test.taxi.olyox.in/api/v1/admin/settings"
+  const BASE_URL = "http://localhost:3100/api/v1/admin/settings"
 
   // Fetch settings from API
   const fetchSettings = async () => {

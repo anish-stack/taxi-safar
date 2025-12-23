@@ -120,7 +120,7 @@ export default function WaitScreen() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await logout();
+          await logout(navigation);
           navigation.reset({ index: 0, routes: [{ name: "Login" }] });
         },
       },
