@@ -1093,6 +1093,9 @@ exports.addVehicleDetails = async (req, res) => {
       log("DRIVER_FALLBACK_MATCH", { rcOwnerName });
     }
 
+        console.log("rcOwnerName",rcOwnerName)
+
+
     if (!driver) {
       cleanupFiles(files);
       return res.status(404).json({
@@ -1101,7 +1104,6 @@ exports.addVehicleDetails = async (req, res) => {
       });
     }
 
-    console.log("rcOwnerName",rcOwnerName)
     /* ----------------------------
        4️⃣ BODY VALIDATION
     -----------------------------*/
