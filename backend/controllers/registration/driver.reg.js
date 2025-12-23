@@ -11,6 +11,7 @@ const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
 const DrivingLicense = require("../../models/driver/DriverLicense");
+const mongoose = require("mongoose")
 const {
   addVehicleUploadJob,
 } = require("../../queues/DriverVehcilePhotoUpload");
