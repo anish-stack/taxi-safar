@@ -1011,52 +1011,42 @@ const log = (step, message, data = null) => {
 
 exports.addVehicleDetails = async (req, res) => {
   let currentStep = "INIT";
+  const files = req.files || [];
+  const body = req.body || {};
 
   try {
+    /* ----------------------------
+       API START
+    -----------------------------*/
     currentStep = "API_START";
     log(currentStep, "Request received", {
       params: req.params,
-      bodyKeys: Object.keys(req.body || {}),
-      files: (req.files || []).map((f) => f.fieldname),
+      bodyKeys: Object.keys(body),
+      files: files.map((f) => f.fieldname),
     });
 
-    const DEFAULT_DRIVER_ID = "694ae594c714219de225485e"; // 24-char Mongo style
-
-    const driverId = req.params.driverId || DEFAULT_DRIVER_ID;
-
-    const files = req.files || [];
-    const body = req.body || {};
-    console.log("body", body);
-
     /* ----------------------------
-       1️⃣ Validate Driver
+       1️⃣ SANITIZE DRIVER ID
     -----------------------------*/
+    currentStep = "DRIVER_ID_SANITIZE";
 
-    currentStep = "DRIVER_VALIDATION";
-    if (!driverId) {
-      log(currentStep, "Driver ID missing");
-      cleanupFiles(files);
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
-    }
+    let driverId = req.params.driverId;
 
-    const driver = await Driver.findById(driverId);
-    if (!driver) {
-      log(currentStep, "Driver not found", { driverId });
-      cleanupFiles(files);
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
+    if (
+      !driverId ||
+      driverId === "null" ||
+      driverId === "undefined" ||
+      !mongoose.Types.ObjectId.isValid(driverId)
+    ) {
+      driverId = null;
     }
 
     /* ----------------------------
-       2️⃣ Parse RC Data
+       2️⃣ PARSE RC DATA (SAFE)
     -----------------------------*/
     currentStep = "RC_PARSE";
     let rcData = null;
+    let rcOwnerName = null;
 
     if (body.rcData) {
       try {
@@ -1064,6 +1054,8 @@ exports.addVehicleDetails = async (req, res) => {
           typeof body.rcData === "string"
             ? JSON.parse(body.rcData)
             : body.rcData;
+
+        rcOwnerName = rcData?.owner_name?.replace(/\s+/g, " ").trim();
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
         cleanupFiles(files);
@@ -1075,7 +1067,6 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     if (!rcData) {
-      log(currentStep, "RC data missing");
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
@@ -1084,17 +1075,40 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     /* ----------------------------
-       3️⃣ Validate Required Body Fields
+       3️⃣ FIND DRIVER (ID → RC NAME)
+    -----------------------------*/
+    currentStep = "DRIVER_VALIDATION";
+    let driver = null;
+
+    if (driverId) {
+      driver = await Driver.findById(driverId);
+    }
+
+    // 🔁 Fallback: RC owner name
+    if (!driver && rcOwnerName) {
+      driver = await Driver.findOne({
+        driver_name: { $regex: new RegExp(`^${rcOwnerName}$`, "i") },
+      });
+
+      log("DRIVER_FALLBACK_MATCH", { rcOwnerName });
+    }
+
+    if (!driver) {
+      cleanupFiles(files);
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found by ID or RC owner name",
+      });
+    }
+
+    /* ----------------------------
+       4️⃣ BODY VALIDATION
     -----------------------------*/
     currentStep = "BODY_VALIDATION";
     const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } =
       body;
 
     if (!vehicleType || !vehicleNumber) {
-      log(currentStep, "Required fields missing", {
-        vehicleType,
-        vehicleNumber,
-      });
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
@@ -1103,16 +1117,16 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     /* ----------------------------
-       4️⃣ Check Duplicate Vehicle
+       5️⃣ DUPLICATE VEHICLE CHECK
     -----------------------------*/
     currentStep = "DUPLICATE_CHECK";
+
     const existingVehicle = await Vehicle.findOne({
       vehicle_number: vehicleNumber.toUpperCase(),
       is_deleted: false,
     });
 
     if (existingVehicle) {
-      log(currentStep, "Duplicate vehicle found", { vehicleNumber });
       cleanupFiles(files);
       return res.status(409).json({
         success: false,
@@ -1121,100 +1135,74 @@ exports.addVehicleDetails = async (req, res) => {
     }
 
     /* ----------------------------
-       5️⃣ Validate Required Files
+       6️⃣ REQUIRED FILE VALIDATION
     -----------------------------*/
     currentStep = "FILE_VALIDATION";
-    const requiredFiles = {
-      rcFront: {
-        file: files.find((f) => f.fieldname === "rcFront"),
-        message: "Please re-upload RC Front Side Photo",
-      },
-      rcBack: {
-        file: files.find((f) => f.fieldname === "rcBack"),
-        message: "Please re-upload RC Back Side Photo",
-      },
-      insurance: {
-        file: files.find((f) => f.fieldname === "insurance"),
-        message: "Please upload Insurance Document",
-      },
-      permit: {
-        file: files.find((f) => f.fieldname === "permit"),
-        message: "Please upload Vehicle Permit Document",
-      },
-      vehicleFront: {
-        file: files.find((f) => f.fieldname === "vehicleFront"),
-        message: "Please upload Vehicle Front Photo",
-      },
-      vehicleBack: {
-        file: files.find((f) => f.fieldname === "vehicleBack"),
-        message: "Please upload Vehicle Back Photo",
-      },
-      vehicleInterior: {
-        file: files.find((f) => f.fieldname === "vehicleInterior"),
-        message: "Please upload Vehicle Interior Photo",
-      },
-    };
 
-    const missingFile = Object.values(requiredFiles).find((item) => !item.file);
-    if (missingFile) {
-      log(currentStep, "Missing required file", missingFile.message);
-      cleanupFiles(files);
-      return res
-        .status(400)
-        .json({ success: false, message: missingFile.message });
+    const getFile = (name) => files.find((f) => f.fieldname === name);
+
+    const requiredFiles = [
+      "rcFront",
+      "rcBack",
+      "insurance",
+      "permit",
+      "vehicleFront",
+      "vehicleBack",
+      "vehicleInterior",
+    ];
+
+    for (const field of requiredFiles) {
+      if (!getFile(field)) {
+        cleanupFiles(files);
+        return res.status(400).json({
+          success: false,
+          message: `Please upload ${field} document`,
+        });
+      }
     }
 
     /* ----------------------------
-       6️⃣ Prepare File Paths
+       7️⃣ FILE PATHS
     -----------------------------*/
     currentStep = "FILE_PATHS";
-    const filePaths = {
-      rcFront: requiredFiles.rcFront.file.path,
-      rcBack: requiredFiles.rcBack.file.path,
-      insurance: requiredFiles.insurance.file.path,
-      permit: requiredFiles.permit.file.path,
-      vehicleFront: requiredFiles.vehicleFront.file.path,
-      vehicleBack: requiredFiles.vehicleBack.file.path,
-      vehicleInterior: requiredFiles.vehicleInterior.file.path,
-    };
 
-    // Optional legalDoc
-    const legalDocFile = files.find((f) => f.fieldname === "legalDoc");
-    if (legalDocFile) filePaths.legalDoc = legalDocFile.path;
+    const filePaths = {};
+    files.forEach((f) => {
+      filePaths[f.fieldname] = f.path;
+    });
 
     /* ----------------------------
-       7️⃣ Queue Vehicle Upload Job
+       8️⃣ QUEUE BACKGROUND JOB
     -----------------------------*/
     currentStep = "QUEUE_JOB_ADD";
-    const vehicleData = {
-      vehicleType,
-      vehicleNumber,
-      rcStatus,
-      permitExpiry,
-      relation,
-    };
 
     const job = await addVehicleUploadJob({
       driverId: driver._id.toString(),
-      vehicleData,
+      vehicleData: {
+        vehicleType,
+        vehicleNumber,
+        rcStatus,
+        permitExpiry,
+        relation,
+      },
       filePaths,
       rcData,
     });
 
     /* ----------------------------
-       8️⃣ Return Response
+       9️⃣ SUCCESS RESPONSE
     -----------------------------*/
     return res.status(200).json({
       success: true,
-      message: "Vehicle upload  successfully.",
+      message: "Vehicle upload started successfully",
       jobId: job.id,
       driverId: driver._id,
       status: "processing",
-      note: "You will be notified once the upload is complete",
     });
   } catch (error) {
     console.error(`🔥 ERROR at step: ${currentStep}`, error);
-    cleanupFiles(req.files || []);
+    cleanupFiles(files);
+
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -1223,7 +1211,6 @@ exports.addVehicleDetails = async (req, res) => {
     });
   }
 };
-
 /* ----------------------------
    Get Job Status Endpoint
 -----------------------------*/
