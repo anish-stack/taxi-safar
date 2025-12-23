@@ -1779,7 +1779,7 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     const tempData = await TempDataSchema.findOne({
       "rc.rcNumber": rcNumber,
     }).lean();
-    console.log("tempData?.rc:", tempData?.rc);
+    console.log("tempData?.rc:", tempData);
 
     const ownerName = rcOwnerName || tempData?.rc?.apiResponse?.owner_name || tempData?.rc?.rcOwnerName;
     console.log("Owner Name from TempData:", ownerName);
