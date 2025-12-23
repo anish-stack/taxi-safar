@@ -1781,7 +1781,7 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     }).lean();
     console.log("tempData?.rc:", tempData);
 
-    const ownerName = rcOwnerName || tempData?.rc?.apiResponse?.owner_name || tempData?.rc?.rcOwnerName;
+    const ownerName = rcOwnerName || tempData?.data?.rc?.apiResponse?.owner_name || tempData?.data?.rc?.rcOwnerName;
     console.log("Owner Name from TempData:", ownerName);
 
     // ---------- Verify OTP ----------
