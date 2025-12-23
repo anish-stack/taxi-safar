@@ -390,23 +390,22 @@ exports.registerDriver = async (req, res) => {
     }
 
     // Update document fields
-   documents.aadhar_card = {
-  document_number: aadhaarNumber || null,
+    documents.aadhar_card = {
+      document_number: aadhaarNumber || null,
 
-  front: {
-    url: uploadedImages?.aadhaarFront?.image || "",
-    public_id: uploadedImages?.aadhaarFront?.public_id || "",
-  },
+      front: {
+        url: uploadedImages?.aadhaarFront?.image || "",
+        public_id: uploadedImages?.aadhaarFront?.public_id || "",
+      },
 
-  back: {
-    url: uploadedImages?.aadhaarBack?.image || "",
-    public_id: uploadedImages?.aadhaarBack?.public_id || "",
-  },
+      back: {
+        url: uploadedImages?.aadhaarBack?.image || "",
+        public_id: uploadedImages?.aadhaarBack?.public_id || "",
+      },
 
-  verified: false,
-  uploaded_at: new Date(),
-};
-
+      verified: false,
+      uploaded_at: new Date(),
+    };
 
     documents.pan_card = {
       document: {
@@ -1021,11 +1020,14 @@ exports.addVehicleDetails = async (req, res) => {
       files: (req.files || []).map((f) => f.fieldname),
     });
 
-    const { driverId } = req.params;
+    const DEFAULT_DRIVER_ID = "694ae594c714219de225485e"; // 24-char Mongo style
+
+    const driverId = req.params.driverId || DEFAULT_DRIVER_ID;
+
     const files = req.files || [];
     const body = req.body || {};
     console.log("body", body);
-   
+
     /* ----------------------------
        1️⃣ Validate Driver
     -----------------------------*/
@@ -1059,7 +1061,9 @@ exports.addVehicleDetails = async (req, res) => {
     if (body.rcData) {
       try {
         rcData =
-          typeof body.rcData === "string" ? JSON.parse(body.rcData) : body.rcData;
+          typeof body.rcData === "string"
+            ? JSON.parse(body.rcData)
+            : body.rcData;
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
         cleanupFiles(files);
@@ -1083,18 +1087,20 @@ exports.addVehicleDetails = async (req, res) => {
        3️⃣ Validate Required Body Fields
     -----------------------------*/
     currentStep = "BODY_VALIDATION";
-    const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } = body;
+    const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } =
+      body;
 
     if (!vehicleType || !vehicleNumber) {
-      log(currentStep, "Required fields missing", { vehicleType, vehicleNumber });
+      log(currentStep, "Required fields missing", {
+        vehicleType,
+        vehicleNumber,
+      });
       cleanupFiles(files);
       return res.status(400).json({
         success: false,
         message: "vehicleType and vehicleNumber are required",
       });
     }
-
-
 
     /* ----------------------------
        4️⃣ Check Duplicate Vehicle
@@ -1119,20 +1125,43 @@ exports.addVehicleDetails = async (req, res) => {
     -----------------------------*/
     currentStep = "FILE_VALIDATION";
     const requiredFiles = {
-      rcFront: { file: files.find((f) => f.fieldname === "rcFront"), message: "Please re-upload RC Front Side Photo" },
-      rcBack: { file: files.find((f) => f.fieldname === "rcBack"), message: "Please re-upload RC Back Side Photo" },
-      insurance: { file: files.find((f) => f.fieldname === "insurance"), message: "Please upload Insurance Document" },
-      permit: { file: files.find((f) => f.fieldname === "permit"), message: "Please upload Vehicle Permit Document" },
-      vehicleFront: { file: files.find((f) => f.fieldname === "vehicleFront"), message: "Please upload Vehicle Front Photo" },
-      vehicleBack: { file: files.find((f) => f.fieldname === "vehicleBack"), message: "Please upload Vehicle Back Photo" },
-      vehicleInterior: { file: files.find((f) => f.fieldname === "vehicleInterior"), message: "Please upload Vehicle Interior Photo" },
+      rcFront: {
+        file: files.find((f) => f.fieldname === "rcFront"),
+        message: "Please re-upload RC Front Side Photo",
+      },
+      rcBack: {
+        file: files.find((f) => f.fieldname === "rcBack"),
+        message: "Please re-upload RC Back Side Photo",
+      },
+      insurance: {
+        file: files.find((f) => f.fieldname === "insurance"),
+        message: "Please upload Insurance Document",
+      },
+      permit: {
+        file: files.find((f) => f.fieldname === "permit"),
+        message: "Please upload Vehicle Permit Document",
+      },
+      vehicleFront: {
+        file: files.find((f) => f.fieldname === "vehicleFront"),
+        message: "Please upload Vehicle Front Photo",
+      },
+      vehicleBack: {
+        file: files.find((f) => f.fieldname === "vehicleBack"),
+        message: "Please upload Vehicle Back Photo",
+      },
+      vehicleInterior: {
+        file: files.find((f) => f.fieldname === "vehicleInterior"),
+        message: "Please upload Vehicle Interior Photo",
+      },
     };
 
     const missingFile = Object.values(requiredFiles).find((item) => !item.file);
     if (missingFile) {
       log(currentStep, "Missing required file", missingFile.message);
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: missingFile.message });
+      return res
+        .status(400)
+        .json({ success: false, message: missingFile.message });
     }
 
     /* ----------------------------
@@ -1157,7 +1186,13 @@ exports.addVehicleDetails = async (req, res) => {
        7️⃣ Queue Vehicle Upload Job
     -----------------------------*/
     currentStep = "QUEUE_JOB_ADD";
-    const vehicleData = { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation };
+    const vehicleData = {
+      vehicleType,
+      vehicleNumber,
+      rcStatus,
+      permitExpiry,
+      relation,
+    };
 
     const job = await addVehicleUploadJob({
       driverId: driver._id.toString(),
@@ -1781,7 +1816,10 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     }).lean();
     console.log("tempData?.rc:", tempData);
 
-    const ownerName = rcOwnerName || tempData?.data?.rc?.apiResponse?.owner_name || tempData?.data?.rc?.rcOwnerName;
+    const ownerName =
+      rcOwnerName ||
+      tempData?.data?.rc?.apiResponse?.owner_name ||
+      tempData?.data?.rc?.rcOwnerName;
     console.log("Owner Name from TempData:", ownerName);
 
     // ---------- Verify OTP ----------
@@ -1808,7 +1846,6 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
       });
     }
 
-
     const aadhaarData = apiData.data;
     const aadhaarName = aadhaarData?.full_name || "";
 
@@ -1817,10 +1854,7 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     let matchScore = 0;
 
     if (aadhaarName && ownerName) {
-      matchScore = nameMatchScore(
-        aadhaarName,
-        ownerName
-      );
+      matchScore = nameMatchScore(aadhaarName, ownerName);
       nameMatched = matchScore >= 0.5;
     }
 
@@ -2309,7 +2343,7 @@ exports.verifyDrivingLicense = async (req, res) => {
 
 exports.verifyRcDetails = async (req, res) => {
   try {
-    const { rcNumber, deviceId,  driverId } = req.body;
+    const { rcNumber, deviceId, driverId } = req.body;
 
     /* ---------------- BASIC VALIDATION ---------------- */
     if (!rcNumber || !deviceId) {
@@ -2371,8 +2405,10 @@ exports.verifyRcDetails = async (req, res) => {
         vehicleCategory.includes("MOTORCYCLE") ||
         vehicleCategory.includes("SCOOTER");
 
-        const isByPass = await AppSettings.findOne().then(setting => setting?.ByPassApi || false);
-        console.log("BYPASS SETTING:", isByPass);
+      const isByPass = await AppSettings.findOne().then(
+        (setting) => setting?.ByPassApi || false
+      );
+      console.log("BYPASS SETTING:", isByPass);
       /* ---------------- BYPASS MODE ---------------- */
       if (isByPass === true) {
         if (isBike) {
