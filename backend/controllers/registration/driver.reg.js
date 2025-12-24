@@ -2172,8 +2172,7 @@ exports.verifyDrivingLicense = async (req, res) => {
     /* ---------------- GET TEMPDATA ---------------- */
 const tempData = await TempDataSchema
   .findOne({ "data.deviceId": deviceId })
-  .sort({ createdAt: -1 }) // latest
-  .lean();
+  .sort({ createdAt: -1 }); // ✅ no lean
 
     if (!tempData || !tempData.data) {
       return res.status(400).json({
