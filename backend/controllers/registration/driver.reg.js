@@ -2320,10 +2320,13 @@ exports.verifyRcDetails = async (req, res) => {
     let driverDetails = await Driver.findById(driverId).lean();
 
     if (!driverDetails) {
-      driverDetails = await Driver.findOne({
-        device_id: deviceId,
-      }).sort({created:-1}).lean();
+ driverDetails = await Driver
+  .findOne({ device_id: deviceId })
+  .sort({ createdAt: -1 }) // latest
+  .lean();
+
     }
+    console.log("driverDetails",driverDetails)
 
     if (!driverDetails) {
       return res.status(400).json({
