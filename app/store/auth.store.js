@@ -69,6 +69,9 @@ const loginStore = create(
         return Promise.all([
           SecureStore.deleteItemAsync("auth_token"),
           AsyncStorage.removeItem("login-storage"),
+          AsyncStorage.removeItem("driver_online"),
+          AsyncStorage.removeItem("registration_progress_state"),
+          AsyncStorage.removeItem("fcm_token"),
         ])
           .then(() => {
             set({

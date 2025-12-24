@@ -35,6 +35,7 @@ const {
   tempData,
   VerifyOtpOnAadharNumberForRc,
   sendOtpOnAadharNumberForRc,
+  getDriverIdByMobile,
 } = require("../controllers/registration/driver.reg");
 
 const {
@@ -172,6 +173,7 @@ router.get("/driver-earnings/:id", getEarningsByDriver);
 
 router.post("/send-mobile-otp", sendOtp);
 router.post("/verify-mobile-otp", verifyOtpMobile);
+router.post('/get-driver-details',getDriverIdByMobile)
 router.get("/get-mobile-driver", getDriverDetailsOfDriverMobile);
 
 // ---------------------------------------------
@@ -193,7 +195,7 @@ router.get("/driver-details/:driverId", getDriverDetailsViaId);
 router.get("/driver-details", protect, getDriverDetails);
 router.put("/update-radius", protect, updateCurrentRadius);
 
-//KYC
+
 
 // ---------------------------------------------
 // 🔥 VEHICLE & BANK DETAILS

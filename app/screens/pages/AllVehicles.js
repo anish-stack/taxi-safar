@@ -289,41 +289,69 @@ export default function AllVehicles({ navigation }) {
                   </View>
                 </View>
 
-                {/* Vehicle Information Section */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Vehicle Information</Text>
-                  <DetailRow
-                    label="Vehicle Number"
-                    value={selectedVehicle.vehicle_number}
-                  />
-                  {/* <DetailRow label="Vehicle Name" value={selectedVehicle.vehicle_name} />
-                  <DetailRow label="Vehicle Type" value={selectedVehicle.vehicle_type} />
-                  <DetailRow label="Fuel Type" value={selectedVehicle.fuel_type} />
-                  <DetailRow label="Brand" value={selectedVehicle.vehicle_brand} />
-                  <DetailRow
-                    label="Seating Capacity"
-                    value={selectedVehicle.seating_capacity}
-                  /> */}
-                </View>
+            {/* Vehicle Information Section */}
+<View style={styles.modalSection}>
+  <Text style={styles.sectionTitle}>Vehicle Information</Text>
 
-                {/* Insurance Details Section */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Insurance Details</Text>
-                  {/* <DetailRow
-                    label="Insurance Expiry"
-                    value={
-                      selectedVehicle.insurance?.expiry_date
-                        ? new Date(
-                            selectedVehicle.insurance.expiry_date
-                          ).toLocaleDateString()
-                        : "N/A"
-                    }
-                  /> */}
-                  <DetailRow
-                    label="Insurance Verified"
-                    value={selectedVehicle.insurance?.verified ? "Yes" : "No"}
-                  />
-                </View>
+  {selectedVehicle?.vehicle_number && (
+    <DetailRow
+      label="Vehicle Number"
+      value={selectedVehicle.vehicle_number}
+    />
+  )}
+
+  {selectedVehicle?.vehicle_name && (
+    <DetailRow
+      label="Vehicle Name"
+      value={selectedVehicle.vehicle_name}
+    />
+  )}
+
+  {selectedVehicle?.vehicle_type && (
+    <DetailRow
+      label="Vehicle Type"
+      value={selectedVehicle.vehicle_type}
+    />
+  )}
+
+  {selectedVehicle?.fuel_type && (
+    <DetailRow
+      label="Fuel Type"
+      value={selectedVehicle.fuel_type}
+    />
+  )}
+
+  {selectedVehicle?.vehicle_brand && (
+    <DetailRow
+      label="Brand"
+      value={selectedVehicle.vehicle_brand}
+    />
+  )}
+
+ 
+</View>
+
+{/* Insurance Details Section */}
+<View style={styles.modalSection}>
+  <Text style={styles.sectionTitle}>Insurance Details</Text>
+
+  {selectedVehicle?.insurance?.expiry_date && (
+    <DetailRow
+      label="Insurance Expiry"
+      value={new Date(
+        selectedVehicle.insurance.expiry_date
+      ).toLocaleDateString()}
+    />
+  )}
+
+  {selectedVehicle?.insurance?.verified !== undefined && (
+    <DetailRow
+      label="Insurance Verified"
+      value={selectedVehicle.insurance.verified ? "Yes" : "No"}
+    />
+  )}
+</View>
+
               </ScrollView>
             )}
           </View>

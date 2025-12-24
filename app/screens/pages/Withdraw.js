@@ -513,9 +513,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+      backgroundColor:"#F2F5F6"
   },
   balanceCard: {
-    backgroundColor: "#000",
+    backgroundColor: "#fff",
     padding: 24,
     borderRadius: 12,
     marginBottom: 20,
@@ -523,13 +524,13 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     fontSize: 14,
-    color: "#CCC",
+    color: "#000",
     marginBottom: 8,
   },
   balanceAmount: {
     fontSize: 36,
     fontWeight: "700",
-    color: "#fff",
+    color: "#000",
   },
   withdrawCard: {
     backgroundColor: "#fff",
@@ -699,6 +700,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   formModalContent: {
+    position:"relative",
+    top:30,
     flex: 1,
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,

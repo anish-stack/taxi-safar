@@ -22,7 +22,7 @@ const Earnings = () => {
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const navigation = useNavigation();
   const { earnings: rawEarnings, loading, refetch } = useEarnings();
 
@@ -35,16 +35,16 @@ const Earnings = () => {
 
     const filteredByDate = rawEarnings.earningsByDate.filter((item) => {
       const itemDate = new Date(item._id);
-      
+
       if (startDate && endDate) {
-        return itemDate >= new Date(startDate.setHours(0, 0, 0, 0)) && 
-               itemDate <= new Date(endDate.setHours(23, 59, 59, 999));
+        return itemDate >= new Date(startDate.setHours(0, 0, 0, 0)) &&
+          itemDate <= new Date(endDate.setHours(23, 59, 59, 999));
       } else if (startDate) {
         return itemDate >= new Date(startDate.setHours(0, 0, 0, 0));
       } else if (endDate) {
         return itemDate <= new Date(endDate.setHours(23, 59, 59, 999));
       }
-      
+
       return true;
     });
 
@@ -69,10 +69,10 @@ const Earnings = () => {
   const formatDate = (date) =>
     date
       ? new Date(date).toLocaleDateString("en-IN", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
       : "Select Date";
 
   const handleQuickFilter = (filter) => {
@@ -124,7 +124,7 @@ const Earnings = () => {
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
         >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Earnings</Text>
         <TouchableOpacity
@@ -132,7 +132,7 @@ const Earnings = () => {
           style={styles.filterBtn}
           onPress={() => setShowDateFilter(!showDateFilter)}
         >
-          <Ionicons name="filter" size={22} color="#FFFFFF" />
+          <Ionicons name="filter" size={22} color="#000" />
         </TouchableOpacity>
       </View>
 
@@ -300,7 +300,8 @@ export default Earnings;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F2F5F6"
+
   },
   header: {
     flexDirection: "row",
@@ -310,7 +311,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#E5E5E5",
-    backgroundColor: "#000000",
+    backgroundColor: "#fff",
   },
   backBtn: {
     width: 40,
@@ -321,7 +322,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#000",
   },
   filterBtn: {
     width: 40,

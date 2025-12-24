@@ -232,16 +232,16 @@ export default function RegisterScreen({ navigation }) {
         setGender(driver.gender || "");
         const addr = driver.address
           ? [
-              driver.address.house,
-              driver.address.loc,
-              driver.address.vtc,
-              driver.address.subdist,
-              driver.address.dist,
-              driver.address.state,
-              driver.address.country,
-            ]
-              .filter(Boolean)
-              .join(", ")
+            driver.address.house,
+            driver.address.loc,
+            driver.address.vtc,
+            driver.address.subdist,
+            driver.address.dist,
+            driver.address.state,
+            driver.address.country,
+          ]
+            .filter(Boolean)
+            .join(", ")
           : "";
         setAddress(addr);
         if (driver.profile_image) {
@@ -500,16 +500,16 @@ export default function RegisterScreen({ navigation }) {
 
         const addr = aadhaarData.address
           ? [
-              aadhaarData.address.house,
-              aadhaarData.address.loc,
-              aadhaarData.address.vtc,
-              aadhaarData.address.subdist,
-              aadhaarData.address.dist,
-              aadhaarData.address.state,
-              aadhaarData.address.country,
-            ]
-              .filter(Boolean)
-              .join(", ")
+            aadhaarData.address.house,
+            aadhaarData.address.loc,
+            aadhaarData.address.vtc,
+            aadhaarData.address.subdist,
+            aadhaarData.address.dist,
+            aadhaarData.address.state,
+            aadhaarData.address.country,
+          ]
+            .filter(Boolean)
+            .join(", ")
           : "";
 
         setAddress(addr);
@@ -768,70 +768,72 @@ export default function RegisterScreen({ navigation }) {
       throw error;
     }
   };
+
   const handleStep2Submit = async () => {
+    // ---------------- VALIDATIONS ----------------
     if (
       dlVerificationStatus === DL_STATUS.NOT_VERIFIED ||
       dlVerificationStatus === DL_STATUS.FAILED
     ) {
       return showAlert("error", "Required", "Verify Driving License");
     }
+
     if (!panDoc || !licenseFrontDoc || !licenseBackDoc) {
       return showAlert("error", "Required", "Upload all documents");
     }
 
     setIsSubmitting(true);
-    const fcmToken = (await getFCMToken()) || "";
-    const deviceId = Application.getAndroidId();
 
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("dob", dob.toISOString().split("T")[0]);
-    formData.append("mobile", mobile);
-    formData.append("email", email);
-    formData.append("gender", gender);
-    formData.append("aadhaarNumber", aadhaarNumber);
-    formData.append("dlNumber", licenseNumber);
-    formData.append("address", JSON.stringify(address));
-    formData.append("dlVerificationStatus", dlVerificationStatus);
-    if (fcmToken) formData.append("fcmToken", fcmToken);
-    if (deviceId) formData.append("deviceId", deviceId);
-    if (referralId) formData.append("referralId", referralId);
+    try {
+      // ---------------- DEVICE & TOKEN ----------------
+      const fcmToken = (await getFCMToken()) || "";
+      const deviceId = Application.getAndroidId();
 
-    if (
-      profileImage?.startsWith("data:") ||
-      profileImage?.includes("file://")
-    ) {
-      formData.append("profilePicture", {
-        uri: profileImage,
-        type: "image/jpeg",
-        name: "profile.jpg",
-      });
-    }
+      // ---------------- FORM DATA ----------------
+      const formData = new FormData();
+      formData.append("name", name);
+      formData.append("dob", dob.toISOString().split("T")[0]);
+      formData.append("mobile", mobile);
+      formData.append("email", email);
+      formData.append("gender", gender);
+      formData.append("aadhaarNumber", aadhaarNumber);
+      formData.append("dlNumber", licenseNumber);
+      formData.append("address", JSON.stringify(address));
+      formData.append("dlVerificationStatus", dlVerificationStatus);
 
-    [
-      "aadhaarFrontDocument",
-      "aadhaarBackDocument",
-      "panDocument",
-      "licenseFrontDocument",
-      "licenseBackDocument",
-    ].forEach((key) => {
-      const doc = {
+      if (fcmToken) formData.append("fcmToken", fcmToken);
+      if (deviceId) formData.append("deviceId", deviceId);
+      if (referralId) formData.append("referralId", referralId);
+
+      // ---------------- PROFILE IMAGE ----------------
+      if (profileImage?.startsWith("data:") || profileImage?.includes("file://")) {
+        formData.append("profilePicture", {
+          uri: profileImage,
+          type: "image/jpeg",
+          name: "profile.jpg",
+        });
+      }
+
+      // ---------------- DOCUMENTS ----------------
+      const documentsMap = {
         aadhaarFrontDocument: aadhaarFrontDoc,
         aadhaarBackDocument: aadhaarBackDoc,
         panDocument: panDoc,
         licenseFrontDocument: licenseFrontDoc,
         licenseBackDocument: licenseBackDoc,
-      }[key];
-      if (doc) {
-        formData.append(key, {
-          uri: doc.uri,
-          type: doc.mimeType || "image/jpeg",
-          name: doc.name || `${key}.jpg`,
-        });
-      }
-    });
+      };
 
-    try {
+      Object.entries(documentsMap).forEach(([key, doc]) => {
+        if (doc?.uri) {
+          formData.append(key, {
+            uri: doc.uri,
+            type: doc.mimeType || "image/jpeg",
+            name: doc.name || `${key}.jpg`,
+          });
+        }
+      });
+
+      // ---------------- REGISTER DRIVER API ----------------
       const response = await axios.post(
         `${API_URL_APP}/api/v1/register-driver`,
         formData,
@@ -841,18 +843,53 @@ export default function RegisterScreen({ navigation }) {
         }
       );
 
-      const driverId = response.data?.data?.driver_id;
+      let driverId = response?.data?.data?.driver_id;
 
+      // ---------------- FALLBACK: FETCH EXISTING DRIVER ----------------
+      if (!driverId) {
+        showAlert(
+          "info",
+          "Almost Done",
+          "Your details are saved. Completing registration…"
+        );
+
+        try {
+          const resumeRes = await axios.post(
+            `${API_URL_APP}/api/v1/get-mobile-driver`,
+            { mobile, email }
+          );
+
+          driverId = resumeRes?.data?.data?.driver_id;
+
+          if (!driverId) throw new Error("Driver not found");
+
+          // Navigate to next step
+          navigation.navigate("addVehcile", { driverId, otherData: resumeRes?.data?.data });
+          return;
+        } catch (e) {
+          console.error("Driver fallback error:", e);
+          showAlert(
+            "error",
+            "Action Required",
+            "We couldn't complete registration automatically. Please contact support."
+          );
+          return;
+        }
+      }
+
+      // ---------------- SUCCESS ----------------
       showAlert(
         "success",
         "Success",
-        response.data.message || "Registration successful!",
-        () => {
-          navigation.navigate("addVehcile", { driverId });
+        response.data?.message || "Registration successful!",
+        async () => {
+          await clearRegistrationState("addVehcile");
+          navigation.navigate("addVehcile", { driverId,otherData:response?.data?.data });
         }
       );
-      await clearRegistrationState("addVehcile");
     } catch (error) {
+      console.error("REGISTER DRIVER ERROR:", error);
+
       const apiMessage =
         error?.response?.data?.message ||
         error?.response?.data?.error ||
@@ -1008,8 +1045,8 @@ export default function RegisterScreen({ navigation }) {
                 {isResending
                   ? "Sending..."
                   : timer > 0
-                  ? `Resend in 00:${timer.toString().padStart(2, "0")}`
-                  : "Resend OTP"}
+                    ? `Resend in 00:${timer.toString().padStart(2, "0")}`
+                    : "Resend OTP"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1302,11 +1339,11 @@ export default function RegisterScreen({ navigation }) {
               />
               <Text style={styles.label}>Address</Text>
               <TextInput
-                placeholder="Enter Your Address"
+
                 value={address}
                 multiline={true}
-                onChangeText={setAddress}
-                style={styles.input}
+                editable={false}
+               style={[styles.input, { backgroundColor: "#f0f0f0" }]}
               />
               <Text style={styles.label}>Email (Optional)</Text>
               <TextInput
@@ -1427,7 +1464,7 @@ export default function RegisterScreen({ navigation }) {
                   ]}
                 />
 
-                
+
               </View>
 
               <TouchableOpacity
@@ -1449,63 +1486,105 @@ export default function RegisterScreen({ navigation }) {
                 />
               </TouchableOpacity>
               <TouchableOpacity
-                  style={[
-                    styles.verifyBtn,
-                    dlVerificationStatus === DL_STATUS.VERIFIED &&
-                      styles.verifyBtnSuccess,
-                    dlVerificationStatus === DL_STATUS.PENDING_VERIFICATION &&
-                      styles.verifyBtnPending,
-                    (dlVerificationStatus !== DL_STATUS.NOT_VERIFIED ||
-                      isVerifying) && {
-                      opacity: 0.7,
-                    },
-                  ]}
-                  onPress={handleVerifyDL}
-                  disabled={isVerifying}
-                >
-                  {isVerifying ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={
-                        dlVerificationStatus === DL_STATUS.VERIFIED
-                          ? "#fff"
-                          : Colors.primary
-                      }
-                    />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.verifyBtnText,
-                        dlVerificationStatus === DL_STATUS.VERIFIED && {
-                          color: "#fff",
-                        },
-                      ]}
-                    >
-                      {dlVerificationStatus === DL_STATUS.VERIFIED
-                        ? "Verified"
-                        : dlVerificationStatus ===
-                          DL_STATUS.PENDING_VERIFICATION
+                style={[
+                  styles.verifyBtn,
+                  dlVerificationStatus === DL_STATUS.VERIFIED &&
+                  styles.verifyBtnSuccess,
+                  dlVerificationStatus === DL_STATUS.PENDING_VERIFICATION &&
+                  styles.verifyBtnPending,
+                  (dlVerificationStatus !== DL_STATUS.NOT_VERIFIED ||
+                    isVerifying) && {
+                    opacity: 0.7,
+                  },
+                ]}
+                onPress={handleVerifyDL}
+                disabled={isVerifying}
+              >
+                {isVerifying ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={
+                      dlVerificationStatus === DL_STATUS.VERIFIED
+                        ? "#fff"
+                        : Colors.primary
+                    }
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.verifyBtnText,
+                      dlVerificationStatus === DL_STATUS.VERIFIED && {
+                        color: "#fff",
+                      },
+                    ]}
+                  >
+                    {dlVerificationStatus === DL_STATUS.VERIFIED
+                      ? "Verified"
+                      : dlVerificationStatus ===
+                        DL_STATUS.PENDING_VERIFICATION
                         ? "Pending"
                         : "Verify"}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                  </Text>
+                )}
+              </TouchableOpacity>
 
               {renderDLStatusBadge()}
 
               {(dlVerificationStatus === DL_STATUS.VERIFIED ||
                 dlVerificationStatus === DL_STATUS.PENDING_VERIFICATION) && (
-                <>
-                  <Text style={styles.label}>Upload Driving License</Text>
-                  <View style={styles.documentRow}>
+                  <>
+                    <Text style={styles.label}>Upload Driving License</Text>
+                    <View style={styles.documentRow}>
+                      <TouchableOpacity
+                        style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
+                        onPress={() => pickDocument("license_front")}
+                      >
+                        {licenseFrontDoc ? (
+                          <Image
+                            source={{ uri: licenseFrontDoc.uri }}
+                            style={styles.docPreview}
+                          />
+                        ) : (
+                          <>
+                            <Ionicons
+                              name="cloud-upload-outline"
+                              size={24}
+                              color={Colors.textSecondary}
+                            />
+                            <Text style={styles.uploadTextSmall}>Front</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
+                        onPress={() => pickDocument("license_back")}
+                      >
+                        {licenseBackDoc ? (
+                          <Image
+                            source={{ uri: licenseBackDoc.uri }}
+                            style={styles.docPreview}
+                          />
+                        ) : (
+                          <>
+                            <Ionicons
+                              name="cloud-upload-outline"
+                              size={24}
+                              color={Colors.textSecondary}
+                            />
+                            <Text style={styles.uploadTextSmall}>Back</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.label}>PAN Card</Text>
                     <TouchableOpacity
-                      style={[styles.uploadBoxHalf, styles.uploadBoxLeft]}
-                      onPress={() => pickDocument("license_front")}
+                      style={styles.uploadBox}
+                      onPress={() => pickDocument("pan")}
                     >
-                      {licenseFrontDoc ? (
+                      {panDoc ? (
                         <Image
-                          source={{ uri: licenseFrontDoc.uri }}
-                          style={styles.docPreview}
+                          source={{ uri: panDoc.uri }}
+                          style={styles.docPreviewFull}
                         />
                       ) : (
                         <>
@@ -1514,54 +1593,12 @@ export default function RegisterScreen({ navigation }) {
                             size={24}
                             color={Colors.textSecondary}
                           />
-                          <Text style={styles.uploadTextSmall}>Front</Text>
+                          <Text style={styles.uploadText}>Upload PAN</Text>
                         </>
                       )}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.uploadBoxHalf, styles.uploadBoxRight]}
-                      onPress={() => pickDocument("license_back")}
-                    >
-                      {licenseBackDoc ? (
-                        <Image
-                          source={{ uri: licenseBackDoc.uri }}
-                          style={styles.docPreview}
-                        />
-                      ) : (
-                        <>
-                          <Ionicons
-                            name="cloud-upload-outline"
-                            size={24}
-                            color={Colors.textSecondary}
-                          />
-                          <Text style={styles.uploadTextSmall}>Back</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.label}>PAN Card</Text>
-                  <TouchableOpacity
-                    style={styles.uploadBox}
-                    onPress={() => pickDocument("pan")}
-                  >
-                    {panDoc ? (
-                      <Image
-                        source={{ uri: panDoc.uri }}
-                        style={styles.docPreviewFull}
-                      />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="cloud-upload-outline"
-                          size={24}
-                          color={Colors.textSecondary}
-                        />
-                        <Text style={styles.uploadText}>Upload PAN</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </>
-              )}
+                  </>
+                )}
 
               <TouchableOpacity
                 style={[

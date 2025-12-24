@@ -168,7 +168,7 @@ export default function LoginScreen({ navigation }) {
   const handleRedirect = (redirect, message, driver) => {
     console.log(redirect);
     if (redirect === "step-1") {
-      navigation.navigate("Signup", { step: 1 });
+      navigation.navigate("Signup");
     } else if (redirect === "step-2") {
       navigation.navigate("Signup", { step: 2, driver });
     } else if (redirect === "step-3") {

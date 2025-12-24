@@ -100,30 +100,30 @@ async function uploadDocumentsParallel(documentsMap, profileFile) {
       : null,
     aadhaarFront: documentsMap.aadhaarFrontDocument
       ? uploadSingleImage(
-          documentsMap.aadhaarFrontDocument.path,
-          "driver_documents/aadhar/front"
-        )
+        documentsMap.aadhaarFrontDocument.path,
+        "driver_documents/aadhar/front"
+      )
       : null,
     aadhaarBack: documentsMap.aadhaarBackDocument
       ? uploadSingleImage(
-          documentsMap.aadhaarBackDocument.path,
-          "driver_documents/aadhar/back"
-        )
+        documentsMap.aadhaarBackDocument.path,
+        "driver_documents/aadhar/back"
+      )
       : null,
     pan: documentsMap.panDocument
       ? uploadSingleImage(documentsMap.panDocument.path, "driver_documents/pan")
       : null,
     licenseFront: documentsMap.licenseFrontDocument
       ? uploadSingleImage(
-          documentsMap.licenseFrontDocument.path,
-          "driver_documents/license/front"
-        )
+        documentsMap.licenseFrontDocument.path,
+        "driver_documents/license/front"
+      )
       : null,
     licenseBack: documentsMap.licenseBackDocument
       ? uploadSingleImage(
-          documentsMap.licenseBackDocument.path,
-          "driver_documents/license/back"
-        )
+        documentsMap.licenseBackDocument.path,
+        "driver_documents/license/back"
+      )
       : null,
   };
 
@@ -165,7 +165,7 @@ function cleanupLocalFiles(files) {
 async function cleanupCloudinaryUploads(uploadedImages) {
   const cleanupPromises = Object.values(uploadedImages)
     .filter((img) => img && img.public_id)
-    .map((img) => deleteImage(img.public_id).catch(() => {}));
+    .map((img) => deleteImage(img.public_id).catch(() => { }));
 
   await Promise.all(cleanupPromises);
 }
@@ -202,6 +202,7 @@ exports.registerDriver = async (req, res) => {
       dlNumber: body.dlNumber,
     });
     console.log("📂 Files received:", files.length);
+
 
     // ========================================
     // STEP 1: VALIDATE INPUT FIELDS
@@ -457,7 +458,7 @@ exports.registerDriver = async (req, res) => {
       success: true,
       message: "Driver registered successfully.",
       data: {
-        driver_id: driver._id,
+      driver_id: driver._id.toString(),
         name: driver.driver_name,
         mobile: driver.driver_contact_number,
         email: driver.driver_email,
@@ -523,6 +524,66 @@ exports.registerDriver = async (req, res) => {
     });
   }
 };
+
+
+exports.getDriverIdByMobile = async (req, res) => {
+  try {
+    const { mobile, email } = req.body;
+
+    console.log("req.body",req.body)
+
+    let driver = null;
+
+    /* ----------------- 1️⃣ TRY WITH MOBILE (FIRST PRIORITY) ----------------- */
+    if (mobile) {
+      driver = await Driver.findOne({
+        driver_contact_number: mobile,
+      })
+
+        .select("_id driver_name driver_contact_number account_status");
+    }
+
+    /* ----------------- 2️⃣ FALLBACK WITH DEVICE ID ----------------- */
+    if (!driver && email) {
+      driver = await Driver.findOne({
+        driver_email: email,
+      })
+    
+        .select("_id driver_name driver_contact_number account_status");
+    }
+
+    /* ----------------- ❌ NOT FOUND ----------------- */
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    console.log("✅ Driver Found:", driver._id);
+
+    /* ----------------- ✅ SUCCESS ----------------- */
+    return res.status(200).json({
+      success: true,
+      message: "Driver found",
+      data: {
+        driver_id: driver._id,
+        name: driver.driver_name,
+        mobile: driver.driver_contact_number,
+        account_status: driver.account_status,
+      },
+    });
+  } catch (error) {
+    console.error("🔥 getDriverIdByMobile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+
 
 exports.login = async (req, res) => {
   try {
@@ -1273,7 +1334,7 @@ function cleanupFiles(files) {
   files.forEach((file) => {
     try {
       deleteFile(file.filename);
-    } catch (err) {}
+    } catch (err) { }
   });
 }
 exports.updateCurrentRadius = async (req, res) => {
@@ -1782,16 +1843,16 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
       request_id,
       otp,
       aadhaarNumber,
-      rcOwnerName,
-      driverId,
       rcNumber,
+      driverId,
+      otherData,
       relation: ownerRelation,
       deviceId,
     } = req.body;
 
     console.log("🔹 Verify Aadhaar OTP (RC):", req.body);
 
-    // ---------- Validation ----------
+    /* ---------------- BASIC VALIDATION ---------------- */
     if (!request_id || !otp) {
       return res.status(400).json({
         success: false,
@@ -1799,25 +1860,72 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
       });
     }
 
-    if (!aadhaarNumber || !/^\d{12}$/.test(aadhaarNumber)) {
+ 
+
+    if (!rcNumber) {
       return res.status(400).json({
         success: false,
-        message: "Invalid Aadhaar number.",
+        message: "RC number and deviceId are required.",
       });
     }
 
+    /* ---------------- DRIVER FETCH (SAME PRIORITY) ---------------- */
+    let driverDetails = null;
+
+    // 1️⃣ driverId
+    if (driverId) {
+      driverDetails = await Driver.findById(driverId).lean();
+    }
+
+    // 2️⃣ otherData.mobile
+    if (!driverDetails && otherData?.mobile) {
+      driverDetails = await Driver.findOne({
+        driver_contact_number: otherData.mobile,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    // 3️⃣ otherData.email
+    if (!driverDetails && otherData?.email) {
+      driverDetails = await Driver.findOne({
+        driver_email: otherData.email,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    // 4️⃣ deviceId fallback
+    if (!driverDetails && deviceId) {
+      driverDetails = await Driver.findOne({ device_id: deviceId })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    console.log("🚗 Driver Details:", driverDetails);
+
+    if (!driverDetails) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver details not found.",
+      });
+    }
+
+    /* ---------------- GET RC DATA FROM TEMPDATA ---------------- */
     const tempData = await TempDataSchema.findOne({
       "rc.rcNumber": rcNumber,
-    }).lean();
+    });
 
-    console.log("tempData?.rc:", tempData);
+    console.log("📦 TempData:", tempData?._id);
 
-    const ownerName =
-      tempData?.data?.rc?.apiResponse?.owner_name ||
-      tempData?.data?.rc?.rcOwnerName;
-    console.log("Owner Name from TempData:", ownerName);
+    const rcOwnerName =
+      tempData?.rc?.apiResponse?.owner_name ||
+      tempData?.rc?.rcOwnerName ||
+      "";
 
-    // ---------- Verify OTP ----------
+    console.log("🚗 RC Owner Name:", rcOwnerName);
+
+    /* ---------------- VERIFY AADHAAR OTP ---------------- */
     const response = await axios.post(
       "https://api.quickekyc.com/api/v1/aadhaar-v2/submit-otp",
       {
@@ -1844,35 +1952,34 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     const aadhaarData = apiData.data;
     const aadhaarName = aadhaarData?.full_name || "";
 
-    // ---------- Name Match ----------
+    /* ---------------- NAME MATCHING ---------------- */
     let nameMatched = false;
     let matchScore = 0;
 
-    if (aadhaarName && ownerName) {
-      matchScore = nameMatchScore(aadhaarName, ownerName);
+    if (aadhaarName && rcOwnerName) {
+      matchScore = nameMatchScore(aadhaarName, rcOwnerName);
       nameMatched = matchScore >= 0.5;
     }
 
     console.log("🧾 Aadhaar Name:", aadhaarName);
-    console.log("🚗 RC Owner Name:", ownerName);
+    console.log("🚗 RC Owner Name:", rcOwnerName);
     console.log("📊 Name Match Score:", matchScore);
 
-    // ---------- Final Response (SUCCESS ALWAYS after OTP) ----------
+    /* ---------------- FINAL RESPONSE (OTP SUCCESS ALWAYS) ---------------- */
     return res.status(200).json({
       success: true,
       message: nameMatched
-        ? "Aadhaar verified successfully and name matched."
-        : "Aadhaar verified successfully, but name did not fully match.",
+        ? "Aadhaar verified successfully and name matched with RC."
+        : "Aadhaar verified successfully, but name did not match RC.",
 
       aadhaar_verified: true,
       name_matched: nameMatched,
       name_match_score: matchScore,
 
       aadhaar_name: aadhaarName,
-      rc_owner_name: ownerName,
+      rc_owner_name: rcOwnerName,
 
-      request_id,
-      driverId,
+      driver_id: driverDetails._id,
       ownerRelation,
       deviceId,
     });
@@ -1888,6 +1995,7 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
     });
   }
 };
+
 
 async function sendAadhaarOtp(aadhaarNumber, res, extra = {}) {
   try {
@@ -1979,13 +2087,13 @@ exports.verifyAadhaarOtp = async (req, res) => {
       // ---------------- MATCH BY deviceId OR mobile ----------------
       const matchQuery = mobile
         ? {
-            $or: [
-              { device_id: deviceId },
-              {
-                contact_number: mobile,
-              },
-            ],
-          }
+          $or: [
+            { device_id: deviceId },
+            {
+              contact_number: mobile,
+            },
+          ],
+        }
         : { device_id: deviceId };
 
       await AadharDetails.findOneAndUpdate(
@@ -2159,7 +2267,7 @@ const isNameMatch = (tempDataName, dlName) => {
 
 exports.verifyDrivingLicense = async (req, res) => {
   try {
-    const { licenseNumber, dob, deviceId } = req.body;
+    const { licenseNumber, dob, deviceId, aadhaarName } = req.body;
 
     /* ---------------- BASIC VALIDATION ---------------- */
     if (!licenseNumber || !dob || !deviceId) {
@@ -2170,9 +2278,9 @@ exports.verifyDrivingLicense = async (req, res) => {
     }
 
     /* ---------------- GET TEMPDATA ---------------- */
-const tempData = await TempDataSchema
-  .findOne({ "data.deviceId": deviceId })
-  .sort({ createdAt: -1 }); // ✅ no lean
+    const tempData = await TempDataSchema
+      .findOne({ "data.deviceId": deviceId })
+      .sort({ createdAt: -1 }); // ✅ no lean
 
     if (!tempData || !tempData.data) {
       return res.status(400).json({
@@ -2181,28 +2289,47 @@ const tempData = await TempDataSchema
       });
     }
 
-    const userName = tempData.data.name;
-
-    // Initialize DL retry tracking if not exists
-    if (!tempData.data.dlRetryCount) {
-      tempData.data.dlRetryCount = 0;
-    }
-
+    // Initialize retry count if not exists
+    if (!tempData.dlRetryCount) tempData.dlRetryCount = 0;
+    console.log("tempData.dlRetryCount",tempData.dlRetryCount)
     /* ---------------- CHECK RETRY LIMIT ---------------- */
-    if (tempData.data.dlRetryCount >= 3) {
-      return res.status(400).json({
-        success: false,
+    if (tempData.dlRetryCount >= 3) {
+      // ❌ Retry limit reached → trigger manual verification
+      tempData.dlVerificationPending = true;
+      tempData.dlDetails = {
+        licenseNumber,
+        submittedAt: new Date(),
+      };
+      await tempData.save();
+
+      await DrivingLicense.create({
+        licenseNumber,
+        dob,
+        name: tempData.data.name,
+        deviceId,
+        status: "PENDING_VERIFICATION",
+        retryCount: tempData.dlRetryCount,
+        nextRetryAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+
+      return res.status(200).json({
+        success: true,
+        manualVerification: true,
         message:
-          "Maximum retry limit reached (3 attempts). Please contact support.",
-        retryExhausted: true,
+          "Maximum retry limit reached. We are unable to verify your Driving License automatically. Please upload your DL document for manual verification.",
+        dlData: {
+          license_number: licenseNumber,
+          name: tempData.data.name,
+        },
       });
     }
+
+    const userName = aadhaarName || tempData.data.name;
 
     /* ---------------- SETTINGS ---------------- */
     const settings = await AppSettings.findOne();
     const BYPASS = settings?.ByPassApi === true;
 
-    /* ---------------- BYPASS MODE ---------------- */
     if (BYPASS) {
       return res.status(200).json({
         success: true,
@@ -2220,7 +2347,7 @@ const tempData = await TempDataSchema
       const apiPayload = {
         key: process.env.QUICKEKYC_API_KEY,
         id_number: licenseNumber,
-        dob: new Date(dob).toISOString().split("T")[0], //""YYYY-MM-DD"",
+        dob: new Date(dob).toISOString().split("T")[0],
       };
 
       const apiResponse = await axios.post(
@@ -2228,7 +2355,7 @@ const tempData = await TempDataSchema
         apiPayload,
         { timeout: 20000 }
       );
-      console.log("📥 DL API Response:", apiResponse.data);
+
       if (apiResponse.data.status !== "success") {
         throw new Error("DL verification failed");
       }
@@ -2236,33 +2363,34 @@ const tempData = await TempDataSchema
       const dlInfo = apiResponse.data.data;
       const dlName = dlInfo.name || dlInfo.full_name || "";
 
-      console.log("✅ DL API Success");
-      console.log("👤 TempData Name:", userName);
-      console.log("🪪 DL Name:", dlName);
+      // ✅ Name Matching: Aadhaar first, then TempData
+      const aadhaarProvided = !!aadhaarName;
+      let aadhaarMatch = false;
+      let tempNameMatch = false;
 
-      /* -------- NAME MATCHING CHECK -------- */
-      const nameMatches = isNameMatch(userName, dlName);
+      if (aadhaarProvided) aadhaarMatch = isNameMatch(aadhaarName, dlName);
+      if (!aadhaarMatch) tempNameMatch = isNameMatch(tempData.data.name, dlName);
 
-      if (!nameMatches) {
-        // Increment retry count
-        tempData.data.dlRetryCount += 1;
+      const finalNameMatched = aadhaarMatch || tempNameMatch;
+
+      if (!finalNameMatched) {
+        tempData.dlRetryCount += 1;
         await tempData.save();
 
-        const remainingRetries = 3 - tempData.data.dlRetryCount;
+        const remainingRetries = 3 - tempData.dlRetryCount;
 
-        console.log(`❌ Name Mismatch. Retries left: ${remainingRetries}`);
-
+        // ❌ Retry remaining → return error
         return res.status(400).json({
           success: false,
-          message: `Name mismatch detected. You have entered wrong DL details. Please retry with correct information.`,
-          remainingRetries: remainingRetries,
+          message:
+            "Name mismatch detected. Please ensure DL details match Aadhaar or registered name.",
+          remainingRetries,
           nameMismatch: true,
+          aadhaarTried: aadhaarProvided,
         });
       }
 
-      /* -------- NAME MATCHED - SAVE VERIFIED DL -------- */
-      console.log("✅ Name Match Success!");
-
+      // ✅ Name matched → save verified DL
       await DrivingLicense.create({
         licenseNumber,
         dob,
@@ -2273,14 +2401,8 @@ const tempData = await TempDataSchema
         rawResponse: dlInfo,
       });
 
-      // Reset retry count on success
-      tempData.data.dlRetryCount = 0;
-      tempData.data.dlVerified = true;
-      tempData.data.dlDetails = {
-        licenseNumber,
-        name: dlName,
-        verifiedAt: new Date(),
-      };
+      tempData.dlRetryCount = 0;
+
       await tempData.save();
 
       return res.status(200).json({
@@ -2290,33 +2412,25 @@ const tempData = await TempDataSchema
         manualVerification: false,
       });
     } catch (apiError) {
-      /* ---------------- CASE 2: API FAILED - MANUAL VERIFICATION ---------------- */
       console.error("⚠️ DL API FAILED:", apiError);
 
-      // Save pending DL
+
+
       await DrivingLicense.create({
         licenseNumber,
         dob,
         name: userName,
         deviceId,
         status: "PENDING_VERIFICATION",
-        retryCount: 0,
+      
         nextRetryAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
-
-      // Update tempData with pending status
-      tempData.data.dlVerificationPending = true;
-      tempData.data.dlDetails = {
-        licenseNumber,
-        submittedAt: new Date(),
-      };
-      await tempData.save();
 
       return res.status(200).json({
         success: true,
         manualVerification: true,
         message:
-          "We are unable to verify your Driving License at the moment. Please continue and upload your DL document. We will verify it within the next 24 hours.",
+          "We are unable to verify your Driving License at the moment. Please upload your DL document for manual verification.",
         dlData: {
           license_number: licenseNumber,
           name: userName,
@@ -2338,7 +2452,7 @@ const tempData = await TempDataSchema
 
 exports.verifyRcDetails = async (req, res) => {
   try {
-    const { rcNumber, deviceId, driverId } = req.body;
+    const { rcNumber, deviceId, driverId, otherData } = req.body;
 
     /* ---------------- BASIC VALIDATION ---------------- */
     if (!rcNumber || !deviceId) {
@@ -2349,15 +2463,40 @@ exports.verifyRcDetails = async (req, res) => {
       });
     }
 
-    /* ---------------- DRIVER CHECK ---------------- */
-    let driverDetails = await Driver.findById(driverId).lean();
+    /* ---------------- DRIVER FETCH (PRIORITY BASED) ---------------- */
+    let driverDetails = null;
 
-    if (!driverDetails) {
-      driverDetails = await Driver.findOne({ device_id: deviceId })
-        .sort({ createdAt: -1 }) // latest
+    // 1️⃣ Priority: driverId
+    if (driverId) {
+      driverDetails = await Driver.findById(driverId).lean();
+    }
+
+    // 2️⃣ Priority: otherData.mobile
+    if (!driverDetails && otherData?.mobile) {
+      driverDetails = await Driver.findOne({
+        driver_contact_number: otherData.mobile,
+      })
+        .sort({ createdAt: -1 })
         .lean();
     }
-    console.log("driverDetails", driverDetails);
+
+    // 3️⃣ Priority: otherData.email
+    if (!driverDetails && otherData?.email) {
+      driverDetails = await Driver.findOne({
+        driver_email: otherData.email,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    // 4️⃣ Last fallback: deviceId
+    if (!driverDetails && deviceId) {
+      driverDetails = await Driver.findOne({ device_id: deviceId })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    console.log("🚗 Final Driver Details:", driverDetails);
 
     if (!driverDetails) {
       return res.status(400).json({
@@ -2383,30 +2522,26 @@ exports.verifyRcDetails = async (req, res) => {
         }
       );
 
-      /* ---------- API RESPONSE VALIDATION ---------- */
       if (response.data?.status !== "success" || !response.data?.data) {
         throw new Error("RC verification failed");
       }
 
       let rcInfo = response.data.data;
-
       console.log("✅ RC API Success");
 
       /* ---------------- BIKE DETECTION ---------------- */
       const vehicleCategory = rcInfo.vehicle_category?.toUpperCase() || "";
-
       const isBike =
         vehicleCategory.includes("2W") ||
         vehicleCategory.includes("TWO") ||
         vehicleCategory.includes("MOTORCYCLE") ||
         vehicleCategory.includes("SCOOTER");
 
-      const isByPass = await AppSettings.findOne().then(
-        (setting) => setting?.ByPassApi || false
-      );
-      console.log("BYPASS SETTING:", isByPass);
+      const settings = await AppSettings.findOne();
+      const isByPass = settings?.ByPassApi === true;
+
       /* ---------------- BYPASS MODE ---------------- */
-      if (isByPass === true) {
+      if (isByPass) {
         if (isBike) {
           rcInfo.vehicle_category = "CAR (BYPASS OVERRIDE)";
         }
@@ -2430,47 +2565,37 @@ exports.verifyRcDetails = async (req, res) => {
         });
       }
 
-      /* ---------------- CASE 1 & 2: NAME MATCHING ---------------- */
-      const nameOfDriver = driverDetails?.driver_name || "";
-      const nameOnRc = rcInfo.owner_name || "";
+      /* ---------------- NAME MATCHING ---------------- */
+      const driverName = driverDetails?.driver_name || "";
+      const rcOwnerName = rcInfo.owner_name || "";
 
-      console.log("👤 Driver Name:", nameOfDriver);
-      console.log("🪪 RC Owner Name:", nameOnRc);
+      console.log("👤 Driver Name:", driverName);
+      console.log("🪪 RC Owner Name:", rcOwnerName);
 
-      const nameMatches = isNameMatch(nameOfDriver, nameOnRc);
+      const nameMatches = isNameMatch(driverName, rcOwnerName);
 
-      /* -------- CASE 2: NAME MISMATCH -------- */
+      /* ---------------- NAME MISMATCH ---------------- */
       if (!nameMatches) {
-        console.log("❌ Name Mismatch Detected");
-
         try {
-          // Find the existing TempData for this device
           const tempData = await TempDataSchema.findOne({
             "data.deviceId": deviceId,
           });
-          console.log("💾 RC Mismatch data saved in TempData:", tempData);
 
           if (tempData) {
-            // Save RC mismatch data inside the `data` object
             tempData.rc = {
-              rcNumber: rcNumber,
+              rcNumber,
               apiResponse: rcInfo,
-              driverName: nameOfDriver,
-              rcOwnerName: nameOnRc,
+              driverName,
+              rcOwnerName,
               mismatchDetectedAt: new Date(),
               status: "NAME_MISMATCH",
             };
-
             await tempData.save();
-            console.log("💾 RC Mismatch data saved in TempData:", tempData._id);
-          } else {
-            console.warn("⚠️ TempData not found for deviceId:", deviceId);
           }
-        } catch (saveError) {
-          console.error("⚠️ Failed to save RC mismatch data:", saveError);
+        } catch (err) {
+          console.error("⚠️ RC mismatch save failed:", err);
         }
 
-        // Respond with structured error for frontend
         return res.status(400).json({
           success: false,
           message:
@@ -2478,15 +2603,12 @@ exports.verifyRcDetails = async (req, res) => {
           errorCode: "RC_NAME_MISMATCH",
           nameMismatch: true,
           rcData: rcInfo,
-          driverName: nameOfDriver,
-          rcOwnerName: nameOnRc,
+          driverName,
+          rcOwnerName,
         });
       }
 
-      /* ---------------- CASE 1: SUCCESS - NAME MATCHED ---------------- */
-      console.log("✅ Name Match Success!");
-
-      // Save successful RC verification in TempData
+      /* ---------------- SUCCESS: NAME MATCHED ---------------- */
       try {
         const tempData = await TempDataSchema.findOne({
           "data.deviceId": deviceId,
@@ -2495,18 +2617,16 @@ exports.verifyRcDetails = async (req, res) => {
         if (tempData) {
           tempData.data.rcVerified = true;
           tempData.data.rcDetails = {
-            rcNumber: rcNumber,
-            ownerName: nameOnRc,
+            rcNumber,
+            ownerName: rcOwnerName,
             vehicleCategory: rcInfo.vehicle_category,
             verifiedAt: new Date(),
             apiResponse: rcInfo,
           };
-
           await tempData.save();
-          console.log("💾 RC verification data saved in TempData");
         }
-      } catch (saveError) {
-        console.error("⚠️ Failed to save RC data:", saveError);
+      } catch (err) {
+        console.error("⚠️ RC save failed:", err);
       }
 
       return res.status(200).json({
@@ -2518,14 +2638,14 @@ exports.verifyRcDetails = async (req, res) => {
         nameMatched: true,
       });
     } catch (apiError) {
-      /* ---------------- CASE 3: API FAILURE - MANUAL VERIFICATION ---------------- */
+      /* ---------------- API FAILED → MANUAL VERIFICATION ---------------- */
       console.error("⚠️ RC API FAILED:", apiError.message);
 
       return res.status(200).json({
         success: true,
         manualVerification: true,
         message:
-          "We are unable to verify your RC at the moment. Please continue and upload your RC document. We will verify it within the next 24 hours.",
+          "We are unable to verify your RC at the moment. Please upload your RC document. We will verify it within 24 hours.",
         errorCode: "RC_API_FAILURE",
         rcData: {
           rc_number: rcNumber,

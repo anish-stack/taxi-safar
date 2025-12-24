@@ -53,7 +53,9 @@ const RELATIONS = [
 
 export default function AddVehicle({ navigation }) {
   const route = useRoute();
-  const { driverId, fromAll, mobile } = route.params || {};
+  const { driverId, fromAll, mobile, otherData } = route.params || {};
+
+  // console.log(otherData)
 
   const { data, fetchSettings } = useSettings({ autoFetch: true });
 
@@ -323,18 +325,24 @@ export default function AddVehicle({ navigation }) {
     setIsVerifyingRc(true);
 
     const deviceId = Application.getAndroidId();
+    const payload = {
+      rcNumber: rcNumber.toUpperCase().trim(),
+      isByPass,
+      driverId,
+      deviceId,
+      ...(otherData && Object.keys(otherData).length > 0
+        ? { otherData }
+        : {}),
+    };
+
+
 
     try {
-      const res = await axios.post(`${API_URL_APP}/api/v1/rc-verify`, {
-        rcNumber: rcNumber.toUpperCase().trim(),
-        isByPass,
-        driverId,
-        deviceId,
-      });
-
+      const res = await axios.post(`${API_URL_APP}/api/v1/rc-verify`, payload);
+ console.log("res.data.", res.data);
       if (res.data.success) {
         const data = res.data.rcData;
-        console.log("res.data.manualVerification", res.data.manualVerification);
+        console.log("res.data.", res.data.manualVerification);
         // Handle manual verification scenario
         if (res.data.manualVerification === true) {
           setRcData(data);
@@ -345,7 +353,7 @@ export default function AddVehicle({ navigation }) {
             "info",
             "Manual Verification Required",
             res.data.message ||
-              "We are unable to verify your RC at the moment. Please continue. We will verify your RC within the next 24 hours. Please upload it."
+            "We are unable to verify your RC at the moment. Please continue. We will verify your RC within the next 24 hours. Please upload it."
           );
         } else {
           // Successfully verified
@@ -498,6 +506,9 @@ export default function AddVehicle({ navigation }) {
           vehicleNumber,
           rcNumber,
           relation: ownerRelation,
+           ...(otherData && Object.keys(otherData).length > 0
+        ? { otherData }
+        : {}),
         }
       );
 
@@ -636,7 +647,7 @@ export default function AddVehicle({ navigation }) {
       });
     }
 
-    options.push({ text: "Cancel", onPress: () => {}, style: "cancel" });
+    options.push({ text: "Cancel", onPress: () => { }, style: "cancel" });
 
     Alert.alert(
       "Choose Photo Source",
@@ -760,7 +771,7 @@ export default function AddVehicle({ navigation }) {
         const title = isProcessing ? "Upload in Progress" : "Success";
         const message = isProcessing
           ? res.data.message ||
-            "Your vehicle documents have been uploaded successfully. Verification is in progress and you will be notified once it is completed."
+          "Your vehicle documents have been uploaded successfully. Verification is in progress and you will be notified once it is completed."
           : "Vehicle added successfully!";
 
         // 7️⃣ Navigate based on source
@@ -781,7 +792,7 @@ export default function AddVehicle({ navigation }) {
           "error",
           "Submission Failed",
           res.data?.message ||
-            "Something went wrong while uploading your vehicle details. Please try again."
+          "Something went wrong while uploading your vehicle details. Please try again."
         );
       }
     } catch (err) {
@@ -792,7 +803,7 @@ export default function AddVehicle({ navigation }) {
         "error",
         "Upload Failed",
         err?.response?.data?.message ||
-          "Something went wrong while uploading your vehicle details. Please check your connection and try again."
+        "Something went wrong while uploading your vehicle details. Please check your connection and try again."
       );
     } finally {
       setLoading(false);
@@ -872,7 +883,7 @@ export default function AddVehicle({ navigation }) {
         <View style={styles.docHeader}>
           <Text numberOfLines={1} style={styles.docLabel}>
             {getDocLabel(field)}
-            {isRequired && <Text style={styles.requiredMark}> *</Text>}
+           
           </Text>
         </View>
 
@@ -948,7 +959,7 @@ export default function AddVehicle({ navigation }) {
                   style={[
                     styles.relationOption,
                     ownerRelation === relation.value &&
-                      styles.relationOptionSelected,
+                    styles.relationOptionSelected,
                   ]}
                   onPress={() => handleSelectRelation(relation.value)}
                 >
@@ -956,7 +967,7 @@ export default function AddVehicle({ navigation }) {
                     style={[
                       styles.relationText,
                       ownerRelation === relation.value &&
-                        styles.relationTextSelected,
+                      styles.relationTextSelected,
                     ]}
                   >
                     {relation.label}
@@ -1138,7 +1149,7 @@ export default function AddVehicle({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {rcStatus === RC_STATUS.NOT_VERIFIED ||
-        rcStatus === RC_STATUS.FAILED ? (
+          rcStatus === RC_STATUS.FAILED ? (
           <View style={styles.rcCard}>
             <View style={styles.rcIconContainer}>
               <Ionicons
@@ -1185,7 +1196,16 @@ export default function AddVehicle({ navigation }) {
             <View style={styles.formSection}>
               <Text style={styles.sectionTitle}>Vehicle Information</Text>
 
-              <Text style={styles.inputLabel}>Vehicle Type</Text>
+         
+
+              <Text style={styles.inputLabel}>Vehicle Number</Text>
+              <TextInput
+                style={[styles.textInput, styles.disabledInput]}
+                value={vehicleNumber}
+                editable={false}
+              />
+
+                   <Text style={styles.inputLabel}>Vehicle Type</Text>
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={vehicleType}
@@ -1203,13 +1223,6 @@ export default function AddVehicle({ navigation }) {
                 </Picker>
               </View>
               {renderError("vehicleType")}
-
-              <Text style={styles.inputLabel}>Vehicle Number</Text>
-              <TextInput
-                style={[styles.textInput, styles.disabledInput]}
-                value={vehicleNumber}
-                editable={false}
-              />
 
               <Text numberOfLines={2} style={styles.inputLabel}>
                 Authorization Permit Expiry Date

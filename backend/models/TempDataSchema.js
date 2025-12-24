@@ -8,6 +8,11 @@ const TempDataSchema = new mongoose.Schema(
     },
     rc:{
            type: mongoose.Schema.Types.Mixed, // 👈 accepts ANY structure
+    },
+    dlRetryCount:{
+      type:Number,
+      max:5,
+      default:1
     }
   },
   {

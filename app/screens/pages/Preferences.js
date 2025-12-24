@@ -19,7 +19,7 @@ const vehicleTypes = [
   { key: "accept_mini_rides", label: "Mini", icon: "car-hatchback" },
   { key: "accept_sedan_rides", label: "Sedan", icon: "car-side" },
   { key: "accept_suv_rides", label: "SUV", icon: "car-estate" },
-  { key: "char_dham", label: "Char Dham", icon: "map-marker-path" },
+  { key: "char_dham", label: "Char Dham Yatra", icon: "map-marker-path" },
 ];
 
 const Preferences = () => {

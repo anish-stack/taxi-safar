@@ -5,14 +5,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Alert,
   ActivityIndicator,
   FlatList,
   Modal,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { Picker } from "@react-native-picker/picker";
 import axios from "axios";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +20,7 @@ import { API_URL_APP } from "../../../constant/api";
 import { useRoute } from "@react-navigation/native";
 import { getData } from "../../../utils/storage";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { UniversalAlert } from "../../common/UniversalAlert";
 
 export default function AddBank({ navigation }) {
   const route = useRoute();
@@ -43,6 +42,28 @@ export default function AddBank({ navigation }) {
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    type: "success",
+    title: "",
+    message: "",
+    onPrimaryPress: () => setAlertVisible(false),
+  });
+
+  const showAlert = (type, title, message, onPrimaryPress = null) => {
+    setAlertConfig({
+      type,
+      title,
+      message,
+      primaryButton: "OK",
+      onPrimaryPress: () => {
+        if (onPrimaryPress) onPrimaryPress();
+        setAlertVisible(false);
+      },
+    });
+    setAlertVisible(true);
+  };
+
   useEffect(() => {
     fetchBanks();
   }, []);
@@ -61,10 +82,11 @@ export default function AddBank({ navigation }) {
       }
     } catch (error) {
       console.error("Error fetching banks:", error);
-      Alert.alert(
+      showAlert(
+        "error",
         "Error",
         "Failed to load banks. Please check your connection and try again.",
-        [{ text: "Retry", onPress: fetchBanks }, { text: "Cancel" }]
+        fetchBanks // Retry on OK press
       );
     } finally {
       setBanksLoading(false);
@@ -103,16 +125,22 @@ export default function AddBank({ navigation }) {
   };
 
   const renderError = (field) =>
-    errors[field] ? <Text style={styles.fieldError}>{errors[field]}</Text> : null;
+    errors[field] ? (
+      <Text
+        style={{
+          color: Colors.error,
+          fontSize: 13,
+          marginBottom: 8,
+          marginLeft: 4,
+        }}
+      >
+        {errors[field]}
+      </Text>
+    ) : null;
 
   const validateIFSC = (code) => {
     const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
     return ifscRegex.test(code);
-  };
-
-  const validateUPI = (upi) => {
-    const upiRegex = /^[\w.-]+@[\w.-]+$/;
-    return upiRegex.test(upi);
   };
 
   const validateForm = () => {
@@ -133,9 +161,6 @@ export default function AddBank({ navigation }) {
       newErrors.ifscCode = "Invalid IFSC code format";
     }
     if (!branchName.trim()) newErrors.branchName = "Please enter branch name";
-    if (upiId && !validateUPI(upiId)) {
-      newErrors.upiId = "Invalid UPI ID format";
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -143,10 +168,7 @@ export default function AddBank({ navigation }) {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert(
-        "Validation Error",
-        "Please fill in all required fields correctly"
-      );
+      showAlert("error", "Validation Error", "Please fill in all required fields correctly.");
       return;
     }
 
@@ -157,7 +179,7 @@ export default function AddBank({ navigation }) {
       const riderId = getDriverId || driverId;
 
       if (!riderId) {
-        Alert.alert("Error", "Driver ID not found. Please log in again.");
+        showAlert("error", "Error", "Driver ID not found. Please log in again.");
         return;
       }
 
@@ -182,40 +204,26 @@ export default function AddBank({ navigation }) {
 
       if (response.data.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        Alert.alert(
-          "Success",
+        showAlert(
+          "success",
+          "Success!",
           "Bank details added successfully!",
-          [
-            {
-              text: "OK",
-              onPress: () =>
-                navigation.reset({
-                  index: 0,
-                  routes: [
-                    {
-                      name: "wait_screen",
-                      params: { driverId: driverId },
-                    },
-                  ],
-                }),
-            },
-          ]
+          () =>
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "wait_screen", params: { driverId } }],
+            })
         );
       } else {
         throw new Error(response.data.message || "Failed to add bank details");
       }
     } catch (error) {
       console.error("Error submitting bank details:", error.response?.data);
-
       let errorMessage = "Something went wrong. Please try again later.";
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
+      if (error.response?.data?.message) errorMessage = error.response.data.message;
+      else if (error.message) errorMessage = error.message;
 
-      Alert.alert("Error", errorMessage);
+      showAlert("error", "Error", errorMessage);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
@@ -419,6 +427,7 @@ export default function AddBank({ navigation }) {
           </View>
         </View>
       </Modal>
+      <UniversalAlert/>
     </SafeAreaView>
   );
 }
