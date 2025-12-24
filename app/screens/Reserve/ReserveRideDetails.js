@@ -354,31 +354,55 @@ const ReserveRideDetailsRedesigned = () => {
         capacity: "As per availability",
       };
 
-      const shareText = `🚗 *Taxi Safar – Booking Details*
-━━━━━━━━━━━━━━━━━━━━
+const shareText = `*Taxi Safar Driver App – Booking Details*
+━━━━━━━━━━━━━━━━━━━━━━━━
 
-📍 *Trip Details*
-• Pickup: ${rideData?.pickupAddress || "N/A"}
-• Drop: ${rideData?.dropAddress || "N/A"}
+⏰ *Pickup Date & Time*
+   ${formatDate(rideData?.pickupDate)} Time: ${formatTime12Hour(
+  rideData?.pickupTime
+)}
+
+🚕 *Vehicle Type*
+   • *${vehicleType.toUpperCase()} - ${vehicleInfo.name}*
+
+*• Pickup:*
+• ${rideData?.pickupAddress || "N/A"}
+
+*Category:* ${rideData?.tripCategory || "One Way Drop"}
+
+*• Drop:*
+• ${rideData?.dropAddress || "N/A"}
+
 • Distance: ${distance || "N/A"} km
-• Duration: ${duration || "N/A"} Hour(s)
-
-⏰ *Date & Time*
-• Pickup Date: ${formatDate(rideData?.pickupDate)}
-• Pickup Time: ${formatTime12Hour(rideData?.pickupTime)}
-
-🚕 *Vehicle Details*
-• Type: ${vehicleType.toUpperCase() || "N/A"}
-• Preferred Vehicle: ${vehicleInfo.name} (Any Available Vehicle)
-• Seating Capacity: ${vehicleInfo.capacity}
+• Duration: ${duration || "N/A"} Hour
 
 💰 *Fare Details*
-• Total Fare: ₹${Number(rideData?.totalAmount || 0).toLocaleString()}
-• Commission: ₹${Number(rideData?.commissionAmount || 0).toLocaleString()}
-• Driver Earning: ₹${Number(rideData?.driverEarning || 0).toLocaleString()}
+• Total Fare:  *₹${Number(
+  rideData?.totalAmount || 0
+).toLocaleString()}*
+• Commission:  *₹${Number(
+  rideData?.commissionAmount || 0
+).toLocaleString()}*
+• Driver Earning:  *₹${Number(
+  rideData?.driverEarning || 0
+).toLocaleString()}*
 
-Thank you for choosing *Taxi Safar*!
-Safe & Happy Journey 🚖`;
+*Contact Details*
+• ${rideData?.companyName || "Vicky Cab Service"} ${
+  rideData?.companyPhone || "941 2222 322"
+}
+
+*Booking ID*
+${shortBookingId || "N/A"}
+
+*Thank you for choosing Taxi Safar*
+📲 Download the *Taxi Safar Driver App*
+For More Intercity Bookings & Regular Trips
+🚖 Safe & Happy Journey!
+
+*Taxi Safar Driver App Link*
+https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
+
 
       await Share.share({
         title: "Taxi Safar Booking Details",
@@ -516,7 +540,6 @@ Safe & Happy Journey 🚖`;
     }
   };
 
-  // console.log("totalRatings", rideData?._id);
 
   useEffect(() => {
     fetchRideDetails();
@@ -858,48 +881,47 @@ Safe & Happy Journey 🚖`;
               >
                 Any Other Similar AC Taxi
               </Text>
-                     <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6, // spacing between items
-                padding: 4,
-              }}
-            >
-              {/* Passengers Icon */}
-              <Image
-                source={require("./passengers.png")}
-                style={{ width: 22, height: 22, resizeMode: "contain" }}
-              />
-
-              {/* Capacity Text with Plus Icon */}
               <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-              >
-                <Text style={{ fontSize: 14, fontWeight: "bold" }}>
-                  {capacity}
-                </Text>
-                <Plus size={12} />
-              </View>
-
-              {/* Luggage Icon */}
-              <Image
-                source={require("./luggage.png")}
                 style={{
-                  width: 16,
-                  height: 16,
-                  resizeMode: "contain",
-                  marginLeft: 0,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6, // spacing between items
+                  padding: 4,
                 }}
-              />
-            </View>
+              >
+                {/* Passengers Icon */}
+                <Image
+                  source={require("./passengers.png")}
+                  style={{ width: 22, height: 22, resizeMode: "contain" }}
+                />
+
+                {/* Capacity Text with Plus Icon */}
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "bold" }}>
+                    {capacity}
+                  </Text>
+                  <Plus size={12} />
+                </View>
+
+                {/* Luggage Icon */}
+                <Image
+                  source={require("./luggage.png")}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    resizeMode: "contain",
+                    marginLeft: 0,
+                  }}
+                />
+              </View>
             </View>
             <Image
               source={vehicleImage}
               style={styles.vehicleImage}
               resizeMode="contain"
             />
-        
           </View>
         </View>
         <View style={styles.card}>

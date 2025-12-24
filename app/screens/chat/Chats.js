@@ -16,6 +16,7 @@ import { useNavigation } from "@react-navigation/native";
 import io from "socket.io-client";
 import { Ionicons } from "@expo/vector-icons";
 import useDriverStore from "../../store/driver.store";
+import { formatDate, formatTime12Hour } from "../../utils/utils";
 
 // Skeleton Loading Component
 const SkeletonChatItem = () => (
@@ -102,6 +103,7 @@ const Chat = () => {
     );
   };
 
+
   // Fetch all chats
   const fetchChats = async () => {
     try {
@@ -118,6 +120,8 @@ const Chat = () => {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      // console.log(response.data.chats[0]?.rideData?.pickupDate)
+      // console.log(response.data.chats[0]?.rideData?.pickupTime)
 
       setChats(response.data.chats || []);
       setError("");
@@ -174,7 +178,7 @@ const Chat = () => {
       });
     }
   };
-
+  // console.log("console.log",chats[0].rideData?.pickupDate)
   const filteredChats = getFilteredChats();
 
   // Handle chat press
@@ -300,8 +304,20 @@ const Chat = () => {
             <Text style={styles.nameText} numberOfLines={1}>
               {driverName}
             </Text>
-            <Text style={styles.bookingId}>Booking Id: {shortBookingId}</Text>
           </View>
+          <Text style={{ fontWeight: "bold" }}>
+            Booking id:- {shortBookingId}{" "}
+          </Text>
+
+          <Text>
+            <Text style={{ fontWeight: "bold", fontSize: 13 }}>
+              Pickup Date:- {formatDate(item.rideData?.pickupDate)}{" "}
+            </Text>
+
+            <Text style={{ fontWeight: "bold", fontSize: 13 }}>
+              Time:- {formatTime12Hour(item.rideData?.pickupTime)}{" "}
+            </Text>
+          </Text>
 
           <Text
             style={[

@@ -110,7 +110,7 @@ const Drivers = () => {
         if (vehicleType !== "all") params.vehicleType = vehicleType;
 
         const res = await fetch(
-          `http://localhost:3100/api/v1/get-drivers?${new URLSearchParams(
+          `https://test.taxi.olyox.in/api/v1/get-drivers?${new URLSearchParams(
             params
           )}`
         );
@@ -176,7 +176,7 @@ const Drivers = () => {
 
     try {
       await axios.patch(
-        `http://localhost:3100/api/v1/driver/${driverId}/status`,
+        `https://test.taxi.olyox.in/api/v1/driver/${driverId}/status`,
         {
           account_status: newStatus,
         }

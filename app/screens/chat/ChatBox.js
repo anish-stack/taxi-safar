@@ -14,6 +14,7 @@ import {
   Linking,
   Alert,
   Modal,
+  Share,
   Dimensions,
 } from "react-native";
 import axios from "axios";
@@ -26,6 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import messaging from "@react-native-firebase/messaging";
 import DriverPostCard from "../Reserve/DriverPostCard";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+import { formatDate, formatTime12Hour } from "../../utils/utils";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -58,9 +60,7 @@ const ChatBox = ({ route, navigation }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [samneWalaDriver, setSamneWalaDriver] = useState(null);
   const [error, setError] = useState(null);
-  
-  // console.log(samneWalaDriver)
-  // Initialize Socket.IO connection
+
   useEffect(() => {
     fetchDriverDetails();
     socketRef.current = io(API_URL_APP_CHAT, {
@@ -78,9 +78,12 @@ const ChatBox = ({ route, navigation }) => {
     socketRef.current.on("new_message", (data) => {
       if (data.chatId === chatId) {
         setMessages((prev) => {
-          const exists = prev.some((msg) => msg._id === data.message._id);
+          // अगर optimistic message है (temp ID), तो replace करो real से
+          const exists = prev.find((msg) => msg._id === data.message._id);
           if (exists) return prev;
-          return [...prev, data.message];
+
+          // Remove optimistic if same content (optional safety)
+          return [...prev.filter((msg) => !msg.isOptimistic), data.message];
         });
         scrollToEnd();
       }
@@ -171,8 +174,6 @@ const ChatBox = ({ route, navigation }) => {
     }
   };
 
- 
-
   const retryFetchMessages = () => {
     setRefreshing(true);
     fetchMessages();
@@ -260,6 +261,7 @@ Amount to Pay: ₹${commissionAmount}
       });
 
       setPaymentLinkSent(true);
+      await fetchMessages();
     } catch (error) {
       setError("Failed to send payment link. Please try again.");
       Alert.alert("Error", "Failed to send payment link. Please try again.");
@@ -294,8 +296,22 @@ Amount to Pay: ₹${commissionAmount}
     if (!text.trim() || sendingMessage) return;
 
     const messageText = text.trim();
+    const tempId = Date.now().toString(); // temporary ID
+
+    // Optimistic update: तुरंत local messages में add करो
+    const optimisticMessage = {
+      _id: tempId,
+      sender: driver._id,
+      text: messageText,
+      messageType: "text",
+      sentAt: new Date().toISOString(),
+      isOptimistic: true, // flag to identify temporary message
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
     setText("");
     setSendingMessage(true);
+    scrollToEnd();
 
     try {
       socketRef.current.emit("send_message", {
@@ -304,7 +320,10 @@ Amount to Pay: ₹${commissionAmount}
         text: messageText,
         messageType: "text",
       });
+      await retryFetchMessages();
     } catch (error) {
+      // If failed, remove optimistic message and show error
+      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
       setError("Failed to send message. Please try again.");
     } finally {
       setSendingMessage(false);
@@ -312,35 +331,13 @@ Amount to Pay: ₹${commissionAmount}
   };
 
   const sendDriverDetails = async () => {
-    if (sendingDetails) return;
+    if (sendingDetails || detailsSent) return;
 
     setSendingDetails(true);
 
-    try {
-      // Validate driver object
-      if (!driver || !driver._id) {
-        throw new Error("Driver information is missing.");
-      }
-
-      const vehicle = driver?.current_vehicle_id;
-      if (!vehicle) {
-        throw new Error("Driver vehicle information is missing.");
-      }
-
-      const photos = vehicle.vehicle_photos || {};
-
-      // Extract URLs safely
-      const getPhotoUrl = (photo) =>
-        photo && typeof photo.url === "string" && photo.url.trim() !== ""
-          ? photo.url
-          : null;
-
-      const frontUrl = getPhotoUrl(photos.front);
-      const backUrl = getPhotoUrl(photos.back);
-      const interiorUrl = getPhotoUrl(photos.interior);
-
-      // Construct the message text
-      const detailsText = `🚗 Driver Details  
+    // Optimistic message
+    const tempId = Date.now().toString();
+    const detailsText = `🚗 Driver Details  
 ━━━━━━━━━━━━━━━━━━  
 👤 Name: ${driver.driver_name || "N/A"}  
 📞 Contact: ${driver.driver_contact_number || "N/A"}  
@@ -351,29 +348,43 @@ Amount to Pay: ₹${commissionAmount}
 • Fuel Type: ${vehicle.fuel_type || "N/A"}  
 `;
 
-      // Emit message through socket
+    const photoUrls = Object.values(vehiclePhotos).filter(Boolean);
+
+    const optimisticMessage = {
+      _id: tempId,
+      sender: driver._id,
+      text: detailsText,
+      messageType: "driver_details",
+      vehiclePhotos: vehiclePhotos,
+      sentAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setDetailsSent(true); // तुरंत disable कर दो button
+    scrollToEnd();
+
+    try {
       socketRef.current.emit("send_message", {
         chatId,
         sender: driver._id,
         text: detailsText,
         messageType: "driver_details",
-        vehiclePhotos: {
-          front: frontUrl,
-          back: backUrl,
-          interior: interiorUrl,
-        },
+        vehiclePhotos: vehiclePhotos,
       });
-
-      setDetailsSent(true);
+      await retryFetchMessages();
     } catch (error) {
-      console.error("sendDriverDetails error:", error);
-      setError(error.message || "Failed to send driver details.");
+      // Rollback if failed
+      await retryFetchMessages();
+
+      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
+      setDetailsSent(false);
+      setError("Failed to send details.");
     } finally {
       setSendingDetails(false);
     }
   };
-
-  const AskForPaymentLink = () => {
+  const AskForPaymentLink = async () => {
     if (detailsSent) {
       const detailsText =
         "💰 Please send the payment link at your earliest convenience.";
@@ -384,8 +395,84 @@ Amount to Pay: ₹${commissionAmount}
         text: detailsText,
         messageType: "payment-link-message",
       });
+      fetchMessages();
     } else {
       Alert.alert("Please send Details First");
+    }
+  };
+
+  const shareBookingDetails = async () => {
+    try {
+      const rideData = chat?.ride_post_id || chat;
+      const vehicleType = (rideData?.vehicleType || "").toLowerCase();
+
+      const vehicleMap = {
+        mini: { name: "Maruti WagonR", capacity: 4 },
+        sedan: { name: "Maruti Swift Dzire", capacity: 4 },
+        suv: { name: "Maruti Ertiga / Innova", capacity: 6 },
+      };
+
+      const vehicleInfo = vehicleMap[vehicleType] || {
+        name: "Any Available Vehicle",
+        capacity: "As per availability",
+      };
+
+const shareText = `*Taxi Safar Driver App – Booking Details*
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+⏰ *Pickup Date & Time*
+   ${formatDate(rideData?.pickupDate)} Time: ${formatTime12Hour(
+  rideData?.pickupTime
+)}
+
+🚕 *Vehicle Type*
+   • *${vehicleType.toUpperCase()} - ${vehicleInfo.name}*
+
+*• Pickup:*
+• ${rideData?.pickupAddress || "N/A"}
+
+*Category:* ${rideData?.tripCategory || "One Way Drop"}
+
+*• Drop:*
+• ${rideData?.dropAddress || "N/A"}
+
+• Distance: ${distance || "N/A"} km
+• Duration: ${duration || "N/A"} Hour
+
+💰 *Fare Details*
+• Total Fare:  *₹${Number(
+  rideData?.totalAmount || 0
+).toLocaleString()}*
+• Commission:  *₹${Number(
+  rideData?.commissionAmount || 0
+).toLocaleString()}*
+• Driver Earning:  *₹${Number(
+  rideData?.driverEarning || 0
+).toLocaleString()}*
+
+*Contact Details*
+• ${rideData?.companyName || "Vicky Cab Service"} ${
+  rideData?.companyPhone || "941 2222 322"
+}
+
+*Booking ID*
+${shortBookingId || "N/A"}
+
+*Thank you for choosing Taxi Safar*
+📲 Download the *Taxi Safar Driver App*
+For More Intercity Bookings & Regular Trips
+🚖 Safe & Happy Journey!
+
+*Taxi Safar Driver App Link*
+https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
+
+
+      await Share.share({
+        title: "Taxi Safar Booking Details",
+        message: shareText,
+      });
+    } catch (error) {
+      console.error("Share booking details error:", error);
     }
   };
 
@@ -405,8 +492,9 @@ Amount to Pay: ₹${commissionAmount}
   };
 
   useEffect(() => {
+    console.log("i am fetch");
     fetchMessages();
-  }, []);
+  }, [token, navigation]);
 
   useEffect(() => {
     scrollToEnd();
@@ -834,11 +922,7 @@ Amount to Pay: ₹${commissionAmount}
                 color={detailsSent ? "#000" : "#999"}
               />
               <Text
-                style={[
-                  styles.actionButtonText,
-                  styles.secondaryButtonText,
-                
-                ]}
+                style={[styles.actionButtonText, styles.secondaryButtonText]}
               >
                 Request Payment Link
               </Text>
@@ -945,6 +1029,16 @@ Amount to Pay: ₹${commissionAmount}
             <Text style={styles.backToRideButtonText}>Back To Ride</Text>
           </TouchableOpacity>
         </View>
+      );
+    }
+
+    {
+      item.isOptimistic && (
+        <ActivityIndicator
+          size="small"
+          color={isMe ? "#fff" : "#000"}
+          style={{ marginTop: 5 }}
+        />
       );
     }
 

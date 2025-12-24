@@ -32,7 +32,6 @@ import useSettings from "../../../hooks/Settings";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { moderateScale, scale, verticalScale } from "react-native-size-matters";
 
-const AADHAAR_DATA_KEY = "aadhaar_verified_data";
 const REGISTRATION_STATE_KEY = "registration_progress_state";
 
 // DL Verification Status
@@ -150,41 +149,12 @@ export default function RegisterScreen({ navigation }) {
         dlVerificationStatus,
         timestamp: Date.now(),
       };
-      await AsyncStorage.setItem(REGISTRATION_STATE_KEY, JSON.stringify(state));
     } catch (error) {
       console.error("Failed to save registration state:", error);
     }
   };
 
-  // ✅ LOAD REGISTRATION STATE FROM STORAGE
-  const loadRegistrationState = async () => {
-    try {
-      const saved = await AsyncStorage.getItem(REGISTRATION_STATE_KEY);
-      if (saved) {
-        const state = JSON.parse(saved);
-        // Only restore if less than 24 hours old
-        if (Date.now() - state.timestamp < 24 * 60 * 60 * 1000) {
-          setCurrentStep(state.currentStep || 0);
-          setMobileVerified(state.mobileVerified || false);
-          setIsAadhaarVerified(state.isAadhaarVerified || false);
-          setMobile(state.mobile || "");
-          setAadhaarNumber(state.aadhaarNumber || "");
-          setName(state.name || "");
-          setDob(state.dob ? new Date(state.dob) : null);
-          setEmail(state.email || "");
-          setGender(state.gender || "");
-          setAddress(state.address || "");
-          setProfileImage(state.profileImage || null);
-          setLicenseNumber(state.licenseNumber || "");
-          setDlVerificationStatus(
-            state.dlVerificationStatus || DL_STATUS.NOT_VERIFIED
-          );
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load registration state:", error);
-    }
-  };
+
 
   // ✅ CLEAR REGISTRATION STATE
   const clearRegistrationState = async (screen) => {
@@ -218,7 +188,6 @@ export default function RegisterScreen({ navigation }) {
 
   // ✅ LOAD STATE ON MOUNT
   useEffect(() => {
-    loadRegistrationState();
     fetchSettings();
 
     const step = route?.params?.step;
@@ -551,14 +520,6 @@ export default function RegisterScreen({ navigation }) {
           );
         }
 
-        await AsyncStorage.setItem(
-          AADHAAR_DATA_KEY,
-          JSON.stringify({
-            data: aadhaarData,
-            profileImageBase64: aadhaarData.profile_image,
-            timestamp: Date.now(),
-          })
-        );
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setShowOtpModal(false);
