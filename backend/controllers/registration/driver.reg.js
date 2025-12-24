@@ -11,7 +11,7 @@ const axios = require("axios");
 const settings = require("../../models/settings/AppSettings");
 const AppSettings = require("../../models/settings/AppSettings");
 const DrivingLicense = require("../../models/driver/DriverLicense");
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 const {
   addVehicleUploadJob,
 } = require("../../queues/DriverVehcilePhotoUpload");
@@ -1010,8 +1010,6 @@ const log = (step, message, data = null) => {
   );
 };
 
-
-
 function dedupeRepeatedName(name = "") {
   // Handle duplicate concatenated name in RC
   const mid = Math.floor(name.length / 2);
@@ -1022,12 +1020,12 @@ function dedupeRepeatedName(name = "") {
 
 exports.addVehicleDetails = async (req, res) => {
   function normalizeName(name = "") {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z\s]/g, "") // remove special chars
-    .replace(/\s+/g, " ")     // normalize spaces
-    .trim();
-}
+    return name
+      .toUpperCase()
+      .replace(/[^A-Z\s]/g, "") // remove special chars
+      .replace(/\s+/g, " ") // normalize spaces
+      .trim();
+  }
   let currentStep = "INIT";
   const files = req.files || [];
   const body = req.body || {};
@@ -1045,7 +1043,12 @@ exports.addVehicleDetails = async (req, res) => {
     -----------------------------*/
     currentStep = "DRIVER_ID_SANITIZE";
     let driverId = req.params.driverId;
-    if (!driverId || driverId === "null" || driverId === "undefined" || !mongoose.Types.ObjectId.isValid(driverId)) {
+    if (
+      !driverId ||
+      driverId === "null" ||
+      driverId === "undefined" ||
+      !mongoose.Types.ObjectId.isValid(driverId)
+    ) {
       driverId = null;
     }
 
@@ -1058,21 +1061,30 @@ exports.addVehicleDetails = async (req, res) => {
 
     if (body.rcData) {
       try {
-        rcData = typeof body.rcData === "string" ? JSON.parse(body.rcData) : body.rcData;
+        rcData =
+          typeof body.rcData === "string"
+            ? JSON.parse(body.rcData)
+            : body.rcData;
         rcOwnerName = rcData?.owner_name;
         if (rcOwnerName) {
-          rcOwnerName = dedupeRepeatedName(rcOwnerName).replace(/\s+/g, " ").trim();
+          rcOwnerName = dedupeRepeatedName(rcOwnerName)
+            .replace(/\s+/g, " ")
+            .trim();
         }
       } catch (err) {
         log(currentStep, "RC JSON parse failed", err.message);
         cleanupFiles(files);
-        return res.status(400).json({ success: false, message: "Invalid RC data format" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid RC data format" });
       }
     }
 
     if (!rcData) {
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "RC verification data is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "RC verification data is required" });
     }
 
     /* ----------------------------
@@ -1106,21 +1118,32 @@ exports.addVehicleDetails = async (req, res) => {
        4️⃣ BODY VALIDATION
     -----------------------------*/
     currentStep = "BODY_VALIDATION";
-    const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } = body;
+    const { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation } =
+      body;
 
     if (!vehicleType || !vehicleNumber) {
       cleanupFiles(files);
-      return res.status(400).json({ success: false, message: "vehicleType and vehicleNumber are required" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "vehicleType and vehicleNumber are required",
+        });
     }
 
     /* ----------------------------
        5️⃣ DUPLICATE VEHICLE CHECK
     -----------------------------*/
     currentStep = "DUPLICATE_CHECK";
-    const existingVehicle = await Vehicle.findOne({ vehicle_number: vehicleNumber.toUpperCase(), is_deleted: false });
+    const existingVehicle = await Vehicle.findOne({
+      vehicle_number: vehicleNumber.toUpperCase(),
+      is_deleted: false,
+    });
     if (existingVehicle) {
       cleanupFiles(files);
-      return res.status(409).json({ success: false, message: "Vehicle already exists" });
+      return res
+        .status(409)
+        .json({ success: false, message: "Vehicle already exists" });
     }
 
     /* ----------------------------
@@ -1142,7 +1165,9 @@ exports.addVehicleDetails = async (req, res) => {
     for (const field of requiredFiles) {
       if (!getFile(field)) {
         cleanupFiles(files);
-        return res.status(400).json({ success: false, message: `Please upload ${field} document` });
+        return res
+          .status(400)
+          .json({ success: false, message: `Please upload ${field} document` });
       }
     }
 
@@ -1151,7 +1176,9 @@ exports.addVehicleDetails = async (req, res) => {
     -----------------------------*/
     currentStep = "FILE_PATHS";
     const filePaths = {};
-    files.forEach((f) => { filePaths[f.fieldname] = f.path; });
+    files.forEach((f) => {
+      filePaths[f.fieldname] = f.path;
+    });
 
     /* ----------------------------
        8️⃣ QUEUE BACKGROUND JOB
@@ -1159,7 +1186,13 @@ exports.addVehicleDetails = async (req, res) => {
     currentStep = "QUEUE_JOB_ADD";
     const job = await addVehicleUploadJob({
       driverId: driver._id.toString(),
-      vehicleData: { vehicleType, vehicleNumber, rcStatus, permitExpiry, relation },
+      vehicleData: {
+        vehicleType,
+        vehicleNumber,
+        rcStatus,
+        permitExpiry,
+        relation,
+      },
       filePaths,
       rcData,
     });
@@ -1174,7 +1207,6 @@ exports.addVehicleDetails = async (req, res) => {
       driverId: driver._id,
       status: "processing",
     });
-
   } catch (error) {
     console.error(`🔥 ERROR at step: ${currentStep}`, error);
     cleanupFiles(files);
@@ -1778,10 +1810,11 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
       "rc.rcNumber": rcNumber,
     }).lean();
 
-
     console.log("tempData?.rc:", tempData);
 
-    const ownerName = tempData?.data?.rc?.apiResponse?.owner_name ||tempData?.data?.rc?.rcOwnerName;
+    const ownerName =
+      tempData?.data?.rc?.apiResponse?.owner_name ||
+      tempData?.data?.rc?.rcOwnerName;
     console.log("Owner Name from TempData:", ownerName);
 
     // ---------- Verify OTP ----------
@@ -2137,9 +2170,10 @@ exports.verifyDrivingLicense = async (req, res) => {
     }
 
     /* ---------------- GET TEMPDATA ---------------- */
-    const tempData = await TempDataSchema.findOne({
-      "data.deviceId": deviceId,
-    });
+const tempData = await TempDataSchema
+  .findOne({ "data.deviceId": deviceId })
+  .sort({ createdAt: -1 }) // latest
+  .lean();
 
     if (!tempData || !tempData.data) {
       return res.status(400).json({
@@ -2320,13 +2354,11 @@ exports.verifyRcDetails = async (req, res) => {
     let driverDetails = await Driver.findById(driverId).lean();
 
     if (!driverDetails) {
- driverDetails = await Driver
-  .findOne({ device_id: deviceId })
-  .sort({ createdAt: -1 }) // latest
-  .lean();
-
+      driverDetails = await Driver.findOne({ device_id: deviceId })
+        .sort({ createdAt: -1 }) // latest
+        .lean();
     }
-    console.log("driverDetails",driverDetails)
+    console.log("driverDetails", driverDetails);
 
     if (!driverDetails) {
       return res.status(400).json({
