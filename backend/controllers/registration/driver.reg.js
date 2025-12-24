@@ -1773,9 +1773,12 @@ exports.VerifyOtpOnAadharNumberForRc = async (req, res) => {
         message: "Invalid Aadhaar number.",
       });
     }
+
     const tempData = await TempDataSchema.findOne({
       "rc.rcNumber": rcNumber,
     }).lean();
+
+
     console.log("tempData?.rc:", tempData);
 
     const ownerName = tempData?.data?.rc?.apiResponse?.owner_name ||tempData?.data?.rc?.rcOwnerName;
@@ -2319,7 +2322,7 @@ exports.verifyRcDetails = async (req, res) => {
     if (!driverDetails) {
       driverDetails = await Driver.findOne({
         device_id: deviceId,
-      }).lean();
+      }).sort({created:-1}).lean();
     }
 
     if (!driverDetails) {
