@@ -71,12 +71,12 @@ export default function Header({
   // Monitor app state changes
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      
+
       // When app comes to foreground, sync floating widget with online status
       if (appState.current.match(/inactive|background/) && nextAppState === "active") {
         syncFloatingWidget();
       }
-      
+
       appState.current = nextAppState;
     });
 
@@ -89,7 +89,7 @@ export default function Header({
   const syncFloatingWidget = async () => {
     try {
       const currentOnlineStatus = useDriverStore.getState().is_online;
-      
+
       if (currentOnlineStatus && !servicesStateRef.current.floatingWidget) {
         await startFloatingWidget?.();
         servicesStateRef.current.floatingWidget = true;
@@ -147,7 +147,7 @@ export default function Header({
         }
 
       } else {
-      
+
         // Step 1: Stop Pooling Service FIRST
         if (stopPoolingService && servicesStateRef.current.poolingService) {
           try {
@@ -247,16 +247,16 @@ export default function Header({
   useEffect(
     () => () => {
       console.log("🧹 Component unmounting, cleaning up...");
-      
+
       // Stop all services
       Promise.all([
-        stopFloatingWidget?.().catch(() => {}),
-        stopPoolingService?.().catch(() => {}),
-        LocationService.stopTracking().catch(() => {}),
+        stopFloatingWidget?.().catch(() => { }),
+        stopPoolingService?.().catch(() => { }),
+        LocationService.stopTracking().catch(() => { }),
       ]).then(() => {
         console.log("✅ Cleanup complete");
       });
-      
+
       // Reset service state
       servicesStateRef.current = {
         floatingWidget: false,
@@ -452,6 +452,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
     borderRadius: 20,
     paddingHorizontal: 10,
+     borderWidth: 1,
+    borderColor: "#000",
     paddingVertical: 6,
     marginRight: isSmallScreen ? 4 : 6,
   },
@@ -459,10 +461,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     marginRight: 4,
+   
   },
   radiusText: {
     fontSize: 13,
     fontWeight: "600",
+
+
     color: "#000",
     marginRight: 3,
   },
@@ -508,10 +513,10 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: "#fff",
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 8,
     width: SCREEN_WIDTH * 0.7,
     maxWidth: 280,
-    maxHeight: 400,
+    maxHeight: 700,
     elevation: 5,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -530,12 +535,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
   },
   modalItemSelected: {
+
     backgroundColor: "#f0f9ff",
   },
   modalItemText: {

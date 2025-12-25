@@ -376,7 +376,7 @@ export default function CompanyDetails({ navigation }) {
 
   useEffect(() => {
     fetchCompany();
-  }, [fetchCompany]);
+  }, []);
 
   useEffect(() => {
     (async () => {

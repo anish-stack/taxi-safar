@@ -26,6 +26,7 @@ export default function AddBank({ navigation }) {
   const route = useRoute();
   const { driverId } = route.params || {};
 
+  // console.log("driverId",driverId)
   // State
   const [banks, setBanks] = useState([]);
   const [filteredBanks, setFilteredBanks] = useState([]);
@@ -427,7 +428,11 @@ export default function AddBank({ navigation }) {
           </View>
         </View>
       </Modal>
-      <UniversalAlert/>
+      <UniversalAlert
+      
+        visible={alertVisible}
+        {...alertConfig}
+        onClose={() => setAlertVisible(false)}/>
     </SafeAreaView>
   );
 }
