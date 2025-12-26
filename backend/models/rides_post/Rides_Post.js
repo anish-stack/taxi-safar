@@ -318,8 +318,8 @@ const ridesPostSchema = new mongoose.Schema(
     },
     RideId: {
       type: String,
-      unique: true,
-      index: true,
+      unique:false,
+      index: false
     },
 
     stops: {
