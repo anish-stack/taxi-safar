@@ -124,9 +124,10 @@ const AppSettingSchema = new Schema(
       type: String,
     },
     ByPassApi: {
-     type: Boolean, default: false
+      type: Boolean, default: false
     },
-
+    DefaultLogos: [String],
+    DefaultSigns: [String],
     app_rating_link_android: String,
     app_rating_link_ios: String,
   },

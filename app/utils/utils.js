@@ -118,3 +118,25 @@ export const formatTime = (timeString) => {
 
 
   
+
+export const formatTimeWithLeadingZero = (time) => {
+  if (!time) return "";
+
+  const [hourStr, minuteStr] = time.split(":");
+
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  if (isNaN(hour) || isNaN(minute)) return "";
+
+  const period = hour >= 12 ? "PM" : "AM";
+
+  hour = hour % 12;
+  hour = hour === 0 ? 12 : hour;
+
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+
+  return `${hh}:${mm} ${period}`;
+};
+

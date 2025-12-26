@@ -182,19 +182,19 @@ const driverSchema = new mongoose.Schema(
     preferences: {
       accept_mini_rides: {
         type: Boolean,
-        default: false,
+        default: true,
       },
       accept_sedan_rides: {
         type: Boolean,
-        default: false,
+        default: true,
       },
       accept_suv_rides: {
         type: Boolean,
-        default: false,
+        default: true,
       },
       char_dham:{
         type: Boolean,
-        default: false,
+        default: true,
       }
     },
 

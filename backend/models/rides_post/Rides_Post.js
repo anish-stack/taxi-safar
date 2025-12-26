@@ -232,21 +232,22 @@ const ridesPostSchema = new mongoose.Schema(
       type: String,
       required: true,
       enum: [
-        "pending", // Ride created, waiting for driver assignment
+        "pending",
         "started",
-        "driver-assigned", // Driver has been assigned
-        "driver-accepted", // Driver accepted the ride
-        "driver-rejected", // Driver rejected the ride
-        "completed", // Ride completed successfully
-        "cancelled-by-customer", // Cancelled by customer
-        "cancelled-by-driver", // Cancelled by driver
-        "cancelled-by-admin", // Cancelled by admin
-        "no-show", // Customer didn't show up
-        "failed", // Ride failed for some reason
+        "driver-assigned",
+        "driver-accepted",
+        "driver-rejected",
+        "completed",
+        "cancelled-by-customer",
+        "cancelled-by-driver",
+        "cancelled-by-admin",
+        "no-show",
+        "failed",
       ],
       default: "pending",
       index: true,
     },
+    billableDistance: String,
     returnDate: {
       type: Date,
     },
@@ -315,6 +316,11 @@ const ridesPostSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    RideId: {
+      type: String,
+      unique: true,
+      index: true,
+    },
 
     stops: {
       type: [StopSchema],
@@ -347,7 +353,12 @@ ridesPostSchema.virtual("commissionPercentage").get(function () {
   return 0;
 });
 
+const generateRideId = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 // Pre-save hook to validate driver earning calculation
+// Earnings
 ridesPostSchema.pre("save", function (next) {
   const calculatedEarning = this.totalAmount - this.commissionAmount;
   if (Math.abs(this.driverEarning - calculatedEarning) > 0.01) {
@@ -355,6 +366,25 @@ ridesPostSchema.pre("save", function (next) {
   }
   next();
 });
+
+// RideId
+ridesPostSchema.pre("save", async function (next) {
+  if (this.RideId) return next();
+
+  let rideId;
+  let exists = true;
+
+  for (let i = 0; i < 5 && exists; i++) {
+    rideId = generateRideId();
+    exists = await mongoose.models.RidesPost.exists({ RideId: rideId });
+  }
+
+  if (exists) return next(new Error("RideId collision"));
+
+  this.RideId = rideId;
+  next();
+});
+
 
 // Model export
 const RidesPost = mongoose.model("RidesPost", ridesPostSchema);

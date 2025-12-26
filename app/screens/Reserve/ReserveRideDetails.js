@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -237,6 +237,27 @@ const ReserveRideDetailsRedesigned = () => {
       setChatLoading(false); // ✅ only once
     }
   };
+  const role = rideData?.driverPostId?._id === driver?._id ? "owner" : "driver"
+
+
+  const handleChatPress = async () => {
+    if (!rideData?._id) return null;
+
+    // OWNER → direct open chat
+    if (role === "owner") {
+      navigation.navigate("ChatBox", {
+        chat: rideData,
+        role: "owner",
+        rideId: rideData?._id,
+      });
+      return rideData;
+    }
+
+    // DRIVER → init chat
+    const chatData = await initChat();
+    return chatData;
+  };
+
 
   const fetchMessages = async () => {
     try {
@@ -252,18 +273,29 @@ const ReserveRideDetailsRedesigned = () => {
 
       setDetailsSent(hasSentDetails);
     } catch (error) {
-      console.error("Error fetching messages:", error.response.data);
+      // console.error("Error fetching messages:", error.response.data);
     } finally {
       setLoading(false);
     }
   };
-
   const sendDriverDetails = async () => {
     try {
+      // ❌ OWNER NOT ALLOWED
+      if (role !== "driver") {
+        navigation.navigate("chat", {
+          rideId: rideData?._id,
+          role: "owner",
+        });
+
+        Alert.alert("Not Allowed", "Only driver can send details");
+        return;
+      }
+
       let chatData = chat;
+
+      // chat nahi hai → initChat()
       if (!chatData) {
-        chatData = await initChat();
-        console.log("Chat initialized:", chatData);
+        chatData = await handleChatPress();
         if (!chatData) {
           Alert.alert("Error", "Failed to initialize chat");
           return;
@@ -273,19 +305,15 @@ const ReserveRideDetailsRedesigned = () => {
       const vehicle = driver?.current_vehicle_id;
       const photos = vehicle?.vehicle_photos || {};
 
-      const frontUrl = photos?.front?.url || null;
-      const backUrl = photos?.back?.url || null;
-      const interiorUrl = photos?.interior?.url || null;
-
       const detailsText = `🚗 Driver Details  
 ━━━━━━━━━━━━━━━━━━  
-👤 Name: ${driver.driver_name || "N/A"}  
-📞 Contact: ${driver.driver_contact_number || "N/A"}  
+👤 Name: ${driver?.driver_name || "N/A"}  
+📞 Contact: ${driver?.driver_contact_number || "N/A"}  
 
 🚙 Vehicle Details  
-• Number: ${vehicle.vehicle_number || "N/A"}  
-• Name: ${vehicle.vehicle_name || "N/A"}  
-• Fuel Type: ${vehicle.fuel_type || "N/A"}  
+• Number: ${vehicle?.vehicle_number || "N/A"}  
+• Name: ${vehicle?.vehicle_name || "N/A"}  
+• Fuel Type: ${vehicle?.fuel_type || "N/A"}  
 `;
 
       socketRef.current.emit("send_message", {
@@ -294,24 +322,26 @@ const ReserveRideDetailsRedesigned = () => {
         text: detailsText,
         messageType: "driver_details",
         vehiclePhotos: {
-          front: frontUrl,
-          back: backUrl,
-          interior: interiorUrl,
+          front: photos?.front?.url || null,
+          back: photos?.back?.url || null,
+          interior: photos?.interior?.url || null,
         },
       });
 
       setDetailsSent(true);
-      Alert.alert("Success", "Details sent successfully");
 
       navigation.navigate("ChatBox", {
         chat: chatData,
-        role: "initiator",
+        role: "initiator", // driver always initiator
+        rideId: rideData?._id,
       });
     } catch (error) {
       console.error("Error:", error);
       Alert.alert("Error", "Failed to send details");
     }
   };
+
+
   const askForPaymentLink = () => {
     if (!detailsSent) {
       Alert.alert(
@@ -354,13 +384,13 @@ const ReserveRideDetailsRedesigned = () => {
         capacity: "As per availability",
       };
 
-const shareText = `*Taxi Safar Driver App – Booking Details*
+      const shareText = `*Taxi Safar Driver App – Booking Details*
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⏰ *Pickup Date & Time*
    ${formatDate(rideData?.pickupDate)} Time: ${formatTime12Hour(
-  rideData?.pickupTime
-)}
+        rideData?.pickupTime
+      )}
 
 🚕 *Vehicle Type*
    • *${vehicleType.toUpperCase()} - ${vehicleInfo.name}*
@@ -378,22 +408,21 @@ const shareText = `*Taxi Safar Driver App – Booking Details*
 
 💰 *Fare Details*
 • Total Fare:  *₹${Number(
-  rideData?.totalAmount || 0
-).toLocaleString()}*
+        rideData?.totalAmount || 0
+      ).toLocaleString()}*
 • Commission:  *₹${Number(
-  rideData?.commissionAmount || 0
-).toLocaleString()}*
+        rideData?.commissionAmount || 0
+      ).toLocaleString()}*
 • Driver Earning:  *₹${Number(
-  rideData?.driverEarning || 0
-).toLocaleString()}*
+        rideData?.driverEarning || 0
+      ).toLocaleString()}*
 
 *Contact Details*
-• ${rideData?.companyName || "Vicky Cab Service"} ${
-  rideData?.companyPhone || "941 2222 322"
-}
+• ${rideData?.companyName || "Vicky Cab Service"} ${rideData?.companyPhone || "941 2222 322"
+        }
 
 *Booking ID*
-${shortBookingId || "N/A"}
+${rideData?.RideId || "N/A"}
 
 *Thank you for choosing Taxi Safar*
 📲 Download the *Taxi Safar Driver App*
@@ -497,6 +526,33 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
     await fetchGoogleRoute(pickupLat, pickupLng, dropLat, dropLng);
   };
 
+  const pickupCoord = useMemo(() => ({
+    latitude: rideData?.pickupLocation?.coordinates[1] || 0,
+    longitude: rideData?.pickupLocation?.coordinates[0] || 0,
+  }), [rideData?.pickupLocation]);
+
+  const dropCoord = useMemo(() => ({
+    latitude: rideData?.dropLocation?.coordinates[1] || 0,
+    longitude: rideData?.dropLocation?.coordinates[0] || 0,
+  }), [rideData?.dropLocation]);
+
+  // Memoized Map markers to prevent blinking
+  const PickupMarker = React.memo(({ coord }) => (
+    <Marker coordinate={coord}>
+      <View style={styles.pickupMarker}>
+        <Navigation size={16} color="#fff" />
+      </View>
+    </Marker>
+  ));
+
+  const DropMarker = React.memo(({ coord }) => (
+    <Marker coordinate={coord}>
+      <View style={styles.dropMarker}>
+        <MapPin size={16} color="#FF3B30" fill="#FF3B30" />
+      </View>
+    </Marker>
+  ));
+
   const estimateDuration = (distanceKm) => {
     const speedKmPerHr = 50;
     const totalHours = distanceKm / speedKmPerHr;
@@ -527,7 +583,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
         const [dropLng, dropLat] = ride.dropLocation.coordinates;
 
         const dist = calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
-        setDistance(dist);
+        setDistance(ride?.distanceKm || dist);
         setDuration(estimateDuration(dist));
 
         calculateMapRegionAndRoute(ride);
@@ -571,19 +627,19 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
     rideData?.vehicleType === "mini"
       ? mini
       : rideData?.vehicleType === "sedan"
-      ? sedan
-      : rideData?.vehicleType === "suv"
-      ? suv
-      : inova;
+        ? sedan
+        : rideData?.vehicleType === "suv"
+          ? suv
+          : inova;
 
   const VehicleName =
     rideData?.vehicleType === "mini"
       ? "Maruti WagonR"
       : rideData?.vehicleType === "sedan"
-      ? "Maruti Swift Dzire"
-      : rideData?.vehicleType === "suv"
-      ? "Maruti Ertiga SUV"
-      : "Innova Crysta";
+        ? "Maruti Swift Dzire"
+        : rideData?.vehicleType === "suv"
+          ? "Maruti Ertiga SUV"
+          : "Innova Crysta";
   const capacity = capacityMap[rideData?.vehicleType] || 6;
 
   if (loading) {
@@ -623,6 +679,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
     );
   }
 
+
   const isRoundTrip = rideData.tripType === "round-trip";
   const arrivalDateTime = !isRoundTrip
     ? getArrivalDateTime(rideData.pickupDate, rideData.pickupTime, distance)
@@ -646,32 +703,19 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.mapContainer}>
-          {mapRegion ? (
+          {pickupCoord.latitude && dropCoord.latitude && (
             <MapView
               provider={PROVIDER_GOOGLE}
               style={styles.map}
-              region={mapRegion}
+              initialRegion={{
+                latitude: (pickupCoord.latitude + dropCoord.latitude) / 2,
+                longitude: (pickupCoord.longitude + dropCoord.longitude) / 2,
+                latitudeDelta: Math.abs(pickupCoord.latitude - dropCoord.latitude) * 3 || 0.05,
+                longitudeDelta: Math.abs(pickupCoord.longitude - dropCoord.longitude) * 3 || 0.05,
+              }}
             >
-              <Marker
-                coordinate={{
-                  latitude: rideData.pickupLocation.coordinates[1],
-                  longitude: rideData.pickupLocation.coordinates[0],
-                }}
-              >
-                <View style={styles.pickupMarker}>
-                  <Navigation size={16} color="#fff" />
-                </View>
-              </Marker>
-              <Marker
-                coordinate={{
-                  latitude: rideData.dropLocation.coordinates[1],
-                  longitude: rideData.dropLocation.coordinates[0],
-                }}
-              >
-                <View style={styles.dropMarker}>
-                  <MapPin size={16} color="#FF3B30" fill="#FF3B30" />
-                </View>
-              </Marker>
+              <PickupMarker coord={pickupCoord} />
+              <DropMarker coord={dropCoord} />
               {routeCoords.length > 0 && (
                 <Polyline
                   coordinates={routeCoords}
@@ -681,7 +725,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
                 />
               )}
             </MapView>
-          ) : null}
+          )}
         </View>
 
         <View style={styles.card}>
@@ -695,8 +739,8 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
           >
             <Text style={styles.sectionTitle}>Trip Posted By</Text>
             <Text style={styles.sectionTitle}>
-              {rideData?._id
-                ? `CRN-${rideData._id.slice(-4)}`.toUpperCase()
+              Booking id:-{rideData?._id
+                ? `${rideData.RideId}`
                 : ""}
             </Text>
           </View>
@@ -965,7 +1009,9 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Trip Duration</Text>
-            <Text style={styles.infoValue}>{duration} Hour</Text>
+            <Text style={styles.infoValue}>
+              {rideData?.durationText || `${duration} Hour`}
+            </Text>
           </View>
           {rideData.extraKmCharge === 0 ? null : (
             <View style={styles.infoRow}>

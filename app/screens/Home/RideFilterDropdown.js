@@ -254,10 +254,10 @@ const styles = StyleSheet.create({
   },
 
   iconBtn: {
-    width: 27,
-    height: 27,
+    width: 33,
+    height: 33,
     borderRadius: 19,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: "#d9dadb",
     justifyContent: "center",
     alignItems: "center",
     elevation: 1,

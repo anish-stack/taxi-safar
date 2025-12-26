@@ -33,6 +33,8 @@ import {
   Plus,
   Phone,
   MessageCircle,
+  X,
+  Delete,
 } from "lucide-react-native";
 import { API_URL_APP } from "../../constant/api";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -43,7 +45,7 @@ import {
   useFocusEffect,
   useRoute,
 } from "@react-navigation/native";
-import { formatTime12Hour, formatTimeByDate } from "../../utils/utils";
+import { formatTimeByDate } from "../../utils/utils";
 
 const GOOGLE_API_KEY = "AIzaSyCuSV_62nxNHBjLQ_Fp-rSTgRUw9m2vzhM";
 
@@ -66,6 +68,9 @@ const DriverPost = () => {
   const [pickupTime, setPickupTime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const [returnDate, setReturnDate] = useState(null);
+  const [showReturnDatePicker, setShowReturnDatePicker] = useState(false);
 
   // Locations
   const [pickupLocation, setPickupLocation] = useState("");
@@ -141,7 +146,7 @@ const DriverPost = () => {
             animated: true,
           });
         },
-        () => {}
+        () => { }
       );
     }, 300);
   };
@@ -412,6 +417,10 @@ const DriverPost = () => {
 
         // Date & Time
         setPickupDate(new Date(ride.pickupDate));
+        if(ride.returnDate){
+        setReturnDate(new Date(ride.returnDate))
+
+        }
         const [hours, minutes] = ride.pickupTime?.split(":") || ["00", "00"];
         const pickupTimeDate = new Date();
         pickupTimeDate.setHours(parseInt(hours), parseInt(minutes));
@@ -584,35 +593,56 @@ const DriverPost = () => {
     setCommission(value);
   };
 
+  const calculateBillableKm = useCallback(() => {
+    if (tripType !== "round-trip" || distance === 0) return distance;
+
+    const oneWayKm = distance;
+
+    if (dropLocation.toLowerCase().trim() === pickupLocation.toLowerCase().trim()) {
+      // Local round trip (e.g., city tour, same drop = pickup)
+      const days = returnDate
+        ? Math.ceil((returnDate - pickupDate) / (1000 * 60 * 60 * 24))
+        : 1;
+      const billable = 250 * Math.max(days, 1); // 250 km per day standard
+      return billable;
+    } else {
+      // Outstation round trip
+      let baseRoundTripKm = oneWayKm * 2;
+
+      if (returnDate) {
+        const daysDiff = Math.ceil((returnDate - pickupDate) / (1000 * 60 * 60 * 24));
+        if (daysDiff > 1) {
+          const extraDays = daysDiff - 1;
+          baseRoundTripKm += extraDays * 250; // +250 km per extra day
+        }
+      }
+
+      return baseRoundTripKm;
+    }
+  }, [tripType, distance, pickupLocation, dropLocation, pickupDate, returnDate]);
+
+
+
+  const billableKm = calculateBillableKm();
   const validateTotalAmount = (value) => {
     setTotalAmount(value);
 
-    if (distance > 0 && vehicle && value) {
+    if (billableKm > 0 && vehicle && value) {
       const amount = parseFloat(value);
-      const ratePerKm = amount / distance;
+      const ratePerKm = amount / billableKm;
       const vehicleRate = vehicleRates.find((v) => v.vehicleKey === vehicle);
 
       if (vehicleRate && ratePerKm > vehicleRate.maxRatePerKm) {
         Alert.alert(
           "Rate Limit Exceeded",
-          `${vehicleRate.displayName} maximum rate is ₹${
-            vehicleRate.maxRatePerKm
-          }/km.\n\nCurrent rate: ₹${ratePerKm.toFixed(
-            2
-          )}/km\nSuggested amount: ₹${(
-            vehicleRate.maxRatePerKm * distance
-          ).toFixed(0)}`,
+          `${vehicleRate.displayName} maximum rate is ₹${vehicleRate.maxRatePerKm}/km.\n\n` +
+          `Current rate: ₹${ratePerKm.toFixed(2)}/km (based on ${billableKm} billable km)\n` +
+          `Suggested amount: ₹${(vehicleRate.maxRatePerKm * billableKm).toFixed(0)}`,
           [
-            // {
-            //   text: "Keep Current",
-            //   style: "cancel",
-            // },
             {
               text: "Use Suggested",
               onPress: () =>
-                setTotalAmount(
-                  (vehicleRate.maxRatePerKm * distance).toFixed(0)
-                ),
+                setTotalAmount((vehicleRate.maxRatePerKm * billableKm).toFixed(0)),
             },
           ]
         );
@@ -646,11 +676,13 @@ const DriverPost = () => {
       return false;
     }
 
-    if (tripType === "round-trip" && !tripDays) {
-      Alert.alert(
-        "Validation Error",
-        "Please enter number of days for round trip"
-      );
+    if (tripType === "round-trip" && !returnDate) {
+      Alert.alert("Validation Error", "Please select return date for round trip");
+      return false;
+    }
+
+    if (tripType === "round-trip" && billableKm === 0) {
+      Alert.alert("Validation Error", "Unable to calculate billable distance");
       return false;
     }
 
@@ -813,9 +845,9 @@ const DriverPost = () => {
     const a =
       Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
       Math.cos(lat1) *
-        Math.cos(lat2) *
-        Math.sin(deltaLon / 2) *
-        Math.sin(deltaLon / 2);
+      Math.cos(lat2) *
+      Math.sin(deltaLon / 2) *
+      Math.sin(deltaLon / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
@@ -867,8 +899,7 @@ const DriverPost = () => {
 
   const postBooking = async () => {
     if (!validateForm()) return;
-    const isValid = await validateBookingWithAPI();
-    if (!isValid) return;
+
     setLoading(true);
     try {
       const requestData = {
@@ -889,14 +920,16 @@ const DriverPost = () => {
           distance > 0 && totalAmount
             ? parseFloat((parseFloat(totalAmount) / distance).toFixed(2))
             : 0,
-        totalDistance: distance, // in KM
+        totalDistance: distance,
         polyLine,
-        estimatedDuration: estimatedDuration, // can be calculated from Google API if needed
+        estimatedDuration: estimatedDuration,
         routeInfo: {
           hasStops: stops.filter((s) => s.location && s.coordinates).length > 0,
           stopsCount: stops.filter((s) => s.location && s.coordinates).length,
           calculatedVia: "google_directions_api",
         },
+        returnDate: tripType === "round-trip" ? formatDateForBackend(returnDate) : null,
+        billableDistance: tripType === "round-trip" ? billableKm : distance,
         companyDetails: company?._id,
         extraMinCharge: parseFloat(extraHour) || 0,
         acceptBookingType: acceptMode,
@@ -1098,6 +1131,26 @@ const DriverPost = () => {
               </TouchableOpacity>
             </View>
           </View>
+          {/* Return Date - Only for Round Trip */}
+          {tripType === "round-trip" && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Return Date</Text>
+              <TouchableOpacity
+                onPress={() => setShowReturnDatePicker(true)}
+                style={styles.dateTimeButton}
+              >
+                <Calendar size={18} color="#6B7280" />
+                <Text style={styles.dateTimeText}>
+                  {returnDate ? formatDate(returnDate) : "Select return date"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.helperText}>
+                Drivers will return on this date
+              </Text>
+            </View>
+          )}
+
+
 
           {/* Locations */}
           <View style={styles.section}>
@@ -1154,38 +1207,20 @@ const DriverPost = () => {
             )}
           </View>
 
+
           <View
             style={[
-              styles.section,
+              styles.sectionAdd,
               {
-                paddingVertical: 5,
-                borderWidth: 1,
+             
+              
                 width: "92%",
                 borderColor: "#E5E7EB",
               },
             ]}
           >
-            <View style={styles.stopHeaderContainer}>
-              <TouchableOpacity
-                style={styles.addStopButton}
-                onPress={addStop}
-                disabled={stops.length >= 3}
-              >
-                <Text
-                  style={[
-                    styles.addStopText,
-                    stops.length >= 3 && styles.addStopTextDisabled,
-                  ]}
-                >
-                  Add Stop
-                </Text>
-                <Plus
-                  size={16}
-                  style={{ marginTop: 6 }}
-                  color={stops.length >= 3 ? "#9CA3AF" : "#000"}
-                />
-              </TouchableOpacity>
-            </View>
+
+
 
             {stops.map((stop, index) => (
               <View key={index} style={styles.stopContainer}>
@@ -1195,10 +1230,9 @@ const DriverPost = () => {
                     onPress={() => removeStop(index)}
                     style={styles.removeStopButton}
                   >
-                    <Text style={styles.removeStopText}>Remove</Text>
+                    <Delete/>
                   </TouchableOpacity>
                 </View>
-
                 <View style={styles.locationContainer}>
                   <View
                     ref={(el) => (stopInputRefs.current[index] = el)}
@@ -1232,6 +1266,7 @@ const DriverPost = () => {
                   )}
                 </View>
 
+
                 {stopSuggestions.length > 0 && currentStopIndex === index && (
                   <View style={styles.suggestionsContainer}>
                     {stopSuggestions.slice(0, 4).map((item) => (
@@ -1253,9 +1288,9 @@ const DriverPost = () => {
                                 location: address,
                                 coordinates: coords
                                   ? {
-                                      type: "Point",
-                                      coordinates: [coords.lng, coords.lat],
-                                    }
+                                    type: "Point",
+                                    coordinates: [coords.lng, coords.lat],
+                                  }
                                   : null,
                               };
                               setStops(newStops);
@@ -1279,7 +1314,29 @@ const DriverPost = () => {
                   </View>
                 )}
               </View>
+
             ))}
+          </View>
+          <View style={styles.stopHeaderContainer}>
+            <TouchableOpacity
+              style={styles.addStopButton}
+              onPress={addStop}
+            
+            >
+              <Text
+                style={[
+                  styles.addStopText,
+                 
+                ]}
+              >
+                Add Stop
+              </Text>
+              <Plus
+                size={16}
+                style={{ marginTop: 6 }}
+                color={stops.length >= 3 ? "#9CA3AF" : "#000"}
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
@@ -1335,22 +1392,7 @@ const DriverPost = () => {
           </View>
 
           {/* Round Trip Days */}
-          {tripType === "round-trip" && (
-            <View ref={tripDaysRef} style={styles.section}>
-              <Text style={styles.sectionTitle}>Number of Days</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 5"
-                keyboardType="numeric"
-                value={tripDays}
-                onChangeText={setTripDays}
-                onFocus={() => scrollToInput(tripDaysRef)}
-                returnKeyType="done"
-                blurOnSubmit={true}
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-          )}
+
 
           {/* Pricing */}
           <View style={styles.rowContainer}>
@@ -1581,6 +1623,30 @@ const DriverPost = () => {
             onChange={(e, d) => {
               setShowDatePicker(false);
               if (d) setPickupDate(d);
+            }}
+          />
+        )}
+
+        {showReturnDatePicker && (
+          <DateTimePicker
+            value={returnDate || pickupDate}
+            mode="date"
+            minimumDate={new Date(pickupDate.getTime() + 24 * 60 * 60 * 1000)} // at least next day
+            onChange={(e, d) => {
+              setShowReturnDatePicker(false);
+              if (d) {
+                // Allow same day return only if drop ≠ pickup (outstation same-day round trip)
+                if (
+                  dropLocation.toLowerCase() !== pickupLocation.toLowerCase() &&
+                  d.toDateString() === pickupDate.toDateString()
+                ) {
+                  setReturnDate(d);
+                } else if (d >= pickupDate) {
+                  setReturnDate(d);
+                } else {
+                  Alert.alert("Invalid Date", "Return date cannot be before pickup date");
+                }
+              }
             }}
           />
         )}
@@ -1841,6 +1907,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 12,
     padding: 16,
+  },
+    sectionAdd: {
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 16,
+
+    marginTop: 12,
+    borderRadius: 12,
+  
   },
   sectionTitle: {
     fontSize: 14,
@@ -2334,6 +2408,7 @@ const styles = StyleSheet.create({
 
   // Add Stops Styles
   stopHeaderContainer: {
+    paddingHorizontal:10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -2343,7 +2418,7 @@ const styles = StyleSheet.create({
   addStopButton: {
     flexDirection: "row",
     justifyContent: "space-between",
-    width: "90%",
+    width: "100%",
     alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
@@ -2370,9 +2445,7 @@ const styles = StyleSheet.create({
   },
 
   stopContainer: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
+
     borderTopColor: "#E5E7EB",
   },
 

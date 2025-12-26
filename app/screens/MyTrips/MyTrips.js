@@ -32,7 +32,7 @@ import { API_URL_APP } from "../../constant/api";
 import DriverPost from "../Reserve/DriverPost";
 import RideCard from "../Reserve/RideCard";
 import useDriverStore from "../../store/driver.store";
-import { calculateDistance } from "../../utils/utils";
+import { calculateDistance, formatTimeWithLeadingZero } from "../../utils/utils";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 const MAX_PRICE = 100000;
@@ -351,20 +351,20 @@ export default function MyTrips({ navigation }) {
         const fromMatch =
           ride.type === "taxi_safari"
             ? ride.pickup_address
-                ?.toLowerCase()
-                .includes(filters.location.toLowerCase())
+              ?.toLowerCase()
+              .includes(filters.location.toLowerCase())
             : ride.pickupAddress
-                ?.toLowerCase()
-                .includes(filters.location.toLowerCase());
+              ?.toLowerCase()
+              .includes(filters.location.toLowerCase());
 
         const toMatch =
           ride.type === "taxi_safari"
             ? ride.destination_address
-                ?.toLowerCase()
-                .includes(filters.location.toLowerCase())
+              ?.toLowerCase()
+              .includes(filters.location.toLowerCase())
             : ride.dropAddress
-                ?.toLowerCase()
-                .includes(filters.location.toLowerCase());
+              ?.toLowerCase()
+              .includes(filters.location.toLowerCase());
 
         return fromMatch || toMatch;
       });
@@ -476,9 +476,8 @@ export default function MyTrips({ navigation }) {
         hour: "2-digit",
         minute: "2-digit",
       })}
-      tripType={`${
-        item.tripType === "one-way" ? "One Way Trip" : "Round Trip"
-      } - ${item.distance || "60"}Km`}
+      tripType={`${item.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+        } - ${item.distance || "60"}Km`}
       status={item?.trip_status}
       pickup={item.pickup_address}
       drop={item.destination_address}
@@ -501,7 +500,7 @@ export default function MyTrips({ navigation }) {
           _id={item._id}
           vehicleName={item.vehicleType || "Vehicle"}
           assignedStatus={item.rideStatus}
-          vehicleType="mini"
+          vehicleType={item.vehicleType}
           status={item?.rideStatus}
           totalAmount={`₹${item.totalAmount}`}
           locationPickup={item?.pickupLocation}
@@ -510,9 +509,8 @@ export default function MyTrips({ navigation }) {
           driverEarning={`₹${item.driverEarning}`}
           pickup={item.pickupAddress}
           drop={item.dropAddress}
-          tripType={`${
-            item.tripType === "one-way" ? "One Way Trip" : "Round Trip"
-          } - ${item?.distance || "60"} Km`}
+          tripType={`${item.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+            } - ${item?.distanceKm || "60"} Km`}
           date={new Date(item.pickupDate).toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
@@ -565,6 +563,7 @@ export default function MyTrips({ navigation }) {
       return calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
     };
 
+
     const d = findDistance(item);
 
     return (
@@ -576,7 +575,7 @@ export default function MyTrips({ navigation }) {
           _id={item._id}
           vehicleName={item.vehicleType || "Vehicle"}
           assignedStatus={item.rideStatus}
-          vehicleType="mini"
+          vehicleType={item.vehicleType}
           status={item?.rideStatus}
           totalAmount={`₹${item.totalAmount}`}
           locationPickup={item?.pickupLocation}
@@ -585,20 +584,16 @@ export default function MyTrips({ navigation }) {
           driverEarning={`₹${item.driverEarning}`}
           pickup={item.pickupAddress}
           drop={item.dropAddress}
-          tripType={`${
-            item.tripType === "one-way"
-              ? `One Way Trip - ${d} Km`
-              : `Round Trip - ${d} Km`
-          }`}
+          tripType={`${item.tripType === "one-way"
+              ? `One Way Trip - ${item?.distanceKm} Km`
+              : `Round Trip - ${item?.distanceKm} Km`
+            }`}
           date={new Date(item.pickupDate).toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
             year: "numeric",
           })}
-          time={new Date(item.pickupDate).toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          time={formatTimeWithLeadingZero(item?.pickupTime)}
           onPress={() =>
             navigation.navigate("ReserveRideDetailsAssigned", {
               rideId: item._id,
@@ -798,7 +793,7 @@ export default function MyTrips({ navigation }) {
                   (activeMainTab === "reserved_tab"
                     ? activeReservedTab
                     : activePostRideTab) === tab.id &&
-                    styles.statusTabTextActive,
+                  styles.statusTabTextActive,
                 ]}
               >
                 {tab.label}
@@ -931,8 +926,8 @@ export default function MyTrips({ navigation }) {
                       {type === "all"
                         ? "All"
                         : type === "oneWay"
-                        ? "One Way"
-                        : "Round Trip"}
+                          ? "One Way"
+                          : "Round Trip"}
                     </Text>
                   </Pressable>
                 ))}
@@ -961,8 +956,8 @@ export default function MyTrips({ navigation }) {
                       {sort === "newest"
                         ? "Newest"
                         : sort === "priceLow"
-                        ? "Low → High"
-                        : "High → Low"}
+                          ? "Low → High"
+                          : "High → Low"}
                     </Text>
                   </Pressable>
                 ))}
@@ -1126,7 +1121,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   statLabel: {
-    textAlign:"center",
+    textAlign: "center",
     fontSize: 10,
     color: "#666",
     fontFamily: "SFProDisplay-Medium",

@@ -18,12 +18,12 @@ import { calculateDistance } from "../../utils/utils";
 
 export default function DriverPost({
   _id,
-  vehicleName = "Maruti WagonR",
+  vehicleName,
   item = {},
   locationPickup = {},
   locationDrop = {},
   status = "pending",
-  vehicleType = "mini",
+  vehicleType,
   totalAmount = "₹8,000",
   requirement = {},
   commission = "₹2,000",
@@ -91,6 +91,7 @@ export default function DriverPost({
       ? "Maruti Ertiga SUV"
       : "Innova Crysta";
   const capacity = capacityMap[vehicleType] || 6;
+
 
   const req = requirement || {};
   let badgesToShow = [];

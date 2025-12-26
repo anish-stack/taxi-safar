@@ -8,7 +8,7 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-   KeyboardAvoidingView,
+  KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
   Linking,
@@ -166,6 +166,7 @@ const ReserveRideDetailsAssigned = () => {
     await fetchGoogleRoute(pickupLat, pickupLng, dropLat, dropLng);
   };
 
+
   const fetchRideDetails = async (showLoader = true) => {
     try {
       if (showLoader) setLoading(true);
@@ -202,21 +203,43 @@ const ReserveRideDetailsAssigned = () => {
     driver?.current_vehicle_id?.vehicle_type === "mini"
       ? mini
       : driver?.current_vehicle_id?.vehicle_type === "sedan"
-      ? sedan
-      : driver?.current_vehicle_id?.vehicle_type === "suv"
-      ? suv
-      : inova;
+        ? sedan
+        : driver?.current_vehicle_id?.vehicle_type === "suv"
+          ? suv
+          : inova;
 
+
+
+  const role = rideData?.assignedDriverId?._id === driver?._id ? "driver" : "owner"
+
+  const vehicleSource =
+    role === "driver"
+      ? driver?.current_vehicle_id
+      : rideData?.assignedDriverId?.current_vehicle_id;
+
+  const VehcileNumber = vehicleSource?.vehicle_number || "";
   const VehicleName =
-    driver?.current_vehicle_id?.vehicle_type === "mini"
+    vehicleSource?.vehicle_type === "mini"
       ? "Maruti WagonR"
-      : driver?.current_vehicle_id?.vehicle_type === "sedan"
-      ? "Maruti Swift Dzire"
-      : driver?.current_vehicle_id?.vehicle_type === "suv"
-      ? "Maruti Ertiga SUV"
-      : "Innova Crysta";
+      : vehicleSource?.vehicle_type === "sedan"
+        ? "Maruti Swift Dzire"
+        : vehicleSource?.vehicle_type === "suv"
+          ? "Maruti Ertiga SUV"
+          : vehicleSource?.vehicle_type === "muv"
+            ? "Innova Crysta"
+            : vehicleSource?.vehicle_name || "";
 
-  const VehcileNumber = driver?.current_vehicle_id?.vehicle_number;
+  const driverNameForOwner =
+    role === "owner"
+      ? rideData?.assignedDriverId?.driver_name || ""
+      : "";
+
+  const driverContactForOwner =
+    role === "owner"
+      ? rideData?.assignedDriverId?.driver_contact_number || ""
+      : "";
+
+
 
   useEffect(() => {
     fetchRideDetails();
@@ -298,7 +321,7 @@ const ReserveRideDetailsAssigned = () => {
 
 
 
-    const successfulRides = rideData?.companyId?.successfulRides || 0;
+  const successfulRides = rideData?.companyId?.successfulRides || 0;
   const cancelledRides = rideData?.companyId?.CancelRides || 0;
 
   const totalRides = successfulRides + cancelledRides;
@@ -483,6 +506,20 @@ const ReserveRideDetailsAssigned = () => {
     if (req?.foodAllowed) items.push("Food Allowed");
     return items.length ? items.join(", ") : "None";
   };
+  const handleChatPress = () => {
+    if (!rideData?._id || !rideData) return;
+
+    if (rideData?.rideStatus === "driver-assigned" || rideData?.rideStatus === "started") {
+      navigation.navigate("ChatBox", {
+        chat: rideData,
+        role: role === "driver" ? "initiator" : "owner",
+        rideId: rideData?._id,
+      });
+    } else {
+      initChat(); // fallback (agar assignment nahi hua)
+    }
+  };
+
 
   const isRoundTrip = rideData?.tripType === "round-trip";
   const arrivalDateTime = !isRoundTrip
@@ -593,23 +630,21 @@ const ReserveRideDetailsAssigned = () => {
 
         {/* Trip Posted By */}
         <View style={styles.section}>
-     
+
           <View style={styles.card}>
-                <View
-                     style={{
-                       flexDirection: "row",
-                       alignItems: "center",
-                       justifyContent: "space-between",
-                       width: "100%",
-                     }}
-                   >
-                     <Text style={styles.sectionTitle}>Trip Posted By</Text>
-                     <Text style={styles.sectionTitle}>
-                       {rideData?._id
-                         ? `CRN-${rideData._id.slice(-4)}`.toUpperCase()
-                         : ""}
-                     </Text>
-                     </View>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <Text style={styles.sectionTitle}>Trip Posted By</Text>
+              <Text style={styles.sectionTitle}>
+                Booking id:- {rideData.RideId}
+              </Text>
+            </View>
             <View style={styles.userRow}>
               <View style={styles.userInfo}>
                 {rideData?.companyId?.logo ? (
@@ -629,29 +664,29 @@ const ReserveRideDetailsAssigned = () => {
                   <Text style={styles.userName}>
                     {rideData?.companyId?.company_name || "Driver"}
                   </Text>
-               <View style={cardDriverStyles.ratingRow}>
-                                  <Star size={14} color="#FFA500" fill="#FFA500" />
-                                  <Text style={cardDriverStyles.ratingText}>
-                                    {rideData?.companyId?.rating} /
-                                  </Text>
-                                  <Text
-                                    style={[
-                                      cardDriverStyles.ratingText,
-                                      { color: Colors.success, marginLeft: 4 },
-                                    ]}
-                                  >
-                                    {succesPercentage}% -
-                                  </Text>
-              
-                                  <Text
-                                    style={[
-                                      cardDriverStyles.ratingText,
-                                      { color: Colors.error },
-                                    ]}
-                                  >
-                                    {cancelPercentage}%
-                                  </Text>
-                                </View>
+                  <View style={cardDriverStyles.ratingRow}>
+                    <Star size={14} color="#FFA500" fill="#FFA500" />
+                    <Text style={cardDriverStyles.ratingText}>
+                      {rideData?.companyId?.rating} /
+                    </Text>
+                    <Text
+                      style={[
+                        cardDriverStyles.ratingText,
+                        { color: Colors.success, marginLeft: 4 },
+                      ]}
+                    >
+                      {succesPercentage}% -
+                    </Text>
+
+                    <Text
+                      style={[
+                        cardDriverStyles.ratingText,
+                        { color: Colors.error },
+                      ]}
+                    >
+                      {cancelPercentage}%
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -668,9 +703,10 @@ const ReserveRideDetailsAssigned = () => {
                     >
                       <Phone size={moderateScale(18)} color="#fff" />
                     </TouchableOpacity>
+
                     <TouchableOpacity
                       style={styles.chatButton}
-                      onPress={initChat}
+                      onPress={handleChatPress}
                     >
                       <MessageCircle size={moderateScale(18)} color="#fff" />
                     </TouchableOpacity>
@@ -678,12 +714,13 @@ const ReserveRideDetailsAssigned = () => {
                 ) : (
                   <TouchableOpacity
                     style={styles.chatButton}
-                    onPress={initChat}
+                    onPress={handleChatPress}
                   >
                     <MessageCircle size={moderateScale(18)} color="#fff" />
                   </TouchableOpacity>
                 )}
               </View>
+
             </View>
 
             {/* Pricing */}
@@ -711,8 +748,9 @@ const ReserveRideDetailsAssigned = () => {
             {/* Dates with Timeline */}
             <View style={styles.dateRow}>
               <View style={styles.dateItem}>
+                <Text style={styles.dateLabel}>Pickup</Text>
                 <Text style={styles.dateLabel}>
-                  {isRoundTrip ? "Pickup" : formatDate(rideData.pickupDate)}
+                  {formatDate(rideData.pickupDate)}
                 </Text>
                 <Text style={styles.timeValue}>
                   {formatTime12Hour(rideData.pickupTime)}
@@ -728,16 +766,13 @@ const ReserveRideDetailsAssigned = () => {
               {isRoundTrip ? (
                 <View style={styles.dateItem}>
                   <Text style={styles.dateLabel}>Return</Text>
-                  <Text style={styles.dateValue}>
-                    {rideData.returnDate
-                      ? formatDate(rideData.returnDate)
-                      : "TBD"}
-                  </Text>
-                  <Text style={styles.timeValue}>
-                    {rideData.returnTime
-                      ? formatTime12Hour(rideData.returnTime)
-                      : "TBD"}
-                  </Text>
+                  {rideData.returnDate && (
+                    <Text style={styles.dateLabel}>
+                      {formatDate(rideData.returnDate)}
+                    </Text>
+                  )}
+
+
                 </View>
               ) : (
                 <View style={styles.dateItem}>
@@ -756,7 +791,9 @@ const ReserveRideDetailsAssigned = () => {
             </View>
 
             {/* Vehicle Info */}
+
             <View style={styles.vehicleSection}>
+
               <View style={styles.vehicleInfo}>
                 <Text style={styles.vehicleName}>{VehicleName}</Text>
                 <Text style={styles.vehiclePlate}>
@@ -769,6 +806,21 @@ const ReserveRideDetailsAssigned = () => {
                 resizeMode="contain"
               />
             </View>
+            {role === "owner" && (
+              <View style={styles.driverCard}>
+
+                <View style={styles.driverRow}>
+                  <Text style={styles.label}>Driver Name</Text>
+                  <Text style={styles.value}>{driverNameForOwner}</Text>
+                </View>
+
+                <View style={styles.driverRow}>
+                  <Text style={styles.label}>Contact</Text>
+                  <Text style={styles.value}>{driverContactForOwner}</Text>
+                </View>
+              </View>
+            )}
+
 
             {/* Trip Type Badge */}
             {/* <View style={styles.tripBadge}>
@@ -779,32 +831,48 @@ const ReserveRideDetailsAssigned = () => {
             </View> */}
 
             {/* Locations */}
-             <View style={styles.addressBox}>
-                   <View style={styles.addressRow}>
-                     <Icon name="navigate-outline" size={15} color="#666" />
-                     <Text style={styles.address} numberOfLines={1}>
-                   {rideData?.
-pickupAddress
-} 
-                     </Text>
-                   </View>
-           
-                   <View style={styles.tripTagContainer}>
-                     <Text style={styles.tripTag}>
-                      {  rideData?.tripType === "one-way" ? "One Way Trip" : "Round Trip"
-      } - {rideData?.distance || "60"}Km
-                     </Text>
-                   </View>
-           
-                   <View style={styles.addressRow}>
-                     <Icon name="location-outline" size={15} color="#666" />
-                     <Text style={styles.address} numberOfLines={1}>
-                        {rideData?.
-dropAddress
-} 
-                     </Text>
-                   </View>
-                 </View>
+            <View style={styles.addressBox}>
+              <View style={styles.addressRow}>
+                <Icon name="navigate-outline" size={15} color="#666" />
+                <Text style={styles.address} numberOfLines={1}>
+                  {rideData?.
+                    pickupAddress
+                  }
+                </Text>
+              </View>
+
+              <View style={styles.tripTagContainer}>
+                <Text style={styles.tripTag}>
+                  {rideData?.tripType === "one-way" ? "One Way Trip" : "Round Trip"
+                  } - {rideData?.
+                    distanceKm || "60"}Km
+                </Text>
+              </View>
+
+              <View style={styles.addressRow}>
+                <Icon name="location-outline" size={15} color="#666" />
+                <Text style={styles.address} numberOfLines={1}>
+                  {rideData?.
+                    dropAddress
+                  }
+                </Text>
+              </View>
+              {rideData.tripType === "round-trip" && (
+                <>
+                 <View style={styles.verticalLine} />
+                 
+                  <View style={styles.addressRow}>
+                  <Icon name="navigate-outline" size={15} color="#666" />
+                  <Text style={styles.address} numberOfLines={1}>
+                    {rideData?.
+                      pickupAddress
+                    }
+                  </Text>
+                </View>
+                </>
+               
+              )}
+            </View>
           </View>
         </View>
 
@@ -942,7 +1010,7 @@ dropAddress
         </View>
       </Modal>
 
- <Modal
+      <Modal
         visible={showRatingModal}
         transparent
         animationType="slide"
@@ -1147,7 +1215,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
   },
   sectionTitle: {
-    fontSize: moderateScale(18),
+    fontSize: moderateScale(16),
     fontWeight: "700",
     color: "#111827",
     marginBottom: verticalScale(12),
@@ -1167,6 +1235,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
   },
+  verticalLine: {
+  width: 1,
+  height: 18,
+  backgroundColor: "#ccc",
+  marginLeft: 7, // aligns with icon center
+  marginVertical: 2,
+},
+
 
   // Address
   addressBox: {
@@ -1174,6 +1250,42 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 12,
   },
+  driverCard: {
+
+    marginBottom: 12,
+    borderRadius: 12,
+    marginTop: 0,
+
+  },
+
+  driverTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 8,
+    fontFamily: "SFProDisplay-Bold",
+  },
+
+  driverRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 4,
+  },
+
+  label: {
+    fontSize: 13,
+    color: "#666",
+    fontFamily: "SFProDisplay-Bold",
+  },
+
+  value: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#000",
+    fontFamily: "SFProDisplay-Bold",
+  },
+
 
   addressRow: {
     flexDirection: "row",
@@ -1293,7 +1405,7 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: moderateScale(12),
     color: "#000",
-        fontWeight: "700",
+    fontWeight: "700",
     fontFamily: "SFProDisplay-Bold",
 
     marginTop: verticalScale(4),
@@ -1312,7 +1424,7 @@ const styles = StyleSheet.create({
   dateLabel: {
     fontSize: moderateScale(12),
     color: "#000",
-        fontWeight: "900",
+    fontWeight: "900",
 
   },
   dateValue: {

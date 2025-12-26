@@ -37,6 +37,9 @@ exports.postRide = async (req, res) => {
       driverEarning,
       commissionAmount,
 
+      returnDate,
+      billableDistance,
+
       extraKmCharge = 0,
       extraMinCharge = 0,
       acceptBookingType,
@@ -310,15 +313,14 @@ exports.postRide = async (req, res) => {
       pickupLocation: { type: "Point", coordinates: [pickupLng, pickupLat] },
       dropAddress,
       dropLocation: { type: "Point", coordinates: [dropLng, dropLat] },
-
+      returnDate,
+      billableDistance,
       distanceKm,
       durationText,
       routePolyline,
-
       totalAmount,
       commissionAmount: finalCommission,
       driverEarning: calculatedEarning,
-
       extraKmCharge,
       extraMinCharge,
       acceptBookingType,
@@ -327,7 +329,6 @@ exports.postRide = async (req, res) => {
       companyId: companyDetails,
       contactType,
       stops: normalizedStops,
-
       paymentMethod,
       paymentStatus: "pending",
       rideStatus: "pending",
@@ -458,16 +459,20 @@ exports.getRideById = async (req, res) => {
   try {
     const { rideId } = req.params;
 
-    const ride = await RidesPost.findById(rideId)
-      .populate(
-        "driverPostId",
-        "driver_name driver_contact_number profile_image average_rating"
-      )
-      .populate("companyId")
-      .populate(
-        "assignedDriverId",
-        "driver_name driver_contact_number profile_image average_rating"
-      );
+   const ride = await RidesPost.findById(rideId)
+  .populate(
+    "driverPostId",
+    "driver_name driver_contact_number profile_image average_rating"
+  )
+  .populate("companyId")
+  .populate({
+    path: "assignedDriverId",
+    select: "driver_name driver_contact_number profile_image average_rating current_vehicle_id",
+    populate: {
+      path: "current_vehicle_id",
+      select: "vehicle_type vehicle_name vehicle_number",
+    },
+  });
 
     if (!ride) {
       return res.status(404).json({
@@ -550,7 +555,7 @@ exports.updateRide = async (req, res) => {
     if (
       pickupLocation?.coordinates &&
       JSON.stringify(pickupLocation.coordinates) !==
-        JSON.stringify(ride.pickupLocation.coordinates)
+      JSON.stringify(ride.pickupLocation.coordinates)
     ) {
       shouldRecalculateRoute = true;
     }
@@ -558,7 +563,7 @@ exports.updateRide = async (req, res) => {
     if (
       dropLocation?.coordinates &&
       JSON.stringify(dropLocation.coordinates) !==
-        JSON.stringify(ride.dropLocation.coordinates)
+      JSON.stringify(ride.dropLocation.coordinates)
     ) {
       shouldRecalculateRoute = true;
     }
@@ -800,13 +805,11 @@ exports.StartTripPost = async (req, res) => {
 
       let timeMessage = "";
       if (hoursRemaining > 0) {
-        timeMessage = `${hoursRemaining} hour${
-          hoursRemaining > 1 ? "s" : ""
-        } and ${minsRemaining} minute${minsRemaining !== 1 ? "s" : ""}`;
+        timeMessage = `${hoursRemaining} hour${hoursRemaining > 1 ? "s" : ""
+          } and ${minsRemaining} minute${minsRemaining !== 1 ? "s" : ""}`;
       } else {
-        timeMessage = `${minutesRemaining} minute${
-          minutesRemaining !== 1 ? "s" : ""
-        }`;
+        timeMessage = `${minutesRemaining} minute${minutesRemaining !== 1 ? "s" : ""
+          }`;
       }
 
       return res.status(400).json({
@@ -915,7 +918,7 @@ exports.CompleteTripPost = async (req, res) => {
 
     // Fetch ride
     const ride = await RidesPost.findById(rideId)
-      .populate('customerId', 'name phone') // Optional: populate customer name if needed in notification
+   
       .select('+pickupAddress +dropAddress +totalAmount +driverEarning');
 
     if (!ride || ride.isDeleted) {
@@ -1303,229 +1306,132 @@ exports.getRidesByDriver = async (req, res) => {
     });
   }
 };
-
-// Search rides by location (nearby rides)
 exports.searchNearbyRides = async (req, res) => {
   try {
     const driverId = req.user?._id;
     const { applyRadius } = req.query;
 
-    /* ---------------------------
-       Auth Check
-    ----------------------------*/
     if (!driverId) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required.",
-      });
+      return res.status(401).json({ success: false, message: "Authentication required." });
     }
 
-    /* ---------------------------
-       Fetch Driver with Preferences
-    ----------------------------*/
+    // Fetch driver with preferences and current vehicle
     const driver = await Driver.findById(driverId)
-      .select(
-        "driver_name current_location current_vehicle_id currentRadius preferences"
-      )
+      .select("driver_name current_location current_vehicle_id currentRadius preferences")
       .populate("current_vehicle_id")
       .lean();
 
     if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found.",
-      });
-    }
-    if (
-      !driver.current_location ||
-      !Array.isArray(driver.current_location.coordinates)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver location missing.",
-      });
-    }
-    console.log("driver.current_location.coordinates",driver.current_location.coordinates )
-
-    /* ---------------------------
-       Coordinates (lng, lat)
-    ----------------------------*/
-    const [longitude, latitude] = driver.current_location.coordinates;
-
-    if (isNaN(longitude) || isNaN(latitude)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid driver coordinates.",
-      });
+      return res.status(404).json({ success: false, message: "Driver not found." });
     }
 
-    /* ---------------------------
-       Vehicle Type Array Based on Preferences
-    ----------------------------*/
+    // Determine accepted vehicle types
     const currentVehicleType = driver.current_vehicle_id?.vehicle_type || null;
     const preferences = driver.preferences || {};
-
-    // Build array of accepted vehicle types
     const acceptedVehicleTypes = [];
 
-    // Always include current vehicle type if exists
-    if (currentVehicleType) {
-      acceptedVehicleTypes.push(currentVehicleType);
-    }
+    if (currentVehicleType) acceptedVehicleTypes.push(currentVehicleType);
+    if (preferences.accept_mini_rides && !acceptedVehicleTypes.includes("mini")) acceptedVehicleTypes.push("mini");
+    if (preferences.accept_sedan_rides && !acceptedVehicleTypes.includes("sedan")) acceptedVehicleTypes.push("sedan");
+    if (preferences.accept_suv_rides && !acceptedVehicleTypes.includes("suv")) acceptedVehicleTypes.push("suv");
 
-    // Add vehicle types based on preferences (avoid duplicates)
-    if (
-      preferences.accept_mini_rides &&
-      !acceptedVehicleTypes.includes("mini")
-    ) {
-      acceptedVehicleTypes.push("mini");
-    }
-    if (
-      preferences.accept_sedan_rides &&
-      !acceptedVehicleTypes.includes("sedan")
-    ) {
-      acceptedVehicleTypes.push("sedan");
-    }
-    if (preferences.accept_suv_rides && !acceptedVehicleTypes.includes("suv")) {
-      acceptedVehicleTypes.push("suv");
-    }
+    const vehicleTypeQuery = acceptedVehicleTypes.length > 0 ? { vehicleType: { $in: acceptedVehicleTypes } } : {};
 
-    console.log("Accepted Vehicle Types:", acceptedVehicleTypes);
-
-    /* ---------------------------
-       Radius
-    ----------------------------*/
-    const maxDistanceMeters = (driver.currentRadius || 5) * 1000;
-
-    /* ---------------------------
-       Date & Time Filter
-    ----------------------------*/
+    // Date & time filter
     const now = new Date();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const currentTimeStr = now.toTimeString().slice(0, 5);
 
     const dateTimeFilter = {
       $or: [
         { pickupDate: { $gt: today } },
-        {
-          pickupDate: today,
-          pickupTime: { $gte: currentTimeStr },
-        },
+        { pickupDate: today, pickupTime: { $gte: currentTimeStr } },
       ],
     };
 
-    /* ---------------------------
-       Build Vehicle Type Query
-    ----------------------------*/
-    let vehicleTypeQuery = {};
-
-    if (acceptedVehicleTypes.length > 0) {
-      // If multiple vehicle types, use $in operator
-      vehicleTypeQuery = { vehicleType: { $in: acceptedVehicleTypes } };
-    }
-
-    /* ---------------------------
-       GEO NEAR (Distance Calculated)
-    ----------------------------*/
-    const geoNearStage = {
-      $geoNear: {
-        key: "pickupLocation",
-        near: {
-          type: "Point",
-          coordinates: [longitude, latitude],
-        },
-        distanceField: "distanceInMeters",
-        spherical: true,
-        query: {
-          rideStatus: "pending",
-          ...vehicleTypeQuery,
-          driverPostId: { $ne: driverId },
-          ...dateTimeFilter,
-        },
-      },
+    // Base query: status, preferences, date/time
+    const baseQuery = {
+      rideStatus: "pending",
+      ...vehicleTypeQuery,
+      driverPostId: { $ne: driverId },
+      ...dateTimeFilter,
     };
 
-    // Apply radius only if required
+    let rides = [];
+
+    // If applyRadius is true, filter by location + radius
     if (applyRadius === "true") {
-      geoNearStage.$geoNear.maxDistance = maxDistanceMeters;
+      const [longitude, latitude] = driver.current_location?.coordinates || [null, null];
+      const hasValidLocation = longitude !== null && latitude !== null && !isNaN(longitude) && !isNaN(latitude);
+      const maxDistanceMeters = (driver.currentRadius || 5) * 1000;
+
+      if (hasValidLocation) {
+        rides = await RidesPost.aggregate([
+          {
+            $geoNear: {
+              key: "pickupLocation",
+              near: { type: "Point", coordinates: [longitude, latitude] },
+              distanceField: "distanceInMeters",
+              maxDistance: maxDistanceMeters,
+              spherical: true,
+              query: baseQuery,
+            },
+          },
+          {
+            $addFields: {
+              dateTimeSort: {
+                $concat: [
+                  { $dateToString: { format: "%Y-%m-%d", date: "$pickupDate" } },
+                  "T",
+                  "$pickupTime",
+                ],
+              },
+            },
+          },
+          { $sort: { dateTimeSort: 1, distanceInMeters: 1 } },
+          { $limit: 20 },
+        ]);
+      }
     }
 
-    /* ---------------------------
-       Add DateTime Sorting Field
-    ----------------------------*/
-    const addFieldsStage = {
-      $addFields: {
-        // Convert pickupDate and pickupTime to a sortable datetime string
-        dateTimeSort: {
-          $concat: [
-            { $dateToString: { format: "%Y-%m-%d", date: "$pickupDate" } },
-            "T",
-            "$pickupTime",
-          ],
-        },
-      },
-    };
-
-    /* ---------------------------
-       Sort by Date/Time FIRST, then Distance
-    ----------------------------*/
-    const sortStage = {
-      $sort: {
-        dateTimeSort: 1, // Primary: Sort by date & time (earliest first)
-        distanceInMeters: 1, // Secondary: If same date/time, nearest first
-      },
-    };
-
-    /* ---------------------------
-       Aggregate Query with Proper Sorting
-    ----------------------------*/
-    const rides = await RidesPost.aggregate([
-      geoNearStage,
-      addFieldsStage,
-      sortStage,
-      { $limit: 20 },
-    ]);
-
+    // Fallback: if not applying radius or no valid location, just filter by preferences + date/time
     if (!rides.length) {
-      return res.status(200).json({
-        success: true,
-        message: "No rides found.",
-        applyRadius: applyRadius === "true",
-        radius_used_in_meters:
-          applyRadius === "true" ? maxDistanceMeters : "NOT APPLIED",
-        driver_location: [longitude, latitude],
-        accepted_vehicle_types: acceptedVehicleTypes,
-        data: [],
-      });
+      rides = await RidesPost.aggregate([
+        { $match: baseQuery },
+        {
+          $addFields: {
+            dateTimeSort: {
+              $concat: [
+                { $dateToString: { format: "%Y-%m-%d", date: "$pickupDate" } },
+                "T",
+                "$pickupTime",
+              ],
+            },
+          },
+        },
+        { $sort: { dateTimeSort: 1 } },
+        { $limit: 20 },
+      ]);
     }
 
-    /* ---------------------------
-       Final Response
-    ----------------------------*/
     return res.status(200).json({
       success: true,
-      message: "Rides fetched successfully.",
+      message: rides.length ? "Rides fetched successfully." : "No rides found.",
       applyRadius: applyRadius === "true",
-      radius_used_in_meters:
-        applyRadius === "true" ? maxDistanceMeters : "NOT APPLIED",
-      driver_location: [longitude, latitude],
-      accepted_vehicle_types: acceptedVehicleTypes,
       count: rides.length,
       data: rides.map((ride) => ({
         ...ride,
-        distance_km: (ride.distanceInMeters / 1000).toFixed(2),
+        distance_km: ride.distanceInMeters ? (ride.distanceInMeters / 1000).toFixed(2) : "N/A",
       })),
     });
+
   } catch (error) {
     console.error("searchNearbyRides error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 // Get ride statistics
 exports.getRideStatistics = async (req, res) => {
   try {

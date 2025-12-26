@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   ScrollView,
   Alert,
   Pressable,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -20,13 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 
-import {
-  ChevronLeft,
-  Search,
-  Filter,
-  X,
-  MapPin,
-} from "lucide-react-native";
+import { ChevronLeft, Filter, X, Hash, MapPin } from "lucide-react-native";
 
 import DriverPostCard from "./DriverPostCard";
 import TaxiSafarTripCard from "./TaxiSafarTripCard";
@@ -35,141 +28,328 @@ import { API_URL_APP } from "../../constant/api";
 import loginStore from "../../store/auth.store";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const MAX_PRICE = 100000;
-const MIN_PRICE = 0;
-
-const POPULAR_CITIES = [
-  "Delhi",
-  "Bangalore",
-  "Mumbai",
-  "Pune",
-  "Hyderabad",
-  "Chennai",
-  "Kolkata",
-  "Jaipur",
-  "Ahmedabad",
-  "Lucknow",
-  "Gurgaon",
-  "Noida",
-  "Chandigarh",
-  "Indore",
-];
+const LIMIT_PER_PAGE = 10;
 
 const isFutureRideIST = (pickupDate, pickupTime) => {
   if (!pickupDate || !pickupTime) return false;
   const dateObj = new Date(pickupDate);
   const [hours, minutes] = pickupTime.split(":").map(Number);
   dateObj.setHours(hours, minutes, 0, 0);
-  const now = new Date();
-  return dateObj.getTime() > now.getTime();
+  return dateObj.getTime() > new Date().getTime();
 };
+
+// Separate Filter Modal Component
+const FilterModal = React.memo(({ visible, onClose, filters, onApply }) => {
+  const [activeFilterTab, setActiveFilterTab] = useState("location");
+  const [fromCity, setFromCity] = useState(filters.fromCity);
+  const [toCity, setToCity] = useState(filters.toCity);
+  const [bookingId, setBookingId] = useState(filters.bookingId);
+  const [tripType, setTripType] = useState(filters.tripType);
+  const [sortBy, setSortBy] = useState(filters.sortBy);
+
+  useEffect(() => {
+    setFromCity(filters.fromCity);
+    setToCity(filters.toCity);
+    setBookingId(filters.bookingId);
+    setTripType(filters.tripType);
+    setSortBy(filters.sortBy);
+  }, [visible, filters]);
+
+  const handleApply = () => {
+    onApply({
+      fromCity,
+      toCity,
+      bookingId,
+      tripType,
+      sortBy,
+    });
+  };
+
+  const handleReset = () => {
+    setFromCity("");
+    setToCity("");
+    setBookingId("");
+    setTripType("all");
+    setSortBy("newest");
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardAvoidingContainer}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.filterModal}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filters</Text>
+              <TouchableOpacity onPress={onClose}>
+                <X size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter Tabs */}
+            <View style={styles.filterTabsContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.filterTab,
+                  activeFilterTab === "location" && styles.filterTabActive,
+                ]}
+                onPress={() => setActiveFilterTab("location")}
+              >
+                <MapPin
+                  size={18}
+                  color={activeFilterTab === "location" ? "#DC2626" : "#666"}
+                />
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    activeFilterTab === "location" && styles.filterTabTextActive,
+                  ]}
+                >
+                  Location
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterTab,
+                  activeFilterTab === "booking" && styles.filterTabActive,
+                ]}
+                onPress={() => setActiveFilterTab("booking")}
+              >
+                <Hash size={18} color={activeFilterTab === "booking" ? "#DC2626" : "#666"} />
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    activeFilterTab === "booking" && styles.filterTabTextActive,
+                  ]}
+                >
+                  Booking No.
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter Content */}
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.filterContent}>
+              {activeFilterTab === "location" ? (
+                <>
+                  {/* From City */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionTitle}>From City</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="e.g. Delhi"
+                      value={fromCity}
+                      onChangeText={setFromCity}
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  {/* To City */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionTitle}>To City</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="e.g. Mumbai"
+                      value={toCity}
+                      onChangeText={setToCity}
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  {/* Trip Type */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionTitle}>Trip Type</Text>
+                    <View style={styles.chipContainer}>
+                      {["all", "oneWay", "roundTrip"].map((type) => (
+                        <Pressable
+                          key={type}
+                          style={[styles.chip, tripType === type && styles.chipActive]}
+                          onPress={() => setTripType(type)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              tripType === type && styles.chipTextActive,
+                            ]}
+                          >
+                            {type === "all"
+                              ? "All"
+                              : type === "oneWay"
+                              ? "One Way"
+                              : "Round Trip"}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Sort By */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionTitle}>Sort By</Text>
+                    <View style={styles.chipContainer}>
+                      {["newest", "priceLow", "priceHigh"].map((sort) => (
+                        <Pressable
+                          key={sort}
+                          style={[styles.chip, sortBy === sort && styles.chipActive]}
+                          onPress={() => setSortBy(sort)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              sortBy === sort && styles.chipTextActive,
+                            ]}
+                          >
+                            {sort === "newest"
+                              ? "Newest"
+                              : sort === "priceLow"
+                              ? "Low → High"
+                              : "High → Low"}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                </>
+              ) : (
+                /* Booking Tab */
+                <View style={styles.bookingTabContainer}>
+                  <Text style={styles.sectionTitle}>Search by Booking ID</Text>
+                  <Text style={styles.bookingHelper}>Enter Ride ID or Booking Number</Text>
+                  <TextInput
+                    style={[styles.textInput, { fontSize: 16 }]}
+                    placeholder="e.g. 123456"
+                    value={bookingId}
+                    onChangeText={(text) => setBookingId(text.trim().toUpperCase())}
+                    placeholderTextColor="#999"
+                  />
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Action Buttons */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
+                <Text style={styles.resetText}>Reset All</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.applyBtn} onPress={handleApply}>
+                <Text style={styles.applyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+});
 
 export default function ReserveScreen({ route }) {
   const { filter } = route.params || {};
+  const { token } = loginStore();
+  const navigation = useNavigation();
+
   const [activeTab, setActiveTab] = useState("All Trip");
   const [taxiSafarTrips, setTaxiSafarTrips] = useState([]);
   const [driverPosts, setDriverPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchText, setSearchText] = useState("");
-  const [filterVisible, setFilterVisible] = useState(filter ? true : false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMoreData, setHasMoreData] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const { token } = loginStore();
-  const navigation = useNavigation();
 
-  // Location States
-  const [showFromDropdown, setShowFromDropdown] = useState(false);
-  const [showToDropdown, setShowToDropdown] = useState(false);
-
+  const [filterVisible, setFilterVisible] = useState(filter ? true : false);
   const [filters, setFilters] = useState({
     tripType: "all",
     fromCity: "",
     toCity: "",
+    bookingId: "",
     sortBy: "newest",
   });
 
-  const [tempFilters, setTempFilters] = useState(filters);
+  const [activeFilterTab, setActiveFilterTab] = useState("location");
+  const [tempFromCity, setTempFromCity] = useState("");
+  const [tempToCity, setTempToCity] = useState("");
+  const [tempBookingId, setTempBookingId] = useState("");
+  const [tempTripType, setTempTripType] = useState("all");
+  const [tempSortBy, setTempSortBy] = useState("newest");
 
   const tabs = ["All Trip", "B2B Bookings", "B2C Bookings"];
-  const LIMIT_PER_PAGE = 10;
 
-  // === API & Data Loading ===
-  const fetchTaxiSafarTrips = async (pageNum = 1) => {
-    return await fetchWithRetry(async () => {
-      const response = await fetch(
-        `${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await response.json();
-      return data.success ? data.data || [] : [];
-    });
-  };
+  // === API Calls ===
+  const fetchTaxiSafarTrips = useCallback(
+    async (pageNum = 1) => {
+      return await fetchWithRetry(async () => {
+        const res = await fetch(
+          `${API_URL_APP}/api/v1/Fetch-Near-By-Taxi-Safar-Rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        return data.success ? data.data || [] : [];
+      });
+    },
+    [token]
+  );
 
-  const fetchDriverPosts = async (pageNum = 1) => {
-    return await fetchWithRetry(async () => {
-      const response = await fetch(
-        `${API_URL_APP}/api/v1/fetch-nearby-rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+  const fetchDriverPosts = useCallback(
+    async (pageNum = 1) => {
+      return await fetchWithRetry(async () => {
+        const res = await fetch(
+          `${API_URL_APP}/api/v1/fetch-nearby-rides?page=${pageNum}&limit=${LIMIT_PER_PAGE}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        if (!data.success || !Array.isArray(data.data)) return [];
+        return data.data.filter((item) => isFutureRideIST(item.pickupDate, item.pickupTime));
+      });
+    },
+    [token]
+  );
+
+  const loadData = useCallback(
+    async (pageNum = 1, append = false) => {
+      try {
+        if (pageNum === 1) setLoading(true);
+        else setLoadingMore(true);
+
+        let posts = [],
+          trips = [];
+
+        if (activeTab === "B2B Bookings" || activeTab === "All Trip") {
+          posts = await fetchDriverPosts(pageNum);
         }
-      );
+        if (activeTab === "B2C Bookings" || activeTab === "All Trip") {
+          trips = await fetchTaxiSafarTrips(pageNum);
+        }
 
-      const data = await response.json();
+        if (append) {
+          setDriverPosts((prev) => [...prev, ...posts]);
+          setTaxiSafarTrips((prev) => [...prev, ...trips]);
+        } else {
+          setDriverPosts(posts);
+          setTaxiSafarTrips(trips);
+        }
 
-      if (!data.success || !Array.isArray(data.data)) {
-        return [];
+        setHasMoreData(posts.length === LIMIT_PER_PAGE || trips.length === LIMIT_PER_PAGE);
+      } catch (error) {
+        Alert.alert("Error", "Failed to load data");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
       }
-
-      const futureRides = data.data.filter((item) =>
-        isFutureRideIST(item.pickupDate, item.pickupTime)
-      );
-
-      return futureRides;
-    });
-  };
-
-  const loadData = async (pageNum = 1, append = false) => {
-    try {
-      if (pageNum === 1) setLoading(true);
-      else setLoadingMore(true);
-
-      let posts = [],
-        trips = [];
-
-      if (activeTab === "B2B Bookings" || activeTab === "All Trip") {
-        posts = await fetchDriverPosts(pageNum);
-      }
-      if (activeTab === "B2C Bookings" || activeTab === "All Trip") {
-        trips = await fetchTaxiSafarTrips(pageNum);
-      }
-
-      if (append) {
-        setDriverPosts((prev) => [...prev, ...posts]);
-        setTaxiSafarTrips((prev) => [...prev, ...trips]);
-      } else {
-        setDriverPosts(posts);
-        setTaxiSafarTrips(trips);
-      }
-
-      setHasMoreData(posts.length === LIMIT_PER_PAGE || trips.length === LIMIT_PER_PAGE);
-    } catch (error) {
-      Alert.alert("Error", "Failed to load data");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
-    }
-  };
+    },
+    [activeTab, fetchDriverPosts, fetchTaxiSafarTrips]
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setPage(1);
     setHasMoreData(true);
     loadData(1, false);
-  }, [activeTab]);
+  }, [loadData]);
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMoreData && !loading) {
@@ -177,25 +357,28 @@ export default function ReserveScreen({ route }) {
       setPage(nextPage);
       loadData(nextPage, true);
     }
-  }, [loadingMore, hasMoreData, loading, page, activeTab]);
+  }, [loadingMore, hasMoreData, loading, page, loadData]);
 
-  const onTabChange = (tab) => {
-    setActiveTab(tab);
-    setPage(1);
-    setHasMoreData(true);
-    loadData(1, false);
-  };
+  const onTabChange = useCallback(
+    (tab) => {
+      setActiveTab(tab);
+      setPage(1);
+      setHasMoreData(true);
+      loadData(1, false);
+    },
+    [loadData]
+  );
 
   useFocusEffect(
     useCallback(() => {
       setPage(1);
       setHasMoreData(true);
       loadData(1, false);
-    }, [activeTab])
+    }, [loadData])
   );
 
   // === Filtering & Sorting ===
-  const getFilteredAndSortedData = () => {
+  const filteredData = useMemo(() => {
     let data = [];
 
     if (activeTab === "B2B Bookings") {
@@ -209,18 +392,11 @@ export default function ReserveScreen({ route }) {
       ];
     }
 
-    // Search
-    if (searchText.trim()) {
-      const query = searchText.toLowerCase();
-      data = data.filter((item) =>
-        [
-          item.pickup_address,
-          item.pickupAddress,
-          item.destination_address,
-          item.dropAddress,
-          item.name,
-        ].some((field) => field?.toLowerCase().includes(query))
-      );
+    // Booking ID Filter
+    if (filters.bookingId.trim()) {
+      const query = Number(filters.bookingId);
+      console.log(data[0].RideId)
+      data = data.filter((item) => (item.RideId  === query));
     }
 
     // Trip Type Filter
@@ -238,11 +414,7 @@ export default function ReserveScreen({ route }) {
     if (filters.fromCity.trim()) {
       const query = filters.fromCity.toLowerCase();
       data = data.filter((item) => {
-        const from = (
-          item.pickup_address ||
-          item.pickupAddress ||
-          ""
-        ).toLowerCase();
+        const from = (item.pickup_address || item.pickupAddress || "").toLowerCase();
         return from.includes(query);
       });
     }
@@ -251,11 +423,7 @@ export default function ReserveScreen({ route }) {
     if (filters.toCity.trim()) {
       const query = filters.toCity.toLowerCase();
       data = data.filter((item) => {
-        const to = (
-          item.destination_address ||
-          item.dropAddress ||
-          ""
-        ).toLowerCase();
+        const to = (item.destination_address || item.dropAddress || "").toLowerCase();
         return to.includes(query);
       });
     }
@@ -269,36 +437,26 @@ export default function ReserveScreen({ route }) {
         );
       }
       if (filters.sortBy === "priceLow") {
-        return (
-          (a.original_amount || a.totalAmount || 0) -
-          (b.original_amount || b.totalAmount || 0)
-        );
+        return (a.original_amount || a.totalAmount || 0) - (b.original_amount || b.totalAmount || 0);
       }
       if (filters.sortBy === "priceHigh") {
-        return (
-          (b.original_amount || b.totalAmount || 0) -
-          (a.original_amount || a.totalAmount || 0)
-        );
+        return (b.original_amount || b.totalAmount || 0) - (a.original_amount || a.totalAmount || 0);
       }
       return 0;
     });
 
     return data;
-  };
+  }, [driverPosts, taxiSafarTrips, activeTab, filters]);
 
-  const filteredData = getFilteredAndSortedData();
+  const renderTripCard = useCallback(
+    ({ item }) => {
+      const isDriver = item.sourceType === "driver" || item.driverEarning !== undefined;
+      return isDriver ? <DriverPostCard trip={item} /> : <TaxiSafarTripCard trip={item} />;
+    },
+    []
+  );
 
-  const renderTripCard = ({ item }) => {
-    const isDriver =
-      item.sourceType === "driver" || item.driverEarning !== undefined;
-    return isDriver ? (
-      <DriverPostCard trip={item} />
-    ) : (
-      <TaxiSafarTripCard trip={item} />
-    );
-  };
-
-  const renderFooter = () => {
+  const renderFooter = useCallback(() => {
     if (loadingMore) {
       return (
         <View style={styles.loadingMore}>
@@ -309,17 +467,32 @@ export default function ReserveScreen({ route }) {
     }
     if (hasMoreData && filteredData.length > 0) {
       return (
-        <TouchableOpacity
-          style={styles.loadMoreButton}
-          onPress={loadMore}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={styles.loadMoreButton} onPress={loadMore} activeOpacity={0.7}>
           <Text style={styles.loadMoreText}>Load More Trips</Text>
         </TouchableOpacity>
       );
     }
     return null;
-  };
+  }, [loadingMore, hasMoreData, filteredData.length, loadMore]);
+
+  const handleOpenFilter = useCallback(() => {
+    setTempFromCity(filters.fromCity);
+    setTempToCity(filters.toCity);
+    setTempBookingId(filters.bookingId);
+    setTempTripType(filters.tripType);
+    setTempSortBy(filters.sortBy);
+    setFilterVisible(true);
+  }, [filters]);
+
+  const handleApplyFilter = useCallback(
+    (newFilters) => {
+      setFilters(newFilters);
+      setFilterVisible(false);
+      setPage(1);
+      loadData(1, false);
+    },
+    [loadData]
+  );
 
   if (loading && filteredData.length === 0) {
     return (
@@ -336,24 +509,14 @@ export default function ReserveScreen({ route }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity activeOpacity={0.9} onPress={() => navigation.goBack()}>
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reserved Trip</Text>
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => {
-            setTempFilters(filters);
-            setFilterVisible(true);
-          }}
-        >
+        <TouchableOpacity style={styles.filterButton} onPress={handleOpenFilter}>
           <Filter size={20} color="#000" />
         </TouchableOpacity>
       </View>
-
 
       {/* Active Filters Display */}
       {(filters.fromCity || filters.toCity) && (
@@ -373,194 +536,34 @@ export default function ReserveScreen({ route }) {
         </View>
       )}
 
-      <TabSelector
-        activeTab={activeTab}
-        tabs={tabs}
-        onTabChange={onTabChange}
-      />
+      <TabSelector activeTab={activeTab} tabs={tabs} onTabChange={onTabChange} />
 
       <FlatList
         data={filteredData}
         renderItem={renderTripCard}
         keyExtractor={(item, i) => item._id || `item-${i}`}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#DC2626"]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#DC2626"]} />
         }
         ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No trips found</Text>
-            <Text style={styles.emptySubtext}>
-              Try adjusting your search or filters
-            </Text>
+            <Text style={styles.emptySubtext}>Try adjusting your search or filters</Text>
           </View>
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        scrollEnabled={!filterVisible}
       />
 
       {/* Filter Modal */}
-      <Modal visible={filterVisible} transparent animationType="slide">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.keyboardAvoidingContainer}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.filterModal}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Filters</Text>
-                <TouchableOpacity onPress={() => setFilterVisible(false)}>
-                  <X size={24} color="#000" />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                style={styles.scrollContent}
-              >
-                {/* Location Section */}
-                <View style={styles.locationSection}>
-                  <Text style={styles.sectionTitle}>📍 Travel Route</Text>
-
-                  {/* From City */}
-                  <View style={styles.locationInputContainer}>
-                    <Text style={styles.locationLabel}>From City</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Enter departure city"
-                      placeholderTextColor="#999"
-                      value={tempFilters.fromCity}
-                      onChangeText={(text) =>
-                        setTempFilters({ ...tempFilters, fromCity: text })
-                      }
-                    />
-                  </View>
-
-                  {/* To City */}
-                  <View style={styles.locationInputContainer}>
-                    <Text style={styles.locationLabel}>To City</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Enter destination city"
-                      placeholderTextColor="#999"
-                      value={tempFilters.toCity}
-                      onChangeText={(text) =>
-                        setTempFilters({ ...tempFilters, toCity: text })
-                      }
-                    />
-                  </View>
-                </View>
-
-                {/* Trip Type */}
-                <View style={styles.filterSection}>
-                  <Text style={styles.sectionTitle}>🛣️ Trip Type</Text>
-                  <View style={styles.chipContainer}>
-                    {["all", "oneWay", "roundTrip"].map((type) => (
-                      <Pressable
-                        key={type}
-                        style={[
-                          styles.chip,
-                          tempFilters.tripType === type && styles.chipActive,
-                        ]}
-                        onPress={() =>
-                          setTempFilters({
-                            ...tempFilters,
-                            tripType: type,
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            tempFilters.tripType === type &&
-                              styles.chipTextActive,
-                          ]}
-                        >
-                          {type === "all"
-                            ? "All"
-                            : type === "oneWay"
-                            ? "One Way"
-                            : "Round Trip"}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Sort By */}
-                <View style={styles.filterSection}>
-                  <Text style={styles.sectionTitle}>⬇️ Sort By</Text>
-                  <View style={styles.chipContainer}>
-                    {["newest", "priceLow", "priceHigh"].map((sort) => (
-                      <Pressable
-                        key={sort}
-                        style={[
-                          styles.chip,
-                          tempFilters.sortBy === sort && styles.chipActive,
-                        ]}
-                        onPress={() =>
-                          setTempFilters({
-                            ...tempFilters,
-                            sortBy: sort,
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            tempFilters.sortBy === sort &&
-                              styles.chipTextActive,
-                          ]}
-                        >
-                          {sort === "newest"
-                            ? "Newest First"
-                            : sort === "priceLow"
-                            ? "Price: Low → High"
-                            : "Price: High → Low"}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              </ScrollView>
-
-              {/* Action Buttons */}
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.resetBtn}
-                  onPress={() => {
-                    setTempFilters({
-                      tripType: "all",
-                      fromCity: "",
-                      toCity: "",
-                      sortBy: "newest",
-                    });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.resetText}>Reset</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.applyBtn}
-                  onPress={() => {
-                    setFilters(tempFilters);
-                    setFilterVisible(false);
-                    setPage(1);
-                    loadData(1, false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.applyText}>Apply Filters</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <FilterModal
+        visible={filterVisible}
+        onClose={() => setFilterVisible(false)}
+        filters={filters}
+        onApply={handleApplyFilter}
+      />
     </SafeAreaView>
   );
 }
@@ -579,24 +582,6 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E0E0E0",
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#000" },
-
-  searchContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFF",
-    gap: 10,
-  },
-  searchInputWrapper: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5F5F5",
-    borderRadius: 25,
-    paddingHorizontal: 16,
-    height: 48,
-  },
-  searchInput: { flex: 1, fontSize: 16, color: "#000" },
   filterButton: {
     width: 48,
     height: 48,
@@ -614,6 +599,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E0E0E0",
+    flexWrap: "wrap",
   },
   filterTag: {
     flexDirection: "row",
@@ -624,11 +610,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 6,
   },
-  filterTagText: {
-    color: "#FFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  filterTagText: { color: "#FFF", fontSize: 12, fontWeight: "600" },
 
   listContent: { paddingHorizontal: 8, paddingBottom: 20 },
   emptyContainer: {
@@ -637,12 +619,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 60,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#000",
-    marginBottom: 8,
-  },
+  emptyText: { fontSize: 18, fontWeight: "600", color: "#000", marginBottom: 8 },
   emptySubtext: { fontSize: 14, color: "#666" },
 
   loadingMore: {
@@ -662,16 +639,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  loadMoreText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFF",
-  },
+  loadMoreText: { fontSize: 16, fontWeight: "700", color: "#FFF" },
 
   centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, fontSize: 16, color: "#666" },
 
   // Modal
+  keyboardAvoidingContainer: { flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -682,10 +656,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "90%",
-    paddingBottom: verticalScale(40),
-  },
-  keyboardAvoidingContainer: {
-    flex: 1,
   },
   modalHeader: {
     flexDirection: "row",
@@ -697,34 +667,39 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E0E0E0",
   },
   modalTitle: { fontSize: 20, fontWeight: "700", color: "#000" },
-  scrollContent: {
-    paddingBottom: 20,
-  },
 
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#000",
-    marginBottom: 12,
+  filterTabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
+    marginHorizontal: 20,
+    marginVertical: 12,
+    borderRadius: 12,
+    padding: 4,
   },
+  filterTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  filterTabActive: {
+    backgroundColor: "#FFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  filterTabText: { fontSize: 14, fontWeight: "600", color: "#666" },
+  filterTabTextActive: { color: "#000" },
 
-  locationSection: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  locationInputContainer: {
-    marginBottom: 14,
-  },
-  locationLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  dropdownWrapper: {
-    position: "relative",
-    zIndex: 10,
-  },
+  filterContent: { paddingBottom: 20 },
+
+  filterSection: { paddingHorizontal: 20, marginTop: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#000", marginBottom: 12 },
   textInput: {
     backgroundColor: "#F5F5F5",
     borderWidth: 1,
@@ -736,15 +711,7 @@ const styles = StyleSheet.create({
     color: "#000",
   },
 
-  filterSection: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-  chipContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -753,18 +720,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
-  chipActive: {
-    backgroundColor: "#000",
-    borderColor: "#000",
-  },
+  chipActive: { backgroundColor: "#000", borderColor: "#000" },
   chipText: { color: "#666", fontSize: 13, fontWeight: "500" },
   chipTextActive: { color: "#FFF", fontWeight: "600" },
+
+  bookingTabContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
+  bookingHelper: { fontSize: 13, color: "#666", marginBottom: 12 },
 
   modalActions: {
     flexDirection: "row",
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingVertical: 16,
+    paddingBottom: verticalScale(20),
     gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E0E0E0",
   },
   resetBtn: {
     flex: 1,

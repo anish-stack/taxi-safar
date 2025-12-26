@@ -12,11 +12,15 @@ import Layout from "../common/layout";
 import loginStore from "../../store/auth.store";
 import axios from "axios";
 import { API_URL_APP, API_URL_APP_CHAT } from "../../constant/api";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import io from "socket.io-client";
 import { Ionicons } from "@expo/vector-icons";
 import useDriverStore from "../../store/driver.store";
-import { formatDate, formatTime12Hour } from "../../utils/utils";
+import {
+  formatDate,
+  formatTime12Hour,
+  formatTimeWithLeadingZero,
+} from "../../utils/utils";
 
 // Skeleton Loading Component
 const SkeletonChatItem = () => (
@@ -48,6 +52,8 @@ const SkeletonLoader = () => (
 
 const Chat = () => {
   const { token } = loginStore();
+  const route = useRoute();
+  const { rideId, role } = route.params || {};
   const navigation = useNavigation();
   const socketRef = useRef(null);
   const { driver, fetchDriverDetails } = useDriverStore();
@@ -93,21 +99,21 @@ const Chat = () => {
       prevChats.map((chat) =>
         chat._id === data.chatId
           ? {
-              ...chat,
-              lastMessage: data.message.text,
-              lastMessageAt: data.message.sentAt,
-              unreadCount: chat.unreadCount ? chat.unreadCount + 1 : 1,
-            }
+            ...chat,
+            lastMessage: data.message.text,
+            lastMessageAt: data.message.sentAt,
+            unreadCount: chat.unreadCount ? chat.unreadCount + 1 : 1,
+          }
           : chat
       )
     );
   };
 
-
   // Fetch all chats
   const fetchChats = async () => {
     try {
       await fetchDriverDetails();
+
       if (!token) {
         setError("❌ Token missing. Please login again.");
         setLoading(false);
@@ -120,10 +126,19 @@ const Chat = () => {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      // console.log(response.data.chats[0]?.rideData?.pickupDate)
-      // console.log(response.data.chats[0]?.rideData?.pickupTime)
 
-      setChats(response.data.chats || []);
+      let chats = response.data.chats || [];
+
+      // ✅ FILTER BY RIDE ID (only if rideId exists)
+      if (rideId) {
+        chats = chats.filter(
+          (chat) =>
+            chat?.rideData_id === rideId ||
+            chat?.rideData_id?._id === rideId
+        );
+      }
+
+      setChats(chats);
       setError("");
     } catch (err) {
       setError("Something went wrong fetching chats.");
@@ -188,8 +203,8 @@ const Chat = () => {
       role: chat.isInitializedByMe
         ? "initiator"
         : chat.isRideOwner
-        ? "ride_owner"
-        : "none",
+          ? "ride_owner"
+          : "none",
     });
   };
 
@@ -252,44 +267,53 @@ const Chat = () => {
     filteredChats.forEach((chat) => {
       if (activeTab === "received" && chat.other_driver_id?._id) {
         fetchCompanyDriver(chat.other_driver_id._id);
+      } else {
+        // fetchCompanyDriver(chat.init_driver_id_id);
       }
     });
   }, [filteredChats, activeTab, fetchCompanyDriver]);
 
+  const shortenAddress = (address) => {
+    if (!address) return "";
+
+    const parts = address.split(",").map((x) => x.trim());
+
+    // take last 4 meaningful parts
+    const shortParts = parts.slice(-4);
+
+    return shortParts.join(", ");
+  };
   // Simplify renderChatItem - remove useEffect from here:
 
   const renderChatItem = ({ item }) => {
     const otherDriver =
       activeTab === "received" ? item.other_driver_id : item?.init_driver_id;
+
     const ridePost = item.ride_post_id;
 
     const companyData = companyDrivers[item.other_driver_id?._id];
+
     const driverName =
       activeTab === "received"
         ? companyData?.company_name ||
-          otherDriver?.driver_name ||
-          otherDriver?.name
-        : "Unknown Driver";
-    // console.log("companyData",companyData)
+        otherDriver?.driver_name ||
+        otherDriver?.name
+        : otherDriver?.driver_name;
+
     const avatarUri =
       activeTab === "received"
         ? companyData?.logo?.url ||
-          otherDriver?.profile_photo?.url ||
-          otherDriver?.avatar
-        : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+        otherDriver?.profile_photo?.url ||
+        otherDriver?.avatar
+        : otherDriver?.profile_photo?.url;
 
-    const bookingId = ridePost?._id
-      ? `CRN-${ridePost._id.slice(-4)}`.toUpperCase()
-      : "";
+    const pickupFrom = shortenAddress(ridePost?.pickupAddress || "");
+    const dropAt = shortenAddress(ridePost?.dropAddress || "");
 
-    const formatBookingId = (id) => {
-      if (!id || id === "N/A") return "N/A";
-      const str = String(id);
-      if (str.length <= 7) return str;
-      return str.slice(0, 3) + "..." + str.slice(-4);
-    };
+    const bookingId = ridePost?.RideId ? `${ridePost.RideId}` : "";
 
-    const shortBookingId = bookingId;
+    const pickupDate = formatDate(item.rideData?.pickupDate);
+    const pickupTime = formatTimeWithLeadingZero(item.rideData?.pickupTime);
 
     return (
       <TouchableOpacity
@@ -300,36 +324,26 @@ const Chat = () => {
         <Image source={{ uri: avatarUri }} style={styles.avatar} />
 
         <View style={styles.chatInfo}>
-          <View style={styles.chatHeader}>
+          {/* DRIVER NAME + BOOKING ID (SAME ROW) */}
+          <View style={styles.headerRow}>
             <Text style={styles.nameText} numberOfLines={1}>
               {driverName}
             </Text>
+
+            <Text style={styles.bookingIdText} numberOfLines={1}>
+              Booking ID: {bookingId}
+            </Text>
           </View>
-          <Text style={{ fontWeight: "bold" }}>
-            Booking id:- {shortBookingId}{" "}
+
+          {/* PICKUP - DROP */}
+          <Text numberOfLines={2} style={styles.routeText}>
+            {pickupFrom} - {dropAt}
           </Text>
 
-          <Text>
-            <Text style={{ fontWeight: "bold", fontSize: 13 }}>
-              Pickup Date:- {formatDate(item.rideData?.pickupDate)}{" "}
-            </Text>
-
-            <Text style={{ fontWeight: "bold", fontSize: 13 }}>
-              Time:- {formatTime12Hour(item.rideData?.pickupTime)}{" "}
-            </Text>
+          {/* DATE & TIME */}
+          <Text style={styles.dateTimeText}>
+            Date: {pickupDate} Time: {pickupTime}
           </Text>
-
-          <Text
-            style={[
-              styles.messageText,
-              item.unreadCount > 0 && styles.unreadMessage,
-            ]}
-            numberOfLines={1}
-          >
-            {item.lastMessage || "No messages yet"}
-          </Text>
-
-          <Text style={styles.timeText}>{formatTime(item.lastMessageAt)}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -609,6 +623,36 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 6,
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  nameText: {
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
+    marginRight: 8,
+  },
+
+  bookingIdText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#555",
+  },
+
+  routeText: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+
+  dateTimeText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    marginTop: 2,
+  },
+
   nameText: {
     fontSize: 16,
     fontWeight: "700",

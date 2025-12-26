@@ -445,36 +445,52 @@ exports.addCompanyDetails = async (req, res) => {
   try {
     const driverId = req.user.id;
     const files = req.files || {};
-    const { company_name, address, phone, email, gst_number } = req.body;
+    const {
+      company_name,
+      address,
+      phone,
+      email,
+      gst_number,
+      logo_url,
+      signature_url,
+    } = req.body;
 
-    if (!company_name || !address || !phone || !email) {
+    if (!company_name || !address || !phone) {
       return res.status(400).json({
         success: false,
         message: "All fields are required.",
       });
     }
 
+    // Handle logo
     let logo = { url: null, publicId: null };
-    if (files.logo) {
+    if (logo_url) {
+      logo = { url: logo_url, publicId: null };
+    } else if (files.logo) {
       const uploaded = await uploadSingleImage(files.logo[0].path);
       logo = { url: uploaded.image, publicId: uploaded.public_id };
       deleteFile(files.logo[0].path);
     }
 
+    // Handle signature
     let signature = { url: null, publicId: null };
-    if (files.signature) {
+    if (signature_url) {
+      signature = { url: signature_url, publicId: null };
+    } else if (files.signature) {
       const uploaded = await uploadSingleImage(files.signature[0].path);
       signature = { url: uploaded.image, publicId: uploaded.public_id };
       deleteFile(files.signature[0].path);
     }
 
+    // Driver Pub logic
     let driverPub = "";
-    if (gst_number.length >= 6) {
+    if (gst_number && gst_number.length >= 6) {
       driverPub = gst_number.substring(0, 2) + gst_number.slice(-4);
     } else {
       driverPub = gst_number;
     }
 
+    // Create company
     const newCompany = await CompanyDetails.create({
       driver: driverId,
       company_name,
@@ -486,6 +502,8 @@ exports.addCompanyDetails = async (req, res) => {
       gst_no: gst_number,
       signature,
     });
+
+    // Send notification
     await NotificationService.sendCompanyCreatedNotification(
       driverId,
       company_name,
@@ -502,6 +520,7 @@ exports.addCompanyDetails = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
+
 
 // -----------------------------------------------------------
 // GET MY COMPANY DETAILS
@@ -570,7 +589,7 @@ exports.updateCompanyDetails = async (req, res) => {
   try {
     const driverId = req.user.id;
     const files = req.files || {};
-    const { company_name, address, phone, email } = req.body;
+    const { company_name, address, phone, email, logo_url, signature_url } = req.body;
 
     let details = await CompanyDetails.findOne({ driver: driverId });
 
@@ -581,39 +600,47 @@ exports.updateCompanyDetails = async (req, res) => {
       });
     }
 
-    // Replace Logo if new one is uploaded
+    // ---------- Logo Handling ----------
     if (files.logo) {
+      // Remove old uploaded image from Cloudinary if exists
       if (details.logo?.publicId) {
         await deleteImage(details.logo.publicId);
       }
-
+      // Upload new logo file
       const uploaded = await uploadSingleImage(files.logo[0].path);
       details.logo = { url: uploaded.image, publicId: uploaded.public_id };
       deleteFile(files.logo[0].path);
+    } else if (logo_url) {
+      // Update logo with new link, even if old exists
+      if (details.logo?.publicId) {
+        await deleteImage(details.logo.publicId);
+      }
+      details.logo = { url: logo_url, publicId: null };
     }
 
-    // Replace Signature if new one is uploaded
+    // ---------- Signature Handling ----------
     if (files.signature) {
       if (details.signature?.publicId) {
         await deleteImage(details.signature.publicId);
       }
-
       const uploaded = await uploadSingleImage(files.signature[0].path);
       details.signature = { url: uploaded.image, publicId: uploaded.public_id };
       deleteFile(files.signature[0].path);
+    } else if (signature_url) {
+      if (details.signature?.publicId) {
+        await deleteImage(details.signature.publicId);
+      }
+      details.signature = { url: signature_url, publicId: null };
     }
 
-    // Update basic fields
+    // ---------- Update Basic Fields ----------
     if (company_name) details.company_name = company_name;
     if (address) details.address = address;
     if (phone) details.phone = phone;
     if (email) details.email = email;
 
     await details.save();
-    await NotificationService.sendCompanyUpdatedNotification(
-      driverId,
-      company_name
-    );
+    await NotificationService.sendCompanyUpdatedNotification(driverId, company_name);
 
     return res.status(200).json({
       success: true,

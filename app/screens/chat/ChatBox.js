@@ -61,6 +61,7 @@ const ChatBox = ({ route, navigation }) => {
   const [samneWalaDriver, setSamneWalaDriver] = useState(null);
   const [error, setError] = useState(null);
 
+  // console.log(chat)
   useEffect(() => {
     fetchDriverDetails();
     socketRef.current = io(API_URL_APP_CHAT, {
@@ -491,10 +492,20 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
     }, 100);
   };
 
-  useEffect(() => {
-    console.log("i am fetch");
+useEffect(() => {
+
     fetchMessages();
+
+    const interval = setInterval(() => {
+      console.log("🔄 Auto-fetching messages...");
+      fetchMessages();
+    }, 2000); 
+    return () => clearInterval(interval);
   }, [token, navigation]);
+
+  useEffect(() => {
+    scrollToEnd();
+  }, [messages]);
 
   useEffect(() => {
     scrollToEnd();
@@ -629,7 +640,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
               color="#fff"
             />
             <Text style={styles.payButtonText}>
-              {isInitiator ? `Pay ₹${amount}` : "Payment Link Sent"}
+              {isInitiator ? `Pay ` : "Payment Link Sent"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -967,6 +978,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
                   ? `Pay ₹${
                       chat?.ride_post_id?.commissionAmount ||
                       chat?.rideData?.commissionAmount ||
+                      chat?.commissionAmount ||
                       200
                     }`
                   : "Waiting for Link"}
@@ -996,7 +1008,7 @@ https://play.google.com/store/apps/details?id=com.taxisafr.driver`;
     if (isPaymentComplete) {
       const botMessage =
         role === "ride_owner"
-          ? "आपका कमीशन आपके वॉलेट में ऐड कर दिया गया है। राइड कम्पलीट होने के 24 घंटे में आपकी अमाउंट अनलॉक करके आपके अकाउंट में भेज दी जाएगी।"
+          ? "Aapka commission aapke wallet me add ho chuka hai 😊 Ride complete hone ke 24 ghante ke andar amount unlock hoke seedha aapke account me transfer kar di jayegi."
           : item.text;
 
       return (
